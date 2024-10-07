@@ -1,4 +1,3 @@
-```markdown
 # DevOps CI/CD Pipelines with AI (OPCI-AI-CU)
 
 ## Descripción
@@ -90,7 +89,3 @@ Este proyecto está bajo la licencia MIT. Para más detalles, consulta el archiv
 - **Instrucciones de uso**: Cómo clonar el repositorio y cómo reutilizar los pipelines en otros proyectos.
 - **Integración de IA**: Explicación sobre cómo la IA está optimizando los pipelines.
 - **Guía para contribuir**: Instrucciones sobre cómo contribuir al proyecto.
-
-Este **README.md** te da una base sólida para comenzar, y puedes ampliarlo a medida que el proyecto avance y se agreguen más características.
-
-¿Hay algo más que te gustaría agregar o modificar en el **README.md**? ¡Estoy aquí para ayudarte!
