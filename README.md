@@ -1,4 +1,4 @@
-¡Genial que hayas podido añadir la clave y conectarte! Aquí te dejo una plantilla para un **README.md** inicial que puedes utilizar para tu repositorio **"devops-pipelines-ci-cd"**.
+**"devops-pipelines-ci-cd"**.
 
 ```markdown
 # DevOps CI/CD Pipelines with AI (OPCI-AI-CU)
