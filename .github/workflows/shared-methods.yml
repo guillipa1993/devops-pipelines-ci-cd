@@ -1,0 +1,11 @@
+name: Shared Methods
+
+on:
+  workflow_call:
+
+jobs:
+  send-notification:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enviar notificación
+        run: echo "Enviando notificación..."
