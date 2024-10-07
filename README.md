@@ -80,8 +80,6 @@ Si deseas contribuir a este proyecto, sigue estos pasos:
 
 Este proyecto está bajo la licencia MIT. Para más detalles, consulta el archivo [LICENSE](LICENSE).
 
-```
-
 ### Explicación del contenido:
 - **Descripción general**: Un resumen del objetivo del repositorio y las características clave.
 - **Funcionalidades**: Lo que ofrece el repositorio, con énfasis en los pipelines reutilizables y la integración de IA.
