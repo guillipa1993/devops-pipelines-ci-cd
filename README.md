@@ -1,5 +1,3 @@
-**"devops-pipelines-ci-cd"**.
-
 ```markdown
 # DevOps CI/CD Pipelines with AI (OPCI-AI-CU)
 
