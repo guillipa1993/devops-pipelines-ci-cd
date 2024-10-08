@@ -1,0 +1,29 @@
+name: Simulate CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Simulación de un paso de instalación de dependencias (sin código)
+      - name: Simulate Install
+        run: echo "Simulating install of dependencies..."
+
+      # Simulación de ejecución de tests (sin código real)
+      - name: Simulate Test
+        run: echo "Simulating test execution..."
+
+      # Verificación de la versión de Go, por ejemplo
+      - name: Simulate Display Go version
+        run: go version || echo "Simulating Go version check..."

@@ -1,0 +1,20 @@
+name: YAML Linter
+
+on:  
+    pull_request:    
+        paths:      
+            - '**/*.yml'      
+            - '**/*.yaml'
+
+jobs:  
+    lint:    
+        runs-on: ubuntu-latest    
+        
+        steps:      
+            - name: Checkout code        
+              uses: actions/checkout@v2
+                    
+            - name: Validate YAML        
+              uses: ibiqlik/action-yaml-lint@v3        
+              with:          
+                config_file: .yamllint
