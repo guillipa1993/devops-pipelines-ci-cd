@@ -1,4 +1,4 @@
-name: Ruby CI Pipeline
+name: "Ruby CI Pipeline"
 
 on:
   push:
