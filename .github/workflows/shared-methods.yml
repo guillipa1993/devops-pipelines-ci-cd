@@ -9,3 +9,148 @@ jobs:
     steps:
       - name: Enviar notificación
         run: echo "Enviando notificación..."
+
+  check-code-format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Revisar formato de código Go
+        if: matrix.language == 'go'
+        run: gofmt -l .
+
+      - name: Revisar formato de código Node.js
+        if: matrix.language == 'node'
+        run: npx prettier --check .
+
+      - name: Revisar formato de código Python
+        if: matrix.language == 'python'
+        run: black --check .
+
+      - name: Revisar formato de código Java
+        if: matrix.language == 'java'
+        run: mvn formatter:validate
+
+  scan-security-vulnerabilities:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Escanear vulnerabilidades en Go
+        if: matrix.language == 'go'
+        run: go list -m all | nancy sleuth
+
+      - name: Escanear vulnerabilidades en Node.js
+        if: matrix.language == 'node'
+        run: npm audit --production
+
+      - name: Escanear vulnerabilidades en Python
+        if: matrix.language == 'python'
+        run: safety check
+
+      - name: Escanear vulnerabilidades en Java
+        if: matrix.language == 'java'
+        run: ./mvnw org.owasp:dependency-check-maven:check
+
+  clean-build-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Limpiar artefactos de construcción Go
+        if: matrix.language == 'go'
+        run: rm -rf ./bin ./build
+
+      - name: Limpiar artefactos de construcción Node.js
+        if: matrix.language == 'node'
+        run: rm -rf ./dist ./build
+
+      - name: Limpiar artefactos de construcción Python
+        if: matrix.language == 'python'
+        run: rm -rf ./dist ./build
+
+      - name: Limpiar artefactos de construcción Java
+        if: matrix.language == 'java'
+        run: ./mvnw clean
+
+  build-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Construir artefacto Go
+        if: matrix.language == 'go'
+        run: go build -o output/app
+
+      - name: Construir artefacto Node.js
+        if: matrix.language == 'node'
+        run: npm run build
+
+      - name: Construir artefacto Python
+        if: matrix.language == 'python'
+        run: python setup.py bdist_wheel
+
+      - name: Construir artefacto Java
+        if: matrix.language == 'java'
+        run: ./mvnw package
+
+  generate-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generar cobertura de código Go
+        if: matrix.language == 'go'
+        run: go test -coverprofile=coverage.out ./...
+
+      - name: Generar cobertura de código Node.js
+        if: matrix.language == 'node'
+        run: npm run coverage
+
+      - name: Generar cobertura de código Python
+        if: matrix.language == 'python'
+        run: pytest --cov=.
+
+      - name: Generar cobertura de código Java
+        if: matrix.language == 'java'
+        run: ./mvnw jacoco:report
+
+  upload-coverage-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Subir reporte de cobertura Go
+        if: matrix.language == 'go'
+        uses: codecov/codecov-action@v2
+        with:
+          file: coverage.out
+          flags: go
+
+      - name: Subir reporte de cobertura Node.js
+        if: matrix.language == 'node'
+        uses: codecov/codecov-action@v2
+        with:
+          file: ./coverage/lcov.info
+          flags: node
+
+      - name: Subir reporte de cobertura Python
+        if: matrix.language == 'python'
+        uses: codecov/codecov-action@v2
+        with:
+          file: ./coverage.xml
+          flags: python
+
+      - name: Subir reporte de cobertura Java
+        if: matrix.language == 'java'
+        uses: codecov/codecov-action@v2
+        with:
+          file: ./target/site/jacoco/jacoco.xml
+          flags: java
+
+  clean-up:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Limpiar artefactos de construcción Go
+        if: matrix.language == 'go'
+        run: rm -rf ./bin ./build
+
+      - name: Limpiar artefactos de construcción Node.js
+        if: matrix.language == 'node'
+        run: rm -rf ./dist ./build
+
+      - name: Limpiar artefactos de construcción Python
+        if: matrix.language == 'python'
+        run: rm -rf ./dist ./build
+
+      - name: Limpiar artefactos de construcción Java
+        if: matrix.language == 'java'
+        run: ./mvnw clean
