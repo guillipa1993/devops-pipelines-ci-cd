@@ -1,4 +1,4 @@
-name: PHP CI Pipeline
+name: 'PHP CI Pipeline'
 
 on:
   push:
