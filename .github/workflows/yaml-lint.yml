@@ -1,4 +1,4 @@
-name: "YAML Linter"
+name: "YAML Linter Pipeline"
 
 on:
   pull_request:

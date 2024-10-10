@@ -1,4 +1,4 @@
-name: Simulate CI Pipeline
+name: "Simulate CI Pipeline"
 
 on:
   push:

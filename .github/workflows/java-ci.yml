@@ -1,4 +1,4 @@
-name: "Java CI Pipeline"
+name: "Java - CI Pipeline"
 
 on:
   push:

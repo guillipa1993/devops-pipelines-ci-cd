@@ -1,4 +1,4 @@
-name: Shared Methods
+name: "Shared Methods"
 
 on:
   workflow_call:
