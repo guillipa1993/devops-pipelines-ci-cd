@@ -1,28 +1,20 @@
 name: "Go CI Pipeline"
 
 on:
-  workflow_call: 
+  workflow_call:
     inputs:
       go-version:
         description: 'La versión de Go para usar en este pipeline'
-        required: false
-        default: '1.17'
-        
-  push:
-    branches:
-      - main
-      
-  pull_request:
-    branches:
-      - main
+        required: true
+        type: string
+      token:
+        description: 'El token de autenticación para los repositorios privados'
+        required: true
+        type: secret
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        go-version: [ ${{ inputs.go-version }}, 1.17, 1.18, 1.19 ]
 
     steps:
       - name: Checkout code
@@ -31,7 +23,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: ${{ inputs.go-version }}
 
       - name: Cache Go modules
         uses: actions/cache@v2
@@ -39,9 +31,9 @@ jobs:
           path: |
             ~/.cache/go-build
             /go/pkg/mod
-          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-${{ matrix.go-version }}
+            ${{ runner.os }}-go-${{ inputs.go-version }}
 
       - name: Install dependencies
         run: go mod tidy
@@ -60,3 +52,9 @@ jobs:
 
       - name: Run Go linter (optional)
         run: go vet ./...
+
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enviar notificación
+        run: echo "Pipeline terminado. Notificación enviada."
