@@ -7,10 +7,6 @@ on:
         description: 'La versión de Go para usar en este pipeline'
         required: true
         type: string
-      token:
-        description: 'El token de autenticación para los repositorios privados'
-        required: true
-        type: secret
 
 jobs:
   build:
@@ -19,9 +15,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-        with:
-          token: ${{ inputs.token }}  # Usa el token para autenticación
-          
+
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
