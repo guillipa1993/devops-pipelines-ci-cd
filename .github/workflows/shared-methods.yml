@@ -12,6 +12,9 @@ jobs:
 
   check-code-format:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: [go, node, python, java]
     steps:
       - name: Revisar formato de código Go
         if: matrix.language == 'go'
