@@ -34,6 +34,9 @@ jobs:
 
   scan-security-vulnerabilities:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: [go, node, python, java]
     steps:
       - name: Escanear vulnerabilidades en Go
         if: matrix.language == 'go'
@@ -53,6 +56,9 @@ jobs:
 
   clean-build-artifacts:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: [go, node, python, java]
     steps:
       - name: Limpiar artefactos de construcción Go
         if: matrix.language == 'go'
@@ -72,6 +78,9 @@ jobs:
 
   build-artifact:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: [go, node, python, java]
     steps:
       - name: Construir artefacto Go
         if: matrix.language == 'go'
@@ -91,6 +100,9 @@ jobs:
 
   generate-coverage:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: [go, node, python, java]
     steps:
       - name: Generar cobertura de código Go
         if: matrix.language == 'go'
@@ -110,6 +122,9 @@ jobs:
 
   upload-coverage-report:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: [go, node, python, java]
     steps:
       - name: Subir reporte de cobertura Go
         if: matrix.language == 'go'
@@ -141,6 +156,9 @@ jobs:
 
   clean-up:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: [go, node, python, java]
     steps:
       - name: Limpiar artefactos de construcción Go
         if: matrix.language == 'go'
