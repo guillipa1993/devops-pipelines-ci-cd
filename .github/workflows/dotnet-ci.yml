@@ -1,0 +1,76 @@
+name: "ASP.NET Core CI/CD Pipeline"
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        description: 'La versión de .NET para usar en este pipeline'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up .NET Core
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Install dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Run tests
+        run: dotnet test --no-restore --verbosity normal
+
+  check-code-format:
+    uses: ./.github/workflows/shared-methods.yml#check-code-format
+    with:
+      language: 'dotnet'
+
+  scan-security-vulnerabilities:
+    uses: ./.github/workflows/shared-methods.yml#scan-security-vulnerabilities
+    with:
+      language: 'dotnet'
+
+  build-artifact:
+    runs-on: ubuntu-latest
+    needs: [build, check-code-format, scan-security-vulnerabilities]
+    steps:
+      - name: Build Release Artifact
+        run: dotnet publish -c Release -o ./publish
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: aspnetcore-release-artifact
+          path: ./publish
+
+  generate-coverage:
+    runs-on: ubuntu-latest
+    needs: build-artifact
+    steps:
+      - name: Generate Coverage Report
+        run: dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
+        continue-on-error: true
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: ./TestResults
+
+  upload-coverage-report:
+    uses: ./.github/workflows/shared-methods.yml#upload-coverage-report
+    with:
+      language: 'dotnet'
+
+  clean-up:
+    uses: ./.github/workflows/shared-methods.yml#clean-up
+    with:
+      language: 'dotnet'

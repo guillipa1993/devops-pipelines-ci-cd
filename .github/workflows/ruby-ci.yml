@@ -1,14 +1,16 @@
 name: "Ruby CI Pipeline"
 
 on:
-  push:
-    branches:
-      - main
+  workflow_call:
+    inputs:
+      ruby-version:
+        description: 'La versión de Ruby para usar en este pipeline'
+        required: true
+        type: string
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -16,10 +18,13 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "2.7"
+          ruby-version: ${{ inputs.ruby-version }}
 
       - name: Install dependencies
         run: bundle install
 
       - name: Run tests
         run: bundle exec rspec
+
+  notify:
+    uses: ./.github/workflows/shared-methods.yml#send-notification

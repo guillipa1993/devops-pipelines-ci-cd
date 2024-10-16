@@ -1,12 +1,12 @@
 name: "Simulate CI Pipeline"
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  workflow_call:
+    inputs:
+      simulate-message:
+        description: 'Mensaje para simular las etapas del pipeline'
+        required: true
+        type: string
 
 jobs:
   build:
@@ -16,14 +16,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      # Simulación de un paso de instalación de dependencias (sin código)
+      # Simulación de un paso de instalación de dependencias
       - name: Simulate Install
-        run: echo "Simulating install of dependencies..."
+        run: echo "${{ inputs.simulate-message }}: Instalación de dependencias simulada."
 
-      # Simulación de ejecución de tests (sin código real)
+      # Simulación de ejecución de tests
       - name: Simulate Test
-        run: echo "Simulating test execution..."
+        run: echo "${{ inputs.simulate-message }}: Ejecución de tests simulada."
 
-      # Verificación de la versión de Go, por ejemplo
+      # Verificación de la versión de Go (ejemplo)
       - name: Simulate Display Go version
-        run: go version || echo "Simulating Go version check..."
+        run: go version || echo "${{ inputs.simulate-message }}: Verificación de versión de Go simulada."
