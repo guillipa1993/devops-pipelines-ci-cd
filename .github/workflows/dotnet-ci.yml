@@ -25,12 +25,17 @@ jobs:
           wget https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.sh -O dotnet-install.sh
           chmod +x dotnet-install.sh
           set +e
-          echo "Intentando descargar manualmente el SDK."
-          wget -O dotnet-sdk.tar.gz "https://dotnet.microsoft.com/download/dotnet/thank-you/sdk-${{ inputs.dotnet-version }}-linux-x64-binaries"
-          tar -xvf dotnet-sdk.tar.gz -C $HOME/dotnet || echo "No se pudo extraer el archivo descargado."
+          ./dotnet-install.sh --version ${{ inputs.dotnet-version }} --install-dir $HOME/dotnet
           if [ $? -ne 0 ]; then
-            echo "La versión especificada de .NET no está disponible. Intentando con la última versión estable."
-            ./dotnet-install.sh --channel STS --install-dir $HOME/dotnet
+            echo "Intentando descargar manualmente el SDK."
+            wget -O dotnet-sdk.tar.gz "https://dotnet.microsoft.com/download/dotnet/thank-you/sdk-${{ inputs.dotnet-version }}-linux-x64-binaries"
+            if file dotnet-sdk.tar.gz | grep -q 'gzip compressed data'; then
+              tar -xzf dotnet-sdk.tar.gz -C $HOME/dotnet || echo "No se pudo extraer el archivo descargado."
+            else
+              echo "El archivo descargado no es un archivo comprimido válido."
+              echo "La versión especificada de .NET no está disponible. Intentando con la última versión estable."
+              ./dotnet-install.sh --channel STS --install-dir $HOME/dotnet
+            fi
           fi
           set -e
       
