@@ -25,9 +25,9 @@ jobs:
           wget https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.sh -O dotnet-install.sh
           chmod +x dotnet-install.sh
           set +e
-          ./dotnet-install.sh --version ${{ inputs.dotnet-version }} --install-dir $HOME/dotnet || ./dotnet-install.sh --channel 9.0 --install-dir $HOME/dotnet
+          ./dotnet-install.sh --version ${{ inputs.dotnet-version }} --install-dir $HOME/dotnet || wget -O dotnet-sdk.tar.gz https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-${{ inputs.dotnet-version }}-linux-x64-binaries && tar -xzf dotnet-sdk.tar.gz -C $HOME/dotnet
           set -e
-          
+      
       - name: Set up .NET
         run: |
           echo "DOTNET_ROOT=$HOME/dotnet" >> $GITHUB_ENV
