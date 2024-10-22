@@ -19,6 +19,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Download .NET SDK 8.0.403
+        run: |
+          mkdir -p $HOME/dotnet && wget -q -O - https://download.visualstudio.microsoft.com/download/pr/8e324d73-40b4-4780-9702-c41a7a1a9f7f/c1d1e71b40f9d38ad330f9b7a1a0cd68/dotnet-sdk-8.0.403-linux-x64.tar.gz | tar zxf - -C $HOME/dotnet
+      
+      - name: Set up .NET
+        run: |
+          echo "DOTNET_ROOT=$HOME/dotnet" >> $GITHUB_ENV
+          echo "$HOME/dotnet" >> $GITHUB_PATH
+      
       - name: Set up .NET Core
         uses: actions/setup-dotnet@v2
         with:
