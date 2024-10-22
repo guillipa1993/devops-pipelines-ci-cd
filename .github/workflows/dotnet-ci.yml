@@ -28,31 +28,37 @@ jobs:
         run: dotnet restore
 
   check-code-format:
+    needs: build
     uses: ./.github/workflows/check-code-format.yml
     with:
       language: ${{ inputs.language }}
   
   scan-security-vulnerabilities:
+    needs: check-code-format
     uses: ./.github/workflows/scan-security-vulnerabilities.yml
     with:
       language: ${{ inputs.language }}
 
   build-artifact:
+    needs: scan-security-vulnerabilities
     uses: ./.github/workflows/build-artifact.yml
     with:
       language: ${{ inputs.language }}
 
   generate-coverage:
+    needs: build-artifact
     uses: ./.github/workflows/generate-coverage.yml
     with:
       language: ${{ inputs.language }}
 
   upload-coverage-report:
+    needs: generate-coverage
     uses: ./.github/workflows/upload-coverage-report.yml
     with:
       language: ${{ inputs.language }}
 
   clean-up:
+    needs: upload-coverage-report
     uses: ./.github/workflows/clean-up.yml
     with:
       language: ${{ inputs.language }}
