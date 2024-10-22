@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        language: [go, node, python, java]
+        language: [go, node, python, java, dotnet]
     steps:
       - name: Revisar formato de código
         run: |
@@ -26,13 +26,15 @@ jobs:
             black --check .
           elif [ "${{ matrix.language }}" == "java" ]; then
             ./mvnw formatter:validate
+          elif [ "${{ matrix.language }}" == "dotnet" ]; then
+            dotnet format
           fi
 
   scan-security-vulnerabilities:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        language: [go, node, python, java]
+        language: [go, node, python, java, dotnet]
     steps:
       - name: Escanear vulnerabilidades
         run: |
@@ -44,6 +46,8 @@ jobs:
             safety check
           elif [ "${{ matrix.language }}" == "java" ]; then
             ./mvnw org.owasp:dependency-check-maven:check
+          elif [ "${{ matrix.language }}" == "dotnet" ]; then
+            dotnet list package --vulnerable
           fi
 
   build-artifact:
@@ -51,7 +55,7 @@ jobs:
     needs: [check-code-format, scan-security-vulnerabilities]
     strategy:
       matrix:
-        language: [go, node, python, java]
+        language: [go, node, python, java, dotnet]
     steps:
       - name: Construir artefacto
         run: |
@@ -63,6 +67,8 @@ jobs:
             python setup.py bdist_wheel
           elif [ "${{ matrix.language }}" == "java" ]; then
             ./mvnw package
+          elif [ "${{ matrix.language }}" == "dotnet" ]; then
+            dotnet publish -c Release -o ./publish
           fi
 
   generate-coverage:
@@ -70,7 +76,7 @@ jobs:
     needs: build-artifact
     strategy:
       matrix:
-        language: [go, node, python, java]
+        language: [go, node, python, java, dotnet]
     steps:
       - name: Generar cobertura de código
         run: |
@@ -82,6 +88,8 @@ jobs:
             pytest --cov=.
           elif [ "${{ matrix.language }}" == "java" ]; then
             ./mvnw jacoco:report
+          elif [ "${{ matrix.language }}" == "dotnet" ]; then
+            dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
           fi
 
   upload-coverage-report:
@@ -89,12 +97,12 @@ jobs:
     needs: generate-coverage
     strategy:
       matrix:
-        language: [go, node, python, java]
+        language: [go, node, python, java, dotnet]
     steps:
       - name: Subir reporte de cobertura
         uses: codecov/codecov-action@v2
         with:
-          file: ${{ matrix.language == 'go' && 'coverage.out' || matrix.language == 'node' && './coverage/lcov.info' || matrix.language == 'python' && './coverage.xml' || matrix.language == 'java' && './target/site/jacoco/jacoco.xml' }}
+          file: ${{ matrix.language == 'go' && 'coverage.out' || matrix.language == 'node' && './coverage/lcov.info' || matrix.language == 'python' && './coverage.xml' || matrix.language == 'java' && './target/site/jacoco/jacoco.xml' || matrix.language == 'dotnet' && './TestResults/opencover.xml' }}
           flags: ${{ matrix.language }}
 
   clean-up:
@@ -102,7 +110,7 @@ jobs:
     needs: upload-coverage-report
     strategy:
       matrix:
-        language: [go, node, python, java]
+        language: [go, node, python, java, dotnet]
     steps:
       - name: Limpiar artefactos de construcción
         run: |
@@ -114,4 +122,6 @@ jobs:
             rm -rf ./dist ./build
           elif [ "${{ matrix.language }}" == "java" ]; then
             ./mvnw clean
+          elif [ "${{ matrix.language }}" == "dotnet" ]; then
+            rm -rf ./publish ./TestResults
           fi
