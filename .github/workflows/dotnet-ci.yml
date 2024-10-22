@@ -33,11 +33,11 @@ jobs:
 
       - name: Build
         run: |
-          find . -name "*.csproj" | xargs -I {} dotnet build {} --configuration Release --no-restore --ignore-failed-sources || true
+          find . -name "*.csproj" | xargs -I {} dotnet build {} --configuration Release --no-restore || true
 
       - name: Run Tests
         run: |
-          find . -name "*.csproj" | xargs -I {} dotnet test {} --no-restore --verbosity normal --ignore-failed-sources || true
+          find . -name "*.csproj" | xargs -I {} dotnet test {} --no-restore --verbosity normal || true
 
   check-code-format:
     needs: build
