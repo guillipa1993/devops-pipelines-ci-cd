@@ -45,6 +45,7 @@ jobs:
           echo "$HOME/dotnet" >> $GITHUB_PATH
       
       - name: Set up .NET Core
+        if: false  
         uses: actions/setup-dotnet@v2
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
