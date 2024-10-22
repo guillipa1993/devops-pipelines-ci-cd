@@ -28,7 +28,7 @@ jobs:
           ./dotnet-install.sh --version ${{ inputs.dotnet-version }} --install-dir $HOME/dotnet
           if [ $? -ne 0 ]; then
             echo "Intentando descargar manualmente el SDK."
-            wget -O dotnet-sdk.tar.gz "https://download.visualstudio.microsoft.com/download/pr/8e324d73-40b4-4780-9702-c41a7a1a9f7f/c1d1e71b40f9d38ad330f9b7a1a0cd68/dotnet-sdk-${{ inputs.dotnet-version }}-linux-x64.tar.gz"
+            wget -O dotnet-sdk.tar.gz "https://download.visualstudio.microsoft.com/download/pr/202e929a-e985-4eab-a78a-d7159fc204e4/0c85219d441cd3bbffd4fb65b7e36fe5/dotnet-sdk-9.0.100-rc.2.24474.11-linux-x64.tar.gz"
             if file dotnet-sdk.tar.gz | grep -q 'gzip compressed data'; then
               tar -xzf dotnet-sdk.tar.gz -C $HOME/dotnet || echo "No se pudo extraer el archivo descargado."
             else
