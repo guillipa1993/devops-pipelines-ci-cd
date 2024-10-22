@@ -43,6 +43,7 @@ jobs:
     needs: build
     uses: ./.github/workflows/check-code-format.yml
     with:
+      dotnet-version: ${{ inputs.dotnet-version }}
       language: ${{ inputs.language }}
 
   scan-security-vulnerabilities:

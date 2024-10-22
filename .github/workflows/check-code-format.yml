@@ -7,6 +7,10 @@ on:
         description: 'The programming language for the code format check'
         required: true
         type: string
+      dotnet-version:
+        description: 'La versión de .NET para usar en este pipeline'
+        required: false
+        type: string
 
 jobs:
   check-code-format:
@@ -14,6 +18,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+
+      - name: Set up .NET Core
+        if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
+        uses: actions/setup-dotnet@v2
+        with:
+          dotnet-version: "${{ inputs.dotnet-version }}"
+
+      - name: Set up Node.js
+        if: ${{ inputs.language == 'node' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
 
       - name: Run Code Formatter
         run: |
