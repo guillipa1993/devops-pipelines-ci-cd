@@ -7,6 +7,10 @@ on:
         description: 'La versión de .NET para usar en este pipeline'
         required: true
         type: string
+      language:
+        description: 'El lenguaje de programación para usar en este pipeline'
+        required: true
+        type: string
 
 jobs:
   build:
