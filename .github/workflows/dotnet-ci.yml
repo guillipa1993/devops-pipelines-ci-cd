@@ -25,9 +25,9 @@ jobs:
           wget https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.sh -O dotnet-install.sh
           chmod +x dotnet-install.sh
           set +e
-          ./dotnet-install.sh --version ${{ inputs.dotnet-version }} --install-dir $HOME/dotnet || ./dotnet-install.sh --channel STS --install-dir $HOME/dotnet
+          ./dotnet-install.sh --version ${{ inputs.dotnet-version }} --install-dir $HOME/dotnet || ./dotnet-install.sh --channel 9.0 --install-dir $HOME/dotnet
           set -e
-      
+          
       - name: Set up .NET
         run: |
           echo "DOTNET_ROOT=$HOME/dotnet" >> $GITHUB_ENV
