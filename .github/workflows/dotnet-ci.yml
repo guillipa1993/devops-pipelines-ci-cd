@@ -25,13 +25,13 @@ jobs:
           dotnet-version: ${{ inputs.dotnet-version }}
 
       - name: Install dependencies
-        run: dotnet restore AspNetCore.sln || true 
+        run: dotnet restore AspNetCore.sln --ignore-failed-sources
 
       - name: Build
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build AspNetCore.sln --configuration Release --no-restore --ignore-failed-sources
 
       - name: Run Tests
-        run: dotnet test --no-restore --verbosity normal
+        run: dotnet test AspNetCore.sln --no-restore --verbosity normal --ignore-failed-sources
 
   check-code-format:
     needs: build
