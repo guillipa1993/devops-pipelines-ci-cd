@@ -19,12 +19,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Download .NET SDK 8.0.403
+      - name: Download .NET SDK
         run: |
           mkdir -p $HOME/dotnet
           wget https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.sh -O dotnet-install.sh
           chmod +x dotnet-install.sh
-          ./dotnet-install.sh --version 8.0.403 --install-dir $HOME/dotnet
+          ./dotnet-install.sh --version ${{ inputs.dotnet-version }} --install-dir $HOME/dotnet
       
       - name: Set up .NET
         run: |
