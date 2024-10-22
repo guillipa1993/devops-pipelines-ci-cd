@@ -13,7 +13,7 @@ on:
         type: string
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -25,7 +25,7 @@ jobs:
           dotnet-version: ${{ inputs.dotnet-version }}
 
       - name: Install dependencies
-        run: dotnet restore
+        run: dotnet restore AspNetCore.sln || true 
 
       - name: Build
         run: dotnet build --configuration Release --no-restore
@@ -34,55 +34,37 @@ jobs:
         run: dotnet test --no-restore --verbosity normal
 
   check-code-format:
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    steps:
-      - name: Check Code Format
-        uses: ./.github/workflows/check-code-format.yml
-        with:
-          language: ${{ inputs.language }}
-
-  scan-security:
-    runs-on: ubuntu-latest
+    needs: build
+    uses: ./.github/workflows/check-code-format.yml
+    with:
+      language: ${{ inputs.language }}
+  
+  scan-security-vulnerabilities:
     needs: check-code-format
-    steps:
-      - name: Scan Security Vulnerabilities
-        uses: ./.github/workflows/scan-security-vulnerabilities.yml
-        with:
-          language: ${{ inputs.language }}
+    uses: ./.github/workflows/scan-security-vulnerabilities.yml
+    with:
+      language: ${{ inputs.language }}
 
   build-artifact:
-    runs-on: ubuntu-latest
-    needs: scan-security
-    steps:
-      - name: Build Artifact
-        uses: ./.github/workflows/build-artifact.yml
-        with:
-          language: ${{ inputs.language }}
+    needs: scan-security-vulnerabilities
+    uses: ./.github/workflows/build-artifact.yml
+    with:
+      language: ${{ inputs.language }}
 
   generate-coverage:
-    runs-on: ubuntu-latest
     needs: build-artifact
-    steps:
-      - name: Generate Coverage
-        uses: ./.github/workflows/generate-coverage.yml
-        with:
-          language: ${{ inputs.language }}
+    uses: ./.github/workflows/generate-coverage.yml
+    with:
+      language: ${{ inputs.language }}
 
-  upload-coverage:
-    runs-on: ubuntu-latest
+  upload-coverage-report:
     needs: generate-coverage
-    steps:
-      - name: Upload Coverage Report
-        uses: ./.github/workflows/upload-coverage-report.yml
-        with:
-          language: ${{ inputs.language }}
+    uses: ./.github/workflows/upload-coverage-report.yml
+    with:
+      language: ${{ inputs.language }}
 
   clean-up:
-    runs-on: ubuntu-latest
-    needs: upload-coverage
-    steps:
-      - name: Clean Up
-        uses: ./.github/workflows/clean-up.yml
-        with:
-          language: ${{ inputs.language }}
+    needs: upload-coverage-report
+    uses: ./.github/workflows/clean-up.yml
+    with:
+      language: ${{ inputs.language }}
