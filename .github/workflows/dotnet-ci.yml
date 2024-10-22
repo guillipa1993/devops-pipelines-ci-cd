@@ -13,7 +13,7 @@ on:
         type: string
 
 jobs:
-  ci-pipeline:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: |
           find . -name "*.csproj" | xargs -I {} dotnet restore {} --ignore-failed-sources || true
-
+        
       - name: Build
         run: |
           find . -name "*.csproj" | xargs -I {} dotnet build {} --configuration Release --no-restore --ignore-failed-sources || true
@@ -39,39 +39,39 @@ jobs:
         run: |
           find . -name "*.csproj" | xargs -I {} dotnet test {} --no-restore --verbosity normal --ignore-failed-sources || true
 
-      - name: Check Code Format
-        if: always()
-        uses: ./.github/workflows/check-code-format.yml
-        with:
-          dotnet-version: ${{ inputs.dotnet-version }}
-          language: ${{ inputs.language }}
+  check-code-format:
+    needs: build
+    uses: ./.github/workflows/check-code-format.yml
+    with:
+      dotnet-version: ${{ inputs.dotnet-version }}
+      language: ${{ inputs.language }}
 
-      - name: Scan Security Vulnerabilities
-        if: always()
-        uses: ./.github/workflows/scan-security-vulnerabilities.yml
-        with:
-          language: ${{ inputs.language }}
+  scan-security-vulnerabilities:
+    needs: check-code-format
+    uses: ./.github/workflows/scan-security-vulnerabilities.yml
+    with:
+      language: ${{ inputs.language }}
 
-      - name: Build Artifact
-        if: always()
-        uses: ./.github/workflows/build-artifact.yml
-        with:
-          language: ${{ inputs.language }}
+  build-artifact:
+    needs: scan-security-vulnerabilities
+    uses: ./.github/workflows/build-artifact.yml
+    with:
+      language: ${{ inputs.language }}
 
-      - name: Generate Coverage
-        if: always()
-        uses: ./.github/workflows/generate-coverage.yml
-        with:
-          language: ${{ inputs.language }}
+  generate-coverage:
+    needs: build-artifact
+    uses: ./.github/workflows/generate-coverage.yml
+    with:
+      language: ${{ inputs.language }}
 
-      - name: Upload Coverage Report
-        if: always()
-        uses: ./.github/workflows/upload-coverage-report.yml
-        with:
-          language: ${{ inputs.language }}
+  upload-coverage-report:
+    needs: generate-coverage
+    uses: ./.github/workflows/upload-coverage-report.yml
+    with:
+      language: ${{ inputs.language }}
 
-      - name: Clean Up
-        if: always()
-        uses: ./.github/workflows/clean-up.yml
-        with:
-          language: ${{ inputs.language }}
+  clean-up:
+    needs: upload-coverage-report
+    uses: ./.github/workflows/clean-up.yml
+    with:
+      language: ${{ inputs.language }}
