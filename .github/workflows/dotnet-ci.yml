@@ -26,4 +26,29 @@ jobs:
   check-code-format:
     uses: ./.github/workflows/check-code-format.yml
     with:
-      language: 'dotnet'
+      language: ${{ inputs.language }}
+  
+  scan-security-vulnerabilities:
+    uses: ./.github/workflows/scan-security-vulnerabilities.yml
+    with:
+      language: ${{ inputs.language }}
+
+  build-artifact:
+    uses: ./.github/workflows/build-artifact.yml
+    with:
+      language: ${{ inputs.language }}
+
+  generate-coverage:
+    uses: ./.github/workflows/generate-coverage.yml
+    with:
+      language: ${{ inputs.language }}
+
+  upload-coverage-report:
+    uses: ./.github/workflows/upload-coverage-report.yml
+    with:
+      language: ${{ inputs.language }}
+
+  clean-up:
+    uses: ./.github/workflows/clean-up.yml
+    with:
+      language: ${{ inputs.language }}
