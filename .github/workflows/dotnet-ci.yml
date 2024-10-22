@@ -24,6 +24,6 @@ jobs:
         run: dotnet restore
 
   check-code-format:
-    uses: ./.github/workflows/shared-methods/check-code-format.yml
+    uses: ./.github/workflows/check-code-format.yml
     with:
       language: 'dotnet'
