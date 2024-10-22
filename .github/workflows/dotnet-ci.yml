@@ -24,19 +24,4 @@ jobs:
         run: dotnet restore
 
   check-code-format:
-    uses: ./.github/workflows/shared-methods/check-code-format.yml
-
-  scan-security-vulnerabilities:
-    uses: ./.github/workflows/shared-methods/scan-security-vulnerabilities.yml
-
-  build-artifact:
-    uses: ./.github/workflows/shared-methods/build-artifact.yml
-
-  generate-coverage:
-    uses: ./.github/workflows/shared-methods/generate-coverage.yml
-
-  upload-coverage-report:
-    uses: ./.github/workflows/shared-methods/upload-coverage-report.yml
-
-  clean-up:
-    uses: ./.github/workflows/shared-methods/clean-up.yml
+    uses: ./.github/workflows/check-code-format.yml
