@@ -1,0 +1,22 @@
+name: "Upload Coverage Report"
+
+on:
+  workflow_call:
+    inputs:
+      language:
+        description: 'The programming language for uploading the coverage report'
+        required: true
+        type: string
+
+jobs:
+  upload-coverage-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Upload Coverage Report
+        uses: codecov/codecov-action@v2
+        with:
+          file: ${{ inputs.language == 'go' && 'coverage.out' || inputs.language == 'node' && './coverage/lcov.info' || inputs.language == 'python' && './coverage.xml' || inputs.language == 'java' && './target/site/jacoco/jacoco.xml' || inputs.language == 'dotnet' && './TestResults/opencover.xml' }}
+          flags: ${{ inputs.language }}

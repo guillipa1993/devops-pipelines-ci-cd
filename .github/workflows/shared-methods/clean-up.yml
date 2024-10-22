@@ -1,0 +1,30 @@
+name: "Clean Up"
+
+on:
+  workflow_call:
+    inputs:
+      language:
+        description: 'The programming language for the clean-up process'
+        required: true
+        type: string
+
+jobs:
+  clean-up:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Clean Up Build Artifacts
+        run: |
+          if [ "${{ inputs.language }}" == "go" ]; then
+            rm -rf ./bin ./build
+          elif [ "${{ inputs.language }}" == "node" ]; then
+            rm -rf ./dist ./build
+          elif [ "${{ inputs.language }}" == "python" ]; then
+            rm -rf ./dist ./build
+          elif [ "${{ inputs.language }}" == "java" ]; then
+            ./mvnw clean
+          elif [ "${{ inputs.language }}" == "dotnet" ]; then
+            rm -rf ./publish ./TestResults
+          fi

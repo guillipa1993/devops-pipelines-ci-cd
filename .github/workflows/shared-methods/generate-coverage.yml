@@ -1,0 +1,30 @@
+name: "Generate Coverage Report"
+
+on:
+  workflow_call:
+    inputs:
+      language:
+        description: 'The programming language for generating the coverage report'
+        required: true
+        type: string
+
+jobs:
+  generate-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Generate Coverage Report
+        run: |
+          if [ "${{ inputs.language }}" == "go" ]; then
+            go test -coverprofile=coverage.out ./...
+          elif [ "${{ inputs.language }}" == "node" ]; then
+            npm run coverage
+          elif [ "${{ inputs.language }}" == "python" ]; then
+            pytest --cov=.
+          elif [ "${{ inputs.language }}" == "java" ]; then
+            ./mvnw jacoco:report
+          elif [ "${{ inputs.language }}" == "dotnet" ]; then
+            dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
+          fi

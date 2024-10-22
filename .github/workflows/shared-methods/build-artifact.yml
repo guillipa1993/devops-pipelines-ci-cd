@@ -1,0 +1,30 @@
+name: "Build Artifact"
+
+on:
+  workflow_call:
+    inputs:
+      language:
+        description: 'The programming language for building the artifact'
+        required: true
+        type: string
+
+jobs:
+  build-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Build Artifact
+        run: |
+          if [ "${{ inputs.language }}" == "go" ]; then
+            go build -o output/app
+          elif [ "${{ inputs.language }}" == "node" ]; then
+            npm run build
+          elif [ "${{ inputs.language }}" == "python" ]; then
+            python setup.py bdist_wheel
+          elif [ "${{ inputs.language }}" == "java" ]; then
+            ./mvnw package
+          elif [ "${{ inputs.language }}" == "dotnet" ]; then
+            dotnet publish -c Release -o ./publish
+          fi

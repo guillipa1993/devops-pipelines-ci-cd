@@ -1,0 +1,30 @@
+name: "Check Code Format"
+
+on:
+  workflow_call:
+    inputs:
+      language:
+        description: 'The programming language for the code format check'
+        required: true
+        type: string
+
+jobs:
+  check-code-format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Run Code Formatter
+        run: |
+          if [ "${{ inputs.language }}" == "go" ]; then
+            gofmt -l .
+          elif [ "${{ inputs.language }}" == "node" ]; then
+            npx prettier --check .
+          elif [ "${{ inputs.language }}" == "python" ]; then
+            black --check .
+          elif [ "${{ inputs.language }}" == "java" ]; then
+            ./mvnw formatter:validate
+          elif [ "${{ inputs.language }}" == "dotnet" ]; then
+            dotnet format
+          fi

@@ -14,3 +14,29 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+
+      - name: Set up .NET Core
+        uses: actions/setup-dotnet@v2
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Install dependencies
+        run: dotnet restore
+
+  check-code-format:
+    uses: ./.github/workflows/shared-methods/check-code-format.yml
+
+  scan-security-vulnerabilities:
+    uses: ./.github/workflows/shared-methods/scan-security-vulnerabilities.yml
+
+  build-artifact:
+    uses: ./.github/workflows/shared-methods/build-artifact.yml
+
+  generate-coverage:
+    uses: ./.github/workflows/shared-methods/generate-coverage.yml
+
+  upload-coverage-report:
+    uses: ./.github/workflows/shared-methods/upload-coverage-report.yml
+
+  clean-up:
+    uses: ./.github/workflows/shared-methods/clean-up.yml
