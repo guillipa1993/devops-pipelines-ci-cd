@@ -21,7 +21,10 @@ jobs:
 
       - name: Download .NET SDK 8.0.403
         run: |
-          mkdir -p $HOME/dotnet && wget -q -O - https://download.visualstudio.microsoft.com/download/pr/8e324d73-40b4-4780-9702-c41a7a1a9f7f/c1d1e71b40f9d38ad330f9b7a1a0cd68/dotnet-sdk-8.0.403-linux-x64.tar.gz | tar zxf - -C $HOME/dotnet
+          mkdir -p $HOME/dotnet
+          wget https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.sh -O dotnet-install.sh
+          chmod +x dotnet-install.sh
+          ./dotnet-install.sh --version 8.0.403 --install-dir $HOME/dotnet
       
       - name: Set up .NET
         run: |
