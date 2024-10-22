@@ -24,12 +24,12 @@ jobs:
         run: dotnet restore
 
   check-code-format:
-    uses: ./.github/workflows/shared-methods.yml#check-code-format
+    uses: ./.github/workflows/reusable/shared-methods.yml#check-code-format
     with:
       language: 'dotnet'
 
   scan-security-vulnerabilities:
-    uses: ./.github/workflows/shared-methods.yml#scan-security-vulnerabilities
+    uses: ./.github/workflows/reusable/shared-methods.yml#scan-security-vulnerabilities
     with:
       language: 'dotnet'
 
@@ -47,16 +47,16 @@ jobs:
           path: ./publish
 
   generate-coverage:
-    uses: ./.github/workflows/shared-methods.yml#generate-coverage
+    uses: ./.github/workflows/reusable/shared-methods.yml#generate-coverage
     with:
       language: 'dotnet'
 
   upload-coverage-report:
-    uses: ./.github/workflows/shared-methods.yml#upload-coverage-report
+    uses: ./.github/workflows/reusable/shared-methods.yml#upload-coverage-report
     with:
       language: 'dotnet'
 
   clean-up:
-    uses: ./.github/workflows/shared-methods.yml#clean-up
+    uses: ./.github/workflows/reusable/shared-methods.yml#clean-up
     with:
       language: 'dotnet'

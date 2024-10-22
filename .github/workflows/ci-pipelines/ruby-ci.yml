@@ -27,4 +27,4 @@ jobs:
         run: bundle exec rspec
 
   notify:
-    uses: ./.github/workflows/shared-methods.yml#send-notification
+    uses: ./.github/workflows/reusable/shared-methods.yml#send-notification
