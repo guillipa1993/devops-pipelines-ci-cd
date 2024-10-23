@@ -43,6 +43,12 @@ jobs:
             echo "Running OWASP Dependency Check for Java"
             ./mvnw org.owasp:dependency-check-maven:check
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
-            echo "Scanning .NET packages for vulnerabilities"
-            dotnet list package --vulnerable
+            version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
+            if [ "$version" -lt 5 ]; then
+              echo "Using 'dotnet list package --outdated' since '--vulnerable' is not available in versions less than .NET 5"
+              dotnet list package --outdated
+            else
+              echo "Scanning .NET packages for vulnerabilities"
+              dotnet list package --vulnerable
+            fi
           fi
