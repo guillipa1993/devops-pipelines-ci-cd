@@ -11,6 +11,10 @@ on:
         description: 'El lenguaje de programación para usar en este pipeline'
         required: true
         type: string
+      project-path:
+        description: 'La ruta del proyecto donde se encuentran los archivos .csproj'
+        required: true
+        type: string
 
 jobs:
   build:
@@ -19,85 +23,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Download .NET SDK
-        run: |
-          mkdir -p $HOME/dotnet
-          wget https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.sh -O dotnet-install.sh
-          chmod +x dotnet-install.sh
-          set +e
-          ./dotnet-install.sh --version ${{ inputs.dotnet-version }} --install-dir $HOME/dotnet
-          if [ $? -ne 0 ]; then
-            echo "Intentando descargar manualmente el SDK."
-            wget -O dotnet-sdk.tar.gz "https://download.visualstudio.microsoft.com/download/pr/202e929a-e985-4eab-a78a-d7159fc204e4/0c85219d441cd3bbffd4fb65b7e36fe5/dotnet-sdk-9.0.100-rc.2.24474.11-linux-x64.tar.gz"
-            if file dotnet-sdk.tar.gz | grep -q 'gzip compressed data'; then
-              tar -xzf dotnet-sdk.tar.gz -C $HOME/dotnet || echo "No se pudo extraer el archivo descargado."
-            else
-              echo "El archivo descargado no es un archivo comprimido válido."
-              echo "La versión especificada de .NET no está disponible. Intentando con la última versión estable."
-              ./dotnet-install.sh --channel STS --install-dir $HOME/dotnet
-            fi
-          fi
-          set -e
-      
       - name: Set up .NET
-        run: |
-          echo "DOTNET_ROOT=$HOME/dotnet" >> $GITHUB_ENV
-          echo "$HOME/dotnet" >> $GITHUB_PATH
-      
-      - name: Set up .NET Core
-        if: false  
         uses: actions/setup-dotnet@v2
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
 
-      - name: Install System Dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev
-
       - name: Install dependencies
-        run: |
-          find . -name "*.csproj" | xargs -I {} dotnet restore {} --ignore-failed-sources || true
-        
+        run: dotnet restore ${{ inputs.project-path }}
+
       - name: Build
-        run: |
-          find . -name "*.csproj" | xargs -I {} dotnet build {} --configuration Release --no-restore --ignore-failed-sources || true
+        run: dotnet build ${{ inputs.project-path }} --configuration Release
 
       - name: Run Tests
-        run: |
-          find . -name "*.csproj" | xargs -I {} dotnet test {} --no-restore --verbosity normal --ignore-failed-sources || true
-
-  check-code-format:
-    needs: build
-    uses: ./.github/workflows/check-code-format.yml
-    with:
-      dotnet-version: ${{ inputs.dotnet-version }}
-      language: ${{ inputs.language }}
-
-  scan-security-vulnerabilities:
-    needs: check-code-format
-    uses: ./.github/workflows/scan-security-vulnerabilities.yml
-    with:
-      language: ${{ inputs.language }}
-
-  build-artifact:
-    needs: scan-security-vulnerabilities
-    uses: ./.github/workflows/build-artifact.yml
-    with:
-      language: ${{ inputs.language }}
-
-  generate-coverage:
-    needs: build-artifact
-    uses: ./.github/workflows/generate-coverage.yml
-    with:
-      language: ${{ inputs.language }}
-
-  upload-coverage-report:
-    needs: generate-coverage
-    uses: ./.github/workflows/upload-coverage-report.yml
-    with:
-      language: ${{ inputs.language }}
-
-  clean-up:
-    needs: upload-coverage-report
-    uses: ./.github/workflows/clean-up.yml
-    with:
-      language: ${{ inputs.language }}
+        run: dotnet test ${{ inputs.project-path }} --verbosity normal
