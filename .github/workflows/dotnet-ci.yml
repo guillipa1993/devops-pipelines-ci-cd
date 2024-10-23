@@ -68,14 +68,6 @@ jobs:
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
 
-      - name: Cache .NET packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-dotnet-${{ inputs.dotnet-version }}-${{ hashFiles('**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-dotnet-${{ inputs.dotnet-version }}-
-
       - name: Install additional dependencies
         if: ${{ inputs.additional-install-commands }}
         run: ${{ inputs.additional-install-commands }}
