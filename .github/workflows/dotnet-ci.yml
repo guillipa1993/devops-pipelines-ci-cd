@@ -94,28 +94,43 @@ jobs:
 
       - name: Check Code Format
         if: ${{ inputs.run-check-code-format }}
-        uses: ./.github/workflows/check-code-format.yml
+        uses: ./github/workflows/check-code-format.yml
+        with:
+          language: ${{ inputs.language }}
+          dotnet-version: ${{ inputs.dotnet-version }}
 
       - name: Code Analysis
         if: ${{ inputs.run-code-analysis }}
-        uses: ./.github/workflows/scan-security-vulnerabilities.yml
+        uses: ./github/workflows/scan-security-vulnerabilities.yml
+        with:
+          language: ${{ inputs.language }}
 
       - name: Run Tests
         if: ${{ inputs.run-tests }}
-        uses: ./.github/workflows/generate-coverage.yml
+        uses: ./github/workflows/generate-coverage.yml
+        with:
+          language: ${{ inputs.language }}
 
       - name: Upload Coverage Report
         if: ${{ inputs.run-upload-coverage }}
-        uses: ./.github/workflows/upload-coverage-report.yml
+        uses: ./github/workflows/upload-coverage-report.yml
+        with:
+          language: ${{ inputs.language }}
 
       - name: Build Artifact
         if: ${{ inputs.run-build-artifact }}
-        uses: ./.github/workflows/build-artifact.yml
+        uses: ./github/workflows/build-artifact.yml
+        with:
+          language: ${{ inputs.language }}
 
       - name: YAML Lint
         if: ${{ inputs.run-yaml-lint }}
-        uses: ./.github/workflows/yaml-lint.yml
+        uses: ./github/workflows/yaml-lint.yml
+        with:
+          language: ${{ inputs.language }}
 
       - name: Clean Up
         if: ${{ inputs.run-clean-up }}
-        uses: ./.github/workflows/clean-up.yml
+        uses: ./github/workflows/clean-up.yml
+        with:
+          language: ${{ inputs.language }}
