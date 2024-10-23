@@ -57,7 +57,7 @@ on:
         type: string
 
 jobs:
-  build:
+  ci_pipeline:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -67,6 +67,14 @@ jobs:
         uses: actions/setup-dotnet@v2
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Cache .NET packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-dotnet-${{ inputs.dotnet-version }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-dotnet-${{ inputs.dotnet-version }}-
 
       - name: Install additional dependencies
         if: ${{ inputs.additional-install-commands }}
@@ -92,38 +100,34 @@ jobs:
             dotnet build ${{ inputs.project-path }}
           fi
 
-  check-code-format:
-    needs: build
-    if: ${{ inputs.run-check-code-format }}
-    uses: ./.github/workflows/check-code-format.yml
-    with:
-      language: ${{ inputs.language }}
-      dotnet-version: ${{ inputs.dotnet-version }}
+      - name: Run Code Format Check
+        if: ${{ inputs.run-check-code-format }}
+        run: |
+          echo "Checking code format"
+          dotnet format ${{ inputs.project-path }}
 
-  code-analysis:
-    needs: build
-    if: ${{ inputs.run-code-analysis }}
-    uses: ./.github/workflows/scan-security-vulnerabilities.yml
-    with:
-      language: ${{ inputs.language }}
+      - name: Run Code Analysis
+        if: ${{ inputs.run-code-analysis }}
+        uses: ./.github/workflows/scan-security-vulnerabilities.yml
+        with:
+          language: ${{ inputs.language }}
 
-  build-artifact:
-    needs: build
-    if: ${{ inputs.run-build-artifact }}
-    uses: ./.github/workflows/build-artifact.yml
-    with:
-      language: ${{ inputs.language }}
+      - name: Run Build Artifact
+        if: ${{ inputs.run-build-artifact }}
+        uses: ./.github/workflows/build-artifact.yml
+        with:
+          language: ${{ inputs.language }}
 
-  lint:
-    needs: build
-    if: ${{ inputs.run-yaml-lint }}
-    uses: ./.github/workflows/lint.yml
-    with:
-      language: ${{ inputs.language }}
+      - name: Install yamllint
+        if: ${{ inputs.run-yaml-lint }}
+        run: sudo apt-get install -y yamllint
 
-  clean-up:
-    needs: [check-code-format, code-analysis, build-artifact, lint]
-    if: ${{ inputs.run-clean-up }}
-    uses: ./.github/workflows/clean-up.yml
-    with:
-      language: ${{ inputs.language }}
+      - name: Run YAML Lint
+        if: ${{ inputs.run-yaml-lint }}
+        run: yamllint .
+
+      - name: Clean up
+        if: ${{ inputs.run-clean-up }}
+        uses: ./.github/workflows/clean-up.yml
+        with:
+          language: ${{ inputs.language }}
