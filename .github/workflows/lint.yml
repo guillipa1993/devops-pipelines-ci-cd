@@ -13,17 +13,8 @@ on:
         type: string
 
 jobs:
-  # Job para instalar Super-Linter
-  install-super-linter:
-    runs-on: ubuntu-latest
-    steps:
-      # Realizar el checkout del código
-      - name: Checkout code
-        uses: actions/checkout@v2
-
-  # Job para ejecutar Super-Linter solo para lenguajes soportados
+ # Job para ejecutar Super-Linter solo para lenguajes soportados
   run-linter:
-    needs: install-super-linter
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
