@@ -91,8 +91,9 @@ jobs:
           else
             dotnet build ${{ inputs.project-path }}
           fi
-          
+
   check-code-format:
+    needs: build
     if: ${{ inputs.run-check-code-format && (fromJson(inputs.dotnet-version) >= 3) }}
     uses: ./.github/workflows/check-code-format.yml
     with:
@@ -100,24 +101,28 @@ jobs:
       dotnet-version: ${{ inputs.dotnet-version }}
 
   code-analysis:
+    needs: build
     if: ${{ inputs.run-code-analysis }}
     uses: ./.github/workflows/scan-security-vulnerabilities.yml
     with:
       language: ${{ inputs.language }}
 
   build-artifact:
+    needs: build
     if: ${{ inputs.run-build-artifact }}
     uses: ./.github/workflows/build-artifact.yml
     with:
       language: ${{ inputs.language }}
 
   yaml-lint:
+    needs: build
     if: ${{ inputs.run-yaml-lint }}
     uses: ./.github/workflows/yaml-lint.yml
     with:
       language: ${{ inputs.language }}
 
   clean-up:
+    needs: [check-code-format, code-analysis, build-artifact, yaml-lint]
     if: ${{ inputs.run-clean-up }}
     uses: ./.github/workflows/clean-up.yml
     with:

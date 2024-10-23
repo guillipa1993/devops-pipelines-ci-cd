@@ -42,5 +42,10 @@ jobs:
           elif [ "${{ inputs.language }}" == "java" ]; then
             ./mvnw formatter:validate
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
-            dotnet format
+            version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
+            if [ "$version" -lt 3 ]; then
+              echo "dotnet format is not available in versions less than 3. Your version: ${{ inputs.dotnet-version }}"
+            else
+              dotnet format
+            fi
           fi

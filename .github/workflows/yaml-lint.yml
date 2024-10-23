@@ -4,12 +4,8 @@ on:
   workflow_call:
     inputs:
       language:
-        description: 'The programming language for the code format check'
+        description: 'El lenguaje de programación para el linter'
         required: true
-        type: string
-      dotnet-version:
-        description: 'La versión de .NET para usar en este pipeline'
-        required: false
         type: string
 
 jobs:
@@ -21,6 +17,41 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Validate YAML
+        if: ${{ inputs.language == 'yaml' }}
         uses: ibiqlik/action-yaml-lint@v3
         with:
           config_file: .yamllint
+
+      - name: Validate Python
+        if: ${{ inputs.language == 'python' }}
+        run: |
+          pip install yamllint
+          yamllint .
+
+      - name: Validate Node.js
+        if: ${{ inputs.language == 'node' }}
+        run: |
+          npm install -g yaml-lint
+          yaml-lint .
+
+      - name: Validate Go
+        if: ${{ inputs.language == 'go' }}
+        run: |
+          go get -u github.com/golangci/golangci-lint/cmd/golangci-lint
+          golangci-lint run
+
+      - name: Validate Java
+        if: ${{ inputs.language == 'java' }}
+        run: |
+          # Assuming YAML files are present in resources
+          find src/main/resources -name '*.yaml' | xargs yamllint
+
+      - name: Set up .NET
+        if: ${{ inputs.language == 'dotnet' }}
+        uses: actions/setup-dotnet@v2
+
+      - name: Validate .NET
+        if: ${{ inputs.language == 'dotnet' }}
+        run: |
+          dotnet tool install --global dotnet-format
+          dotnet format --check
