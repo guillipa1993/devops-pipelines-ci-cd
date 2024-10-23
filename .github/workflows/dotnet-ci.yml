@@ -92,45 +92,45 @@ jobs:
             dotnet build ${{ inputs.project-path }}
           fi
 
-      - name: Check Code Format
-        if: ${{ inputs.run-check-code-format }}
-        uses: ./github/workflows/check-code-format.yml
-        with:
-          language: ${{ inputs.language }}
-          dotnet-version: ${{ inputs.dotnet-version }}
-
+          - name: Check Code Format
+          if: ${{ inputs.run-check-code-format }}
+          uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/check-code-format.yml@main
+          with:
+            language: ${{ inputs.language }}
+            dotnet-version: ${{ inputs.dotnet-version }}
+  
       - name: Code Analysis
         if: ${{ inputs.run-code-analysis }}
-        uses: ./github/workflows/scan-security-vulnerabilities.yml
+        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/scan-security-vulnerabilities.yml@main
         with:
           language: ${{ inputs.language }}
 
       - name: Run Tests
         if: ${{ inputs.run-tests }}
-        uses: ./github/workflows/generate-coverage.yml
+        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/generate-coverage.yml@main
         with:
           language: ${{ inputs.language }}
 
       - name: Upload Coverage Report
         if: ${{ inputs.run-upload-coverage }}
-        uses: ./github/workflows/upload-coverage-report.yml
+        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/upload-coverage-report.yml@main
         with:
           language: ${{ inputs.language }}
 
       - name: Build Artifact
         if: ${{ inputs.run-build-artifact }}
-        uses: ./github/workflows/build-artifact.yml
+        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/build-artifact.yml@main
         with:
           language: ${{ inputs.language }}
 
       - name: YAML Lint
         if: ${{ inputs.run-yaml-lint }}
-        uses: ./github/workflows/yaml-lint.yml
+        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/yaml-lint.yml@main
         with:
           language: ${{ inputs.language }}
 
       - name: Clean Up
         if: ${{ inputs.run-clean-up }}
-        uses: ./github/workflows/clean-up.yml
+        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/clean-up.yml@main
         with:
           language: ${{ inputs.language }}
