@@ -91,34 +91,3 @@ jobs:
           else
             dotnet build ${{ inputs.project-path }}
           fi
-
-  check-code-format:
-    if: ${{ inputs.run-check-code-format }}
-    uses: ./check-code-format.yml
-    with:
-      language: ${{ inputs.language }}
-      dotnet-version: ${{ inputs.dotnet-version }}
-
-  code-analysis:
-    if: ${{ inputs.run-code-analysis }}
-    uses: ./scan-security-vulnerabilities.yml
-    with:
-      language: ${{ inputs.language }}
-
-  build-artifact:
-    if: ${{ inputs.run-build-artifact }}
-    uses: ./build-artifact.yml
-    with:
-      language: ${{ inputs.language }}
-
-  yaml-lint:
-    if: ${{ inputs.run-yaml-lint }}
-    uses: ./yaml-lint.yml
-    with:
-      language: ${{ inputs.language }}
-
-  clean-up:
-    if: ${{ inputs.run-clean-up }}
-    uses: ./clean-up.yml
-    with:
-      language: ${{ inputs.language }}
