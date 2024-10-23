@@ -1,57 +1,51 @@
-name: "Linter Pipeline"
+name: "Lint Code"
 
 on:
   workflow_call:
     inputs:
       language:
-        description: 'El lenguaje de programación para el linter'
+        description: 'The programming language for linting'
         required: true
+        type: string
+      dotnet-version:
+        description: 'La versión de .NET para usar en este pipeline'
+        required: false
         type: string
 
 jobs:
-  lint:
+  # Job para instalar Super-Linter
+  install-super-linter:
     runs-on: ubuntu-latest
+    steps:
+      # Realizar el checkout del código
+      - name: Checkout code
+        uses: actions/checkout@v2
 
+  # Job para ejecutar Super-Linter solo para lenguajes soportados
+  run-linter:
+    needs: install-super-linter
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Validate YAML
-        if: ${{ inputs.language == 'yaml' }}
-        uses: ibiqlik/action-yaml-lint@v3
+      # Ejecutar Super-Linter solo si el lenguaje es compatible
+      - name: Run Super-Linter
+        if: ${{ inputs.language == 'yaml' || inputs.language == 'python' || inputs.language == 'node' || inputs.language == 'markdown' }}
+        uses: github/super-linter@v4
         with:
-          config_file: .yamllint
+          VALIDATE_ALL_CODEBASE: true
+          LINTER_RULES_PATH: .github/linters
 
-      - name: Validate Python
-        if: ${{ inputs.language == 'python' }}
-        run: |
-          pip install yamllint
-          yamllint .
-
-      - name: Validate Node.js
-        if: ${{ inputs.language == 'node' }}
-        run: |
-          npm install -g yaml-lint
-          yaml-lint .
-
-      - name: Validate Go
-        if: ${{ inputs.language == 'go' }}
-        run: |
-          go get -u github.com/golangci/golangci-lint/cmd/golangci-lint
-          golangci-lint run
-
-      - name: Validate Java
-        if: ${{ inputs.language == 'java' }}
-        run: |
-          # Assuming YAML files are present in resources
-          find src/main/resources -name '*.yaml' | xargs yamllint
-
-      - name: Set up .NET
-        if: ${{ inputs.language == 'dotnet' }}
-        uses: actions/setup-dotnet@v2
-
-      - name: Validate .NET
+      # Ejecutar el linter de .NET si es necesario
+      - name: Run .NET Linter
         if: ${{ inputs.language == 'dotnet' }}
         run: |
-          dotnet tool install --global dotnet-format
-          dotnet format --check
+          version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
+          if [ "$version" -lt 3 ]; then
+            echo "Skipping dotnet format: version is less than 3. Using 'dotnet build' instead."
+            dotnet build --nologo --no-restore --verbosity:minimal
+          else
+            echo "Running .NET linter (dotnet format)"
+            dotnet format --verify-no-changes
+          fi
