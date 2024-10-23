@@ -92,12 +92,12 @@ jobs:
             dotnet build ${{ inputs.project-path }}
           fi
 
-          - name: Check Code Format
-          if: ${{ inputs.run-check-code-format }}
-          uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/check-code-format.yml@main
-          with:
-            language: ${{ inputs.language }}
-            dotnet-version: ${{ inputs.dotnet-version }}
+      - name: Check Code Format
+        if: ${{ inputs.run-check-code-format }}
+        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/check-code-format.yml@main
+        with:
+          language: ${{ inputs.language }}
+          dotnet-version: ${{ inputs.dotnet-version }}
   
       - name: Code Analysis
         if: ${{ inputs.run-code-analysis }}
