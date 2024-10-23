@@ -83,9 +83,14 @@ jobs:
             echo "Setting $VAR"
             echo "$VAR" >> $GITHUB_ENV
           done
-
+      
       - name: Build
-        run: dotnet build ${{ inputs.project-path }} --configuration ${{ inputs.build-configuration }}
+        run: |
+          if [ "${{ inputs.build-configuration }}" != "" ]; then
+            dotnet build ${{ inputs.project-path }} --configuration ${{ inputs.build-configuration }}
+          else
+            dotnet build ${{ inputs.project-path }}
+          fi
 
       - name: Check Code Format
         if: ${{ inputs.run-check-code-format }}
