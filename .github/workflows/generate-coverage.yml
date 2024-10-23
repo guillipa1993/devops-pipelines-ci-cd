@@ -7,24 +7,53 @@ on:
         description: 'The programming language for generating the coverage report'
         required: true
         type: string
+      dotnet-version:
+        description: 'La versión de .NET para usar en este pipeline'
+        required: false
+        type: string
+      node-version:
+        description: 'La versión de Node.js para usar en este pipeline'
+        required: false
+        type: string
 
 jobs:
   generate-coverage:
     runs-on: ubuntu-latest
     steps:
+      # Realizar el checkout del código
       - name: Checkout code
         uses: actions/checkout@v2
 
+      # Instalar .NET si el lenguaje es 'dotnet' y hay una versión especificada
+      - name: Set up .NET Core
+        if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
+        uses: actions/setup-dotnet@v2
+        with:
+          dotnet-version: "${{ inputs.dotnet-version }}"
+
+      # Instalar Node.js si el lenguaje es 'node' y hay una versión especificada
+      - name: Set up Node.js
+        if: ${{ inputs.language == 'node' && inputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: "${{ inputs.node-version }}" # Especifica la versión de Node.js si es necesario
+
+      # Generar el reporte de cobertura basado en el lenguaje
       - name: Generate Coverage Report
         run: |
           if [ "${{ inputs.language }}" == "go" ]; then
+            echo "Generating coverage report for Go"
             go test -coverprofile=coverage.out ./...
           elif [ "${{ inputs.language }}" == "node" ]; then
+            echo "Generating coverage report for Node.js"
             npm run coverage
           elif [ "${{ inputs.language }}" == "python" ]; then
+            echo "Generating coverage report for Python"
             pytest --cov=.
           elif [ "${{ inputs.language }}" == "java" ]; then
+            echo "Generating coverage report for Java"
             ./mvnw jacoco:report
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
+            echo "Generating coverage report for .NET"
             dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
           fi

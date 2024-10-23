@@ -7,24 +7,42 @@ on:
         description: 'The programming language for the clean-up process'
         required: true
         type: string
+      dotnet-version:
+        description: 'La versión de .NET para usar en este pipeline'
+        required: false
+        type: string
 
 jobs:
   clean-up:
     runs-on: ubuntu-latest
     steps:
+      # Realizar el checkout del código
       - name: Checkout code
         uses: actions/checkout@v2
 
+      # Instalar .NET si el lenguaje es 'dotnet' y hay una versión especificada
+      - name: Set up .NET Core
+        if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
+        uses: actions/setup-dotnet@v2
+        with:
+          dotnet-version: "${{ inputs.dotnet-version }}"
+
+      # Proceso de limpieza basado en el lenguaje
       - name: Clean Up Build Artifacts
         run: |
           if [ "${{ inputs.language }}" == "go" ]; then
+            echo "Cleaning up Go build artifacts"
             rm -rf ./bin ./build
           elif [ "${{ inputs.language }}" == "node" ]; then
+            echo "Cleaning up Node.js build artifacts"
             rm -rf ./dist ./build
           elif [ "${{ inputs.language }}" == "python" ]; then
+            echo "Cleaning up Python build artifacts"
             rm -rf ./dist ./build
           elif [ "${{ inputs.language }}" == "java" ]; then
+            echo "Cleaning up Java build artifacts"
             ./mvnw clean
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
+            echo "Cleaning up .NET build artifacts"
             rm -rf ./publish ./TestResults
           fi

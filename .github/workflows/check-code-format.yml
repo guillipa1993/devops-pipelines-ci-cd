@@ -11,24 +11,34 @@ on:
         description: 'La versión de .NET para usar en este pipeline'
         required: false
         type: string
+      node-version:
+        description: 'La versión de Node.js para usar en este pipeline'
+        required: false
+        type: string
 
 jobs:
   check-code-format:
     runs-on: ubuntu-latest
     steps:
+      # Realizar el checkout del código
       - name: Checkout code
         uses: actions/checkout@v2
 
+      # Instalar .NET si el lenguaje es 'dotnet' y hay una versión especificada
       - name: Set up .NET Core
         if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
         uses: actions/setup-dotnet@v2
         with:
           dotnet-version: "${{ inputs.dotnet-version }}"
 
+      # Instalar Node.js si el lenguaje es 'node' y hay una versión especificada
       - name: Set up Node.js
-        if: ${{ inputs.language == 'node' }}
+        if: ${{ inputs.language == 'node' && inputs.node-version }}
         uses: actions/setup-node@v4
+        with:
+          node-version: "${{ inputs.node-version }}" # Especifica la versión de Node.js
 
+      # Ejecutar el formateo de código basado en el lenguaje
       - name: Run Code Formatter
         run: |
           if [ "${{ inputs.language }}" == "go" ]; then

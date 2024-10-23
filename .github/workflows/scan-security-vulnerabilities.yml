@@ -7,24 +7,42 @@ on:
         description: 'The programming language for vulnerability scanning'
         required: true
         type: string
+      dotnet-version:
+        description: 'La versión de .NET para usar en este pipeline'
+        required: false
+        type: string
 
 jobs:
   scan-security-vulnerabilities:
     runs-on: ubuntu-latest
     steps:
+      # Realizar el checkout del código
       - name: Checkout code
         uses: actions/checkout@v2
 
+      # Instalar .NET si el lenguaje es 'dotnet' y hay una versión especificada
+      - name: Set up .NET Core
+        if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
+        uses: actions/setup-dotnet@v2
+        with:
+          dotnet-version: "${{ inputs.dotnet-version }}"
+
+      # Escanear vulnerabilidades basado en el lenguaje
       - name: Scan for Vulnerabilities
         run: |
           if [ "${{ inputs.language }}" == "go" ]; then
+            echo "Scanning Go modules for vulnerabilities"
             go list -m all | nancy sleuth
           elif [ "${{ inputs.language }}" == "node" ]; then
+            echo "Running npm audit for Node.js"
             npm audit --production
           elif [ "${{ inputs.language }}" == "python" ]; then
+            echo "Running safety check for Python"
             safety check
           elif [ "${{ inputs.language }}" == "java" ]; then
+            echo "Running OWASP Dependency Check for Java"
             ./mvnw org.owasp:dependency-check-maven:check
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
+            echo "Scanning .NET packages for vulnerabilities"
             dotnet list package --vulnerable
           fi

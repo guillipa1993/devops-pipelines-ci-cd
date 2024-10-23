@@ -43,8 +43,8 @@ on:
         description: 'Subir el reporte de cobertura'
         required: true
         type: boolean
-      run-yaml-lint:
-        description: 'Ejecutar YAML Lint'
+      run-lint:
+        description: 'Ejecutar Lint'
         required: true
         type: boolean
       run-clean-up:
@@ -57,6 +57,7 @@ on:
         type: string
 
 jobs:
+  # Job principal para construir el proyecto
   ci_pipeline:
     runs-on: ubuntu-latest
     steps:
@@ -92,35 +93,46 @@ jobs:
             dotnet build ${{ inputs.project-path }}
           fi
 
-      - name: Run Code Format Check
-        if: ${{ inputs.run-check-code-format }}
-        uses: ./.github/workflows/check-code-format.yml
-        with:
-          language: ${{ inputs.language }}
-          dotnet-version: ${{ inputs.dotnet-version }}
+  # Job separado para formatear código
+  check-code-format:
+    needs: ci_pipeline
+    if: ${{ inputs.run-check-code-format }}
+    uses: ./.github/workflows/check-code-format.yml
+    with:
+      language: ${{ inputs.language }}
+      dotnet-version: ${{ inputs.dotnet-version }}
 
-      - name: Run Code Analysis
-        if: ${{ inputs.run-code-analysis }}
-        uses: ./.github/workflows/scan-security-vulnerabilities.yml
-        with:
-          language: ${{ inputs.language }}
+  # Job separado para análisis de código
+  code-analysis:
+    needs: ci_pipeline
+    if: ${{ inputs.run-code-analysis }}
+    uses: ./.github/workflows/scan-security-vulnerabilities.yml
+    with:
+      language: ${{ inputs.language }}
+      dotnet-version: ${{ inputs.dotnet-version }} 
 
-      - name: Run Build Artifact
-        if: ${{ inputs.run-build-artifact }}
-        uses: ./.github/workflows/build-artifact.yml
-        with:
-          language: ${{ inputs.language }}
+  # Job separado para generar artefacto de build
+  build-artifact:
+    needs: ci_pipeline
+    if: ${{ inputs.run-build-artifact }}
+    uses: ./.github/workflows/build-artifact.yml
+    with:
+      language: ${{ inputs.language }}
+      dotnet-version: ${{ inputs.dotnet-version }} 
 
-      - name: Install yamllint
-        if: ${{ inputs.run-yaml-lint }}
-        run: sudo apt-get install -y yamllint
+  # Job separado para ejecutar YAML Lint
+  dotnet-lint:
+    needs: ci_pipeline
+    if: ${{ inputs.run-lint }}
+    uses: ./.github/workflows/lint.yml
+    with:
+      language: ${{ inputs.language }}
 
-      - name: Run YAML Lint
-        if: ${{ inputs.run-yaml-lint }}
-        run: yamllint .
-
-      - name: Clean up
-        if: ${{ inputs.run-clean-up }}
-        uses: ./.github/workflows/clean-up.yml
-        with:
-          language: ${{ inputs.language }}
+  # Job separado para la limpieza
+  clean-up:
+    needs: [check-code-format, code-analysis, build-artifact, dotnet-lint]
+    if: ${{ inputs.run-clean-up }}
+    uses: ./.github/workflows/clean-up.yml
+    with:
+      language: ${{ inputs.language }}
+      dotnet-version: ${{ inputs.dotnet-version }} 

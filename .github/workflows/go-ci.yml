@@ -49,4 +49,4 @@ jobs:
         run: go vet ./...
 
   notify:
-    uses: ./.github/workflows/reusable/shared-methods.yml#send-notification
+    uses: ./.github/workflows/shared-methods.yml#send-notification
