@@ -1,4 +1,4 @@
-name: "Go CI Pipeline"
+name: "Go CI/CD Pipeline"
 
 on:
   workflow_call:
@@ -7,9 +7,58 @@ on:
         description: 'La versión de Go para usar en este pipeline'
         required: true
         type: string
+      language:
+        description: 'El lenguaje de programación para usar en este pipeline'
+        required: true
+        type: string
+      project-path:
+        description: 'La ruta del proyecto donde se encuentra el código Go'
+        required: true
+        type: string
+      build-configuration:
+        description: 'Configuración de build (Debug o Release)'
+        required: true
+        type: string
+      additional-install-commands:
+        description: 'Comandos adicionales para instalar dependencias antes de construir'
+        required: false
+        type: string
+      run-tests:
+        description: 'Ejecutar las pruebas del proyecto'
+        required: true
+        type: boolean
+      run-check-code-format:
+        description: 'Ejecutar la verificación del formato del código'
+        required: true
+        type: boolean
+      run-code-analysis:
+        description: 'Ejecutar el análisis de código'
+        required: true
+        type: boolean
+      run-build-artifact:
+        description: 'Generar el artefacto de build'
+        required: true
+        type: boolean
+      run-upload-coverage:
+        description: 'Subir el reporte de cobertura'
+        required: true
+        type: boolean
+      run-lint:
+        description: 'Ejecutar Lint'
+        required: true
+        type: boolean
+      run-clean-up:
+        description: 'Ejecutar limpieza después de la ejecución'
+        required: true
+        type: boolean
+      environment-variables:
+        description: 'Variables de entorno para configurar en el pipeline (formato: "VAR1=value1, VAR2=value2")'
+        required: false
+        type: string
 
 jobs:
-  build:
+  # Job principal para construir el proyecto Go
+  ci_pipeline:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -20,33 +69,66 @@ jobs:
         with:
           go-version: ${{ inputs.go-version }}
 
-      - name: Cache Go modules
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cache/go-build
-            /go/pkg/mod
-          key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ inputs.go-version }}
+      - name: Install additional dependencies
+        if: ${{ inputs.additional-install-commands }}
+        run: ${{ inputs.additional-install-commands }}
 
       - name: Install dependencies
         run: go mod tidy
 
-      - name: Run tests with coverage
-        run: go test -v -coverprofile=coverage.out ./...
+      - name: Set Environment Variables
+        if: ${{ inputs.environment-variables }}
+        run: |
+          IFS=',' read -ra VARS <<< "${{ inputs.environment-variables }}"
+          for VAR in "${VARS[@]}"; do
+            echo "Setting $VAR"
+            echo "$VAR" >> $GITHUB_ENV
+          done
 
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v3
-        with:
-          name: coverage-report
-          path: coverage.out
+      - name: Build
+        run: go build -o output/app
 
-      - name: Display Go version
-        run: go version
+  # Job separado para formatear código
+  check-code-format:
+    needs: ci_pipeline
+    if: ${{ inputs.run-check-code-format }}
+    uses: ./.github/workflows/check-code-format.yml
+    with:
+      language: ${{ inputs.language }}
+      go-version: ${{ inputs.go-version }}
 
-      - name: Run Go linter (optional)
-        run: go vet ./...
+  # Job separado para análisis de código
+  code-analysis:
+    needs: ci_pipeline
+    if: ${{ inputs.run-code-analysis }}
+    uses: ./.github/workflows/scan-security-vulnerabilities.yml
+    with:
+      language: ${{ inputs.language }}
+      go-version: ${{ inputs.go-version }}
 
-  notify:
-    uses: ./.github/workflows/shared-methods.yml#send-notification
+  # Job separado para generar artefacto de build
+  build-artifact:
+    needs: ci_pipeline
+    if: ${{ inputs.run-build-artifact }}
+    uses: ./.github/workflows/build-artifact.yml
+    with:
+      language: ${{ inputs.language }}
+      go-version: ${{ inputs.go-version }}
+
+  # Job separado para ejecutar Lint
+  go-lint:
+    needs: ci_pipeline
+    if: ${{ inputs.run-lint }}
+    uses: ./.github/workflows/lint.yml
+    with:
+      language: ${{ inputs.language }}
+      go-version: ${{ inputs.go-version }}
+
+  # Job separado para la limpieza
+  clean-up:
+    needs: [check-code-format, code-analysis, build-artifact, go-lint]
+    if: ${{ inputs.run-clean-up }}
+    uses: ./.github/workflows/clean-up.yml
+    with:
+      language: ${{ inputs.language }}
+      go-version: ${{ inputs.go-version }}
