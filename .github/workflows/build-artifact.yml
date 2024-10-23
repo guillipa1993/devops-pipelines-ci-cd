@@ -11,6 +11,10 @@ on:
         description: 'La versión de .NET para usar en este pipeline'
         required: false
         type: string
+      go-version:
+        description: 'La versión de go para usar en este pipeline'
+        required: false
+        type: string
 
 jobs:
   build-artifact:
