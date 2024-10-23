@@ -15,6 +15,46 @@ on:
         description: 'La ruta del proyecto donde se encuentran los archivos .csproj'
         required: true
         type: string
+      build-configuration:
+        description: 'La configuración de build (Debug o Release)'
+        required: true
+        type: string
+      additional-install-commands:
+        description: 'Comandos adicionales para instalar dependencias antes de construir'
+        required: false
+        type: string
+      run-tests:
+        description: 'Ejecutar las pruebas del proyecto'
+        required: true
+        type: boolean
+      run-check-code-format:
+        description: 'Ejecutar la verificación del formato del código'
+        required: true
+        type: boolean
+      run-code-analysis:
+        description: 'Ejecutar el análisis de código'
+        required: true
+        type: boolean
+      run-build-artifact:
+        description: 'Generar el artefacto de build'
+        required: true
+        type: boolean
+      run-upload-coverage:
+        description: 'Subir el reporte de cobertura'
+        required: true
+        type: boolean
+      run-yaml-lint:
+        description: 'Ejecutar YAML Lint'
+        required: true
+        type: boolean
+      run-clean-up:
+        description: 'Ejecutar limpieza después de la ejecución'
+        required: true
+        type: boolean
+      environment-variables:
+        description: 'Variables de entorno para configurar en el pipeline'
+        required: false
+        type: object
 
 jobs:
   build:
@@ -28,11 +68,48 @@ jobs:
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
 
+      - name: Install additional dependencies
+        if: ${{ inputs.additional-install-commands }}
+        run: ${{ inputs.additional-install-commands }}
+
       - name: Install dependencies
         run: dotnet restore ${{ inputs.project-path }}
 
+      - name: Set Environment Variables
+        if: ${{ inputs.environment-variables }}
+        run: |
+          for key in $(echo "${{ toJSON(inputs.environment-variables) }}" | jq -r 'keys[]'); do
+            echo "Setting $key=${{ inputs.environment-variables[key] }}"
+            echo "$key=${{ inputs.environment-variables[key] }}" >> $GITHUB_ENV
+          done
+
       - name: Build
-        run: dotnet build ${{ inputs.project-path }} --configuration Release
+        run: dotnet build ${{ inputs.project-path }} --configuration ${{ inputs.build-configuration }}
+
+      - name: Check Code Format
+        if: ${{ inputs.run-check-code-format }}
+        uses: ./.github/workflows/check-code-format.yml
+
+      - name: Code Analysis
+        if: ${{ inputs.run-code-analysis }}
+        uses: ./.github/workflows/scan-security-vulnerabilities.yml
 
       - name: Run Tests
-        run: dotnet test ${{ inputs.project-path }} --verbosity normal
+        if: ${{ inputs.run-tests }}
+        uses: ./.github/workflows/generate-coverage.yml
+
+      - name: Upload Coverage Report
+        if: ${{ inputs.run-upload-coverage }}
+        uses: ./.github/workflows/upload-coverage-report.yml
+
+      - name: Build Artifact
+        if: ${{ inputs.run-build-artifact }}
+        uses: ./.github/workflows/build-artifact.yml
+
+      - name: YAML Lint
+        if: ${{ inputs.run-yaml-lint }}
+        uses: ./.github/workflows/yaml-lint.yml
+
+      - name: Clean Up
+        if: ${{ inputs.run-clean-up }}
+        uses: ./.github/workflows/clean-up.yml
