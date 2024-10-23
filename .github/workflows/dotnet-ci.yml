@@ -52,9 +52,9 @@ on:
         required: true
         type: boolean
       environment-variables:
-        description: 'Variables de entorno para configurar en el pipeline'
+        description: 'Variables de entorno para configurar en el pipeline (formato: "VAR1=value1, VAR2=value2")'
         required: false
-        type: object
+        type: string
 
 jobs:
   build:
@@ -78,9 +78,10 @@ jobs:
       - name: Set Environment Variables
         if: ${{ inputs.environment-variables }}
         run: |
-          for key in $(echo "${{ toJSON(inputs.environment-variables) }}" | jq -r 'keys[]'); do
-            echo "Setting $key=${{ inputs.environment-variables[key] }}"
-            echo "$key=${{ inputs.environment-variables[key] }}" >> $GITHUB_ENV
+          IFS=''read -ra VARS <<< "${{ inputs.environment-variables }}"
+            for VARS in "${VARS[@]}"; do
+            echo "Setting $VAR"
+            echo "$VAR" >> $GITHUB_ENV
           done
 
       - name: Build
