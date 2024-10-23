@@ -1,51 +1,58 @@
 name: "Check Code Format"
+description: "Check the code format based on the programming language."
 
-on:
-  workflow_call:
-    inputs:
-      language:
-        description: 'The programming language for the code format check'
-        required: true
-        type: string
-      dotnet-version:
-        description: 'La versión de .NET para usar en este pipeline'
-        required: false
-        type: string
+inputs:
+  language:
+    description: "The programming language for the code format check"
+    required: true
+  dotnet-version:
+    description: "La versión de .NET para usar en este pipeline"
+    required: false
 
-jobs:
-  check-code-format:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Set up .NET Core
-        if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
-        uses: actions/setup-dotnet@v2
-        with:
-          dotnet-version: "${{ inputs.dotnet-version }}"
-
-      - name: Set up Node.js
-        if: ${{ inputs.language == 'node' }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ inputs.dotnet-version }}
-
-      - name: Run Code Formatter
-        run: |
-          if [ "${{ inputs.language }}" == "go" ]; then
-            gofmt -l .
-          elif [ "${{ inputs.language }}" == "node" ]; then
-            npx prettier --check .
-          elif [ "${{ inputs.language }}" == "python" ]; then
-            black --check .
-          elif [ "${{ inputs.language }}" == "java" ]; then
-            ./mvnw formatter:validate
-          elif [ "${{ inputs.language }}" == "dotnet" ]; then
-            version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
-            if [ "$version" -lt 3 ]; then
-              echo "dotnet format is not available in versions less than 3. Your version: ${{ inputs.dotnet-version }}"
-            else
-              dotnet format
-            fi
+runs:
+  using: "composite"
+  steps:
+    - name: Set up .NET Core
+      run: |
+        if [ "${{ inputs.language }}" == "dotnet" ]; then
+          echo "Setting up .NET Core"
+          dotnet_version="${{ inputs.dotnet-version }}"
+          if [ ! -z "$dotnet_version" ]; then
+            echo "Installing .NET version $dotnet_version"
+            curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --version $dotnet_version
+          else
+            echo "No .NET version specified"
           fi
+        fi
+
+    - name: Set up Node.js
+      run: |
+        if [ "${{ inputs.language }}" == "node" ]; then
+          echo "Setting up Node.js"
+          curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+        fi
+
+    - name: Run Code Formatter
+      run: |
+        if [ "${{ inputs.language }}" == "go" ]; then
+          echo "Running Go formatter"
+          gofmt -l .
+        elif [ "${{ inputs.language }}" == "node" ]; then
+          echo "Running Prettier for Node.js"
+          npx prettier --check .
+        elif [ "${{ inputs.language }}" == "python" ]; then
+          echo "Running Black for Python"
+          black --check .
+        elif [ "${{ inputs.language }}" == "java" ]; then
+          echo "Running Maven formatter for Java"
+          ./mvnw formatter:validate
+        elif [ "${{ inputs.language }}" == "dotnet" ]; then
+          version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
+          if [ "$version" -lt 3 ]; then
+            echo "dotnet format is not available in versions less than 3. Your version: ${{ inputs.dotnet-version }}"
+          else
+            echo "Running dotnet format"
+            dotnet format
+          fi
+        fi
