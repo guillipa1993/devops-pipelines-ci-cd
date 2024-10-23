@@ -94,9 +94,10 @@ jobs:
 
       - name: Run Code Format Check
         if: ${{ inputs.run-check-code-format }}
-        run: |
-          echo "Checking code format"
-          dotnet format ${{ inputs.project-path }}
+        uses: ./.github/workflows/check-code-format.yml
+        with:
+          language: ${{ inputs.language }}
+          dotnet-version: ${{ inputs.dotnet-version }}
 
       - name: Run Code Analysis
         if: ${{ inputs.run-code-analysis }}
