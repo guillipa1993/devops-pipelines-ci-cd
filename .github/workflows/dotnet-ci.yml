@@ -114,15 +114,15 @@ jobs:
     with:
       language: ${{ inputs.language }}
 
-  yaml-lint:
+  lint:
     needs: build
     if: ${{ inputs.run-yaml-lint }}
-    uses: ./.github/workflows/yaml-lint.yml
+    uses: ./.github/workflows/lint.yml
     with:
       language: ${{ inputs.language }}
 
   clean-up:
-    needs: [check-code-format, code-analysis, build-artifact, yaml-lint]
+    needs: [check-code-format, code-analysis, build-artifact, lint]
     if: ${{ inputs.run-clean-up }}
     uses: ./.github/workflows/clean-up.yml
     with:

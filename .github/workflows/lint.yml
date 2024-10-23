@@ -1,4 +1,4 @@
-name: "YAML Linter Pipeline"
+name: "Linter Pipeline"
 
 on:
   workflow_call:
