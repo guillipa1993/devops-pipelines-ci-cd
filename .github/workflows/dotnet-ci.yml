@@ -78,12 +78,12 @@ jobs:
       - name: Set Environment Variables
         if: ${{ inputs.environment-variables }}
         run: |
-          IFS=''read -ra VARS <<< "${{ inputs.environment-variables }}"
-            for VARS in "${VARS[@]}"; do
+          IFS=',' read -ra VARS <<< "${{ inputs.environment-variables }}"
+          for VAR in "${VARS[@]}"; do
             echo "Setting $VAR"
             echo "$VAR" >> $GITHUB_ENV
           done
-      
+
       - name: Build
         run: |
           if [ "${{ inputs.build-configuration }}" != "" ]; then
@@ -92,45 +92,33 @@ jobs:
             dotnet build ${{ inputs.project-path }}
           fi
 
-      - name: Check Code Format
-        if: ${{ inputs.run-check-code-format }}
-        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/check-code-format.yml@main
-        with:
-          language: ${{ inputs.language }}
-          dotnet-version: ${{ inputs.dotnet-version }}
-  
-      - name: Code Analysis
-        if: ${{ inputs.run-code-analysis }}
-        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/scan-security-vulnerabilities.yml@main
-        with:
-          language: ${{ inputs.language }}
+  check-code-format:
+    if: ${{ inputs.run-check-code-format }}
+    uses: ./check-code-format.yml
+    with:
+      language: ${{ inputs.language }}
+      dotnet-version: ${{ inputs.dotnet-version }}
 
-      - name: Run Tests
-        if: ${{ inputs.run-tests }}
-        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/generate-coverage.yml@main
-        with:
-          language: ${{ inputs.language }}
+  code-analysis:
+    if: ${{ inputs.run-code-analysis }}
+    uses: ./scan-security-vulnerabilities.yml
+    with:
+      language: ${{ inputs.language }}
 
-      - name: Upload Coverage Report
-        if: ${{ inputs.run-upload-coverage }}
-        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/upload-coverage-report.yml@main
-        with:
-          language: ${{ inputs.language }}
+  build-artifact:
+    if: ${{ inputs.run-build-artifact }}
+    uses: ./build-artifact.yml
+    with:
+      language: ${{ inputs.language }}
 
-      - name: Build Artifact
-        if: ${{ inputs.run-build-artifact }}
-        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/build-artifact.yml@main
-        with:
-          language: ${{ inputs.language }}
+  yaml-lint:
+    if: ${{ inputs.run-yaml-lint }}
+    uses: ./yaml-lint.yml
+    with:
+      language: ${{ inputs.language }}
 
-      - name: YAML Lint
-        if: ${{ inputs.run-yaml-lint }}
-        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/yaml-lint.yml@main
-        with:
-          language: ${{ inputs.language }}
-
-      - name: Clean Up
-        if: ${{ inputs.run-clean-up }}
-        uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/clean-up.yml@main
-        with:
-          language: ${{ inputs.language }}
+  clean-up:
+    if: ${{ inputs.run-clean-up }}
+    uses: ./clean-up.yml
+    with:
+      language: ${{ inputs.language }}
