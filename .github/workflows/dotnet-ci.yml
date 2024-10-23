@@ -91,3 +91,10 @@ jobs:
           else
             dotnet build ${{ inputs.project-path }}
           fi
+          
+  check-code-format:
+    if: ${{ inputs.run-check-code-format }}
+    uses: ./.github/workflows/check-code-format.yml
+    with:
+      language: ${{ inputs.language }}
+      dotnet-version: ${{ inputs.dotnet-version }}
