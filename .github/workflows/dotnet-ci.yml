@@ -94,7 +94,7 @@ jobs:
 
   check-code-format:
     needs: build
-    if: ${{ inputs.run-check-code-format && (fromJson(inputs.dotnet-version) >= 3) }}
+    if: ${{ inputs.run-check-code-format }}
     uses: ./.github/workflows/check-code-format.yml
     with:
       language: ${{ inputs.language }}
