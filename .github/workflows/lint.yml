@@ -13,7 +13,7 @@ on:
         type: string
 
 jobs:
- # Job para ejecutar Super-Linter solo para lenguajes soportados
+  # Job para ejecutar Super-Linter solo para lenguajes soportados
   run-linter:
     runs-on: ubuntu-latest
     steps:
@@ -32,11 +32,15 @@ jobs:
       - name: Run .NET Linter
         if: ${{ inputs.language == 'dotnet' }}
         run: |
-          version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
-          if [ "$version" -lt 3 ]; then
-            echo "Skipping dotnet format: version is less than 3. Using 'dotnet build' instead."
-            dotnet build --nologo --no-restore --verbosity:minimal
+          if [ -z "${{ inputs.dotnet-version }}" ]; then
+            echo "No .NET version provided. Skipping dotnet format check."
           else
-            echo "Running .NET linter (dotnet format)"
-            dotnet format --verify-no-changes
+            version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
+            if [ "$version" -lt 3 ]; then
+              echo "Skipping dotnet format: version is less than 3. Using 'dotnet build' instead."
+              dotnet build --nologo --no-restore --verbosity:minimal
+            else
+              echo "Running .NET linter (dotnet format)"
+              dotnet format --verify-no-changes
+            fi
           fi
