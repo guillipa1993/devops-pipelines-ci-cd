@@ -1,10 +1,16 @@
 name: "YAML Linter Pipeline"
 
 on:
-  pull_request:
-    paths:
-      - "**/*.yml"
-      - "**/*.yaml"
+  workflow_call:
+    inputs:
+      language:
+        description: 'The programming language for the code format check'
+        required: true
+        type: string
+      dotnet-version:
+        description: 'La versión de .NET para usar en este pipeline'
+        required: false
+        type: string
 
 jobs:
   lint:
