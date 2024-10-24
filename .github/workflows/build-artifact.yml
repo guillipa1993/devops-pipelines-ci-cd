@@ -7,6 +7,10 @@ on:
         description: 'The programming language for building the artifact'
         required: true
         type: string
+      project-path:
+        description: 'La ruta del proyecto donde se encuentra el código Go'
+        required: true
+        type: string
       dotnet-version:
         description: 'La versión de .NET para usar en este pipeline'
         required: false
@@ -36,7 +40,7 @@ jobs:
         run: |
           if [ "${{ inputs.language }}" == "go" ]; then
             echo "Building Go artifact"
-            go build -o output/app
+            go build -o output/app ${{ inputs.project-path }}
           elif [ "${{ inputs.language }}" == "node" ]; then
             echo "Building Node.js artifact"
             npm run build

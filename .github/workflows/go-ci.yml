@@ -114,6 +114,7 @@ jobs:
     with:
       language: ${{ inputs.language }}
       go-version: ${{ inputs.go-version }}
+      project-path: ${{ inputs.project-path }}
 
   # Job separado para ejecutar Lint
   go-lint:
