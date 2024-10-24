@@ -30,6 +30,13 @@ jobs:
         uses: actions/setup-dotnet@v2
         with:
           dotnet-version: "${{ inputs.dotnet-version }}"
+      
+          # Instalar Nancy si el lenguaje es 'go'
+      - name: Install Nancy
+        if: ${{ inputs.language == 'go' }}
+        run: |
+          curl -sSfL https://github.com/sonatype-nexus-community/nancy/releases/latest/download/nancy-linux-amd64 > /usr/local/bin/nancy
+          chmod +x /usr/local/bin/nancy
 
       # Escanear vulnerabilidades basado en el lenguaje
       - name: Scan for Vulnerabilities
