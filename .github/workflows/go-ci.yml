@@ -86,7 +86,7 @@ jobs:
           done
 
       - name: Build
-        run: go build -o output/app
+        run: go build -o output/app ${{ inputs.project-path }}
 
   # Job separado para formatear código
   check-code-format:
