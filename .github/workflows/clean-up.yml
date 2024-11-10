@@ -12,7 +12,11 @@ on:
         required: false
         type: string
       go-version:
-        description: 'La versión de go para usar en este pipeline'
+        description: 'La versión de Go para usar en este pipeline'
+        required: false
+        type: string
+      python-version:
+        description: 'La versión de Python para usar en este pipeline'
         required: false
         type: string
 
@@ -31,6 +35,20 @@ jobs:
         with:
           dotnet-version: "${{ inputs.dotnet-version }}"
 
+      # Instalar Go si el lenguaje es 'go' y hay una versión especificada
+      - name: Set up Go
+        if: ${{ inputs.language == 'go' && inputs.go-version }}
+        uses: actions/setup-go@v2
+        with:
+          go-version: "${{ inputs.go-version }}"
+
+      # Instalar Python si el lenguaje es 'python' y hay una versión especificada
+      - name: Set up Python
+        if: ${{ inputs.language == 'python' && inputs.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: "${{ inputs.python-version }}"
+
       # Proceso de limpieza basado en el lenguaje
       - name: Clean Up Build Artifacts
         run: |
@@ -42,7 +60,7 @@ jobs:
             rm -rf ./dist ./build
           elif [ "${{ inputs.language }}" == "python" ]; then
             echo "Cleaning up Python build artifacts"
-            rm -rf ./dist ./build
+            rm -rf ./dist ./build ./__pycache__ ./*.egg-info
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Cleaning up Java build artifacts"
             ./mvnw clean

@@ -12,7 +12,11 @@ on:
         required: false
         type: string
       go-version:
-        description: 'La versión de go para usar en este pipeline'
+        description: 'La versión de Go para usar en este pipeline'
+        required: false
+        type: string
+      python-version:
+        description: 'La versión de Python para usar en este pipeline'
         required: false
         type: string
 
@@ -48,3 +52,19 @@ jobs:
               dotnet format --verify-no-changes
             fi
           fi
+
+      # Ejecutar el linter de Python si es necesario
+      - name: Run Python Linter
+        if: ${{ inputs.language == 'python' && inputs.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: "${{ inputs.python-version }}"
+      - name: Install Python Linter
+        if: ${{ inputs.language == 'python' && inputs.python-version }}
+        run: |
+          pip install flake8
+      - name: Lint Python Code
+        if: ${{ inputs.language == 'python' && inputs.python-version }}
+        run: |
+          echo "Running Python linter (flake8)"
+          flake8 .

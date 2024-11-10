@@ -16,7 +16,11 @@ on:
         required: false
         type: string
       go-version:
-        description: 'La versión de go para usar en este pipeline'
+        description: 'La versión de Go para usar en este pipeline'
+        required: false
+        type: string
+      python-version:
+        description: 'La versión de Python para usar en este pipeline'
         required: false
         type: string
 
@@ -41,6 +45,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "${{ inputs.node-version }}" # Especifica la versión de Node.js si es necesario
+
+      # Instalar Go si el lenguaje es 'go' y hay una versión especificada
+      - name: Set up Go
+        if: ${{ inputs.language == 'go' && inputs.go-version }}
+        uses: actions/setup-go@v2
+        with:
+          go-version: "${{ inputs.go-version }}"
+
+      # Instalar Python si el lenguaje es 'python' y hay una versión especificada
+      - name: Set up Python
+        if: ${{ inputs.language == 'python' && inputs.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: "${{ inputs.python-version }}"
 
       # Generar el reporte de cobertura basado en el lenguaje
       - name: Generate Coverage Report

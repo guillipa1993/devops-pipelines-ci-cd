@@ -12,7 +12,11 @@ on:
         required: false
         type: string
       go-version:
-        description: 'La versión de go para usar en este pipeline'
+        description: 'La versión de Go para usar en este pipeline'
+        required: false
+        type: string
+      python-version:
+        description: 'La versión de Python para usar en este pipeline'
         required: false
         type: string
 
@@ -30,7 +34,8 @@ jobs:
         uses: actions/setup-dotnet@v2
         with:
           dotnet-version: "${{ inputs.dotnet-version }}"
-      
+
+      # Instalar Go si el lenguaje es 'go' y hay una versión especificada
       - name: Install Nancy
         if: ${{ inputs.language == 'go' }}
         run: |
@@ -45,6 +50,18 @@ jobs:
       - name: Check Nancy installation
         if: ${{ inputs.language == 'go' }}
         run: nancy --version
+
+      # Instalar Python si el lenguaje es 'python' y hay una versión especificada
+      - name: Set up Python
+        if: ${{ inputs.language == 'python' && inputs.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: "${{ inputs.python-version }}"
+      
+      - name: Install Python Security Tool
+        if: ${{ inputs.language == 'python' && inputs.python-version }}
+        run: |
+          pip install safety
 
       # Escanear vulnerabilidades basado en el lenguaje
       - name: Scan for Vulnerabilities
