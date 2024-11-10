@@ -21,40 +21,29 @@ on:
         type: string
 
 jobs:
-  # Job para ejecutar Super-Linter solo para lenguajes soportados
   run-linter:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      # Ejecutar Super-Linter solo si el lenguaje es compatible
-      - name: Run Super-Linter
-        if: ${{ inputs.language == 'yaml' || inputs.language == 'python' || inputs.language == 'node' || inputs.language == 'markdown' }}
-        uses: github/super-linter@v4
-        with:
-          VALIDATE_ALL_CODEBASE: true
-          LINTER_RULES_PATH: .github/linters
-
-      # Ejecutar el linter de .NET si es necesario
-      - name: Run .NET Linter
-        if: ${{ inputs.language == 'dotnet' }}
+      # Ejecutar el linter de Go
+      - name: Run Go Linter
+        if: ${{ inputs.language == 'go' && inputs.go-version }}
         run: |
-          if [ -z "${{ inputs.dotnet-version }}" ]; then
-            echo "No .NET version provided. Skipping dotnet format check."
-          else
-            version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
-            if [ "$version" -lt 3 ]; then
-              echo "Skipping dotnet format: version is less than 3. Using 'dotnet build' instead."
-              dotnet build --nologo --no-restore --verbosity:minimal
-            else
-              echo "Running .NET linter (dotnet format)"
-              dotnet format --verify-no-changes
-            fi
-          fi
+          echo "Running Go formatter"
+          gofmt -l .
 
-      # Ejecutar el linter de Python si es necesario
-      - name: Run Python Linter
+      # Ejecutar el linter de Node.js
+      - name: Run Node.js Linter
+        if: ${{ inputs.language == 'node' }}
+        run: |
+          echo "Running Prettier for Node.js"
+          npm install --global prettier
+          prettier --check .
+
+      # Ejecutar el linter de Python
+      - name: Set up Python
         if: ${{ inputs.language == 'python' && inputs.python-version }}
         uses: actions/setup-python@v2
         with:
@@ -68,3 +57,20 @@ jobs:
         run: |
           echo "Running Python linter (flake8)"
           flake8 .
+
+      # Ejecutar el linter de .NET
+      - name: Run .NET Linter
+        if: ${{ inputs.language == 'dotnet' }}
+        run: |
+          if [ -z "${{ inputs.dotnet-version }}" ]; then
+            echo "No .NET version provided. Skipping .NET format check."
+          else
+            version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
+            if [ "$version" -lt 3 ]; then
+              echo "Skipping .NET format: version is less than 3. Using 'dotnet build' instead."
+              dotnet build --nologo --no-restore --verbosity=minimal
+            else
+              echo "Running .NET linter (dotnet format)"
+              dotnet format --verify-no-changes
+            fi
+          fi
