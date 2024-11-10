@@ -23,6 +23,10 @@ on:
         description: 'Comandos adicionales para instalar dependencias antes de construir'
         required: false
         type: string
+      build-command:
+        description: 'Comando personalizado para construir el proyecto'
+        required: false
+        type: string
       run-tests:
         description: 'Ejecutar las pruebas del proyecto'
         required: true
@@ -75,7 +79,15 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r ${{ inputs.project-path }}/requirements.txt
+          if [ -f "${{ inputs.project-path }}/requirements.txt" ]; then
+            echo "Installing dependencies from requirements.txt"
+            pip install -r ${{ inputs.project-path }}/requirements.txt
+          elif [ -f "${{ inputs.project-path }}/pyproject.toml" ]; then
+            echo "Installing dependencies from pyproject.toml"
+            pip install .
+          else
+            echo "No requirements file found. Skipping dependency installation."
+          fi
 
       - name: Set Environment Variables
         if: ${{ inputs.environment-variables }}
@@ -87,7 +99,19 @@ jobs:
           done
 
       - name: Build
-        run: python setup.py build
+        run: |
+          if [ -n "${{ inputs.build-command }}" ]; then
+            echo "Using custom build command"
+            ${{ inputs.build-command }}
+          elif [ -f "${{ inputs.project-path }}/setup.py" ]; then
+            echo "Building with setup.py"
+            python ${{ inputs.project-path }}/setup.py build
+          elif [ -f "${{ inputs.project-path }}/Makefile" ]; then
+            echo "Building with Makefile"
+            make -C ${{ inputs.project-path }} dev
+          else
+            echo "No build configuration found. Skipping build step."
+          fi
 
   # Job separado para formatear código
   check-code-format:
