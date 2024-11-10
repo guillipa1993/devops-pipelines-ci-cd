@@ -16,11 +16,11 @@ on:
         required: false
         type: string
       go-version:
-        description: 'La versión de go para usar en este pipeline'
+        description: 'La versión de Go para usar en este pipeline'
         required: false
         type: string
       python-version:
-        description: 'La versión de python para usar en este pipeline'
+        description: 'La versión de Python para usar en este pipeline'
         required: false
         type: string
 
@@ -61,7 +61,8 @@ jobs:
             echo "Running Prettier for Node.js"
             npx prettier --check .
           elif [ "${{ inputs.language }}" == "python" ]; then
-            echo "Running Black for Python"
+            echo "Installing and running Black for Python"
+            pip install black
             black --check .
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running Maven formatter for Java"
