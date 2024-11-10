@@ -46,6 +46,11 @@ jobs:
         with:
           node-version: "${{ inputs.node-version }}" # Especifica la versión de Node.js
 
+      # Instalar Black si el lenguaje es Python
+      - name: Install Black for Python
+        if: ${{ inputs.language == 'python' }}
+        run: pip install black
+
       # Ejecutar el formateo de código basado en el lenguaje
       - name: Run Code Formatter
         run: |
