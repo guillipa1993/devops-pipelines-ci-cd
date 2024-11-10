@@ -86,7 +86,7 @@ jobs:
             echo "Installing dependencies from pyproject.toml"
             pip install .
           else
-            echo "No requirements file found. Skipping dependency installation."
+            echo "No requirements or pyproject.toml file found. Skipping dependency installation."
           fi
 
       - name: Set Environment Variables
@@ -109,6 +109,9 @@ jobs:
           elif [ -f "${{ inputs.project-path }}/Makefile" ]; then
             echo "Building with Makefile"
             make -C ${{ inputs.project-path }} dev
+          elif [ -f "${{ inputs.project-path }}/pyproject.toml" ]; then
+            echo "Building with pyproject.toml"
+            pip install .
           else
             echo "No build configuration found. Skipping build step."
           fi
