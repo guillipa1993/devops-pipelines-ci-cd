@@ -58,10 +58,10 @@ jobs:
         with:
           python-version: "${{ inputs.python-version }}"
       
-      - name: Install Python Security Tool
+      - name: Install Bandit for Python Security Scan
         if: ${{ inputs.language == 'python' && inputs.python-version }}
         run: |
-          pip install safety
+          pip install bandit
 
       # Escanear vulnerabilidades basado en el lenguaje
       - name: Scan for Vulnerabilities
@@ -73,8 +73,8 @@ jobs:
             echo "Running npm audit for Node.js"
             npm audit --production
           elif [ "${{ inputs.language }}" == "python" ]; then
-            echo "Running safety scan for Python"
-            safety scan
+            echo "Running bandit scan for Python"
+            bandit -r .
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running OWASP Dependency Check for Java"
             ./mvnw org.owasp:dependency-check-maven:check
