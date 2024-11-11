@@ -74,7 +74,7 @@ jobs:
             npm audit --production
           elif [ "${{ inputs.language }}" == "python" ]; then
             echo "Running bandit scan for Python"
-            bandit -r . -o bandit_output.txt -f json || true
+            bandit -r . -o bandit_output.json -f json || true
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running OWASP Dependency Check for Java"
             ./mvnw org.owasp:dependency-check-maven:check
@@ -89,12 +89,12 @@ jobs:
             fi
           fi
 
-      # Analizar los resultados y fallar solo para problemas críticos
+      # Analizar los resultados de Bandit y fallar solo para problemas críticos
       - name: Process Bandit Results
         if: ${{ inputs.language == 'python' }}
         run: |
           echo "Processing Bandit results..."
-          CRITICAL_ISSUES=$(jq '.results[] | select(.issue_severity == "HIGH")' bandit_output.txt)
+          CRITICAL_ISSUES=$(jq '.results[] | select(.issue_severity == "HIGH")' bandit_output.json)
           if [ -n "$CRITICAL_ISSUES" ]; then
             echo "Critical security issues found:"
             echo "$CRITICAL_ISSUES"
