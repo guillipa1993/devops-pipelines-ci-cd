@@ -17,7 +17,7 @@ on:
         type: string
       requirements-path:
         description: 'La ruta del proyecto donde se encuentran los requisitos del proyecto Python'
-        required: true
+        required: false
         type: string
       build-configuration:
         description: 'Configuración de build (Debug o Release)'
