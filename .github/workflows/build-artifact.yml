@@ -55,8 +55,8 @@ jobs:
 
       - name: Build Artifact
         run: |
-          if [ -n "${{ inputs.requirements-path }}" ]; then
-            cd "${{ inputs.requirements-path }}"
+          if [ -n "${{ inputs.project-path }}" ]; then
+            cd "${{ inputs.project-path }}"
           fi
 
           if [ "${{ inputs.language }}" == "go" ]; then
@@ -69,16 +69,12 @@ jobs:
             echo "Building Python artifact with pyproject.toml or requirements.txt"
             if [ -f "pyproject.toml" ]; then
               pip install .
-            elif [ -f "requirements.txt" -o -n "${{ inputs.requirements-path }}" ]; then
-              if [ -n "${{ inputs.requirements-path }}" ]; then
-                pip install -r "${{ inputs.requirements-path }}/requirements.txt"
-              elif [ -f "requirements.txt" ]; then
-                pip install -r requirements.txt
-              else
-                echo "No build configuration found. Missing pyproject.toml or requirements.txt. Skipping build step."
-              fi
+            elif [ -f "${{ inputs.requirements-path }}/requirements.txt" ]; then
+              pip install -r "${{ inputs.requirements-path }}/requirements.txt"
+            elif [ -f "requirements.txt" ]; then
+              pip install -r requirements.txt
             else
-              echo "No build configuration found. Skipping build step."
+              echo "No build configuration found. Missing pyproject.toml or requirements.txt. Skipping build step."
             fi
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Building Java artifact"
