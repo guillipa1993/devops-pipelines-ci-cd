@@ -48,14 +48,16 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: "${{ inputs.python-version }}"
+      
       - name: Install Python Linter
         if: ${{ inputs.language == 'python' && inputs.python-version }}
         run: |
           pip install flake8
-      - name: Lint Python Code
+      
+      - name: Run Python Linter and Save Results
         if: ${{ inputs.language == 'python' && inputs.python-version }}
         run: |
-          echo "Running Python linter (flake8)"
+          echo "Running Python linter (flake8) and saving results"
           flake8 . > flake8_report.txt || true
 
       - name: Analyze flake8 Results
