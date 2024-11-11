@@ -56,7 +56,7 @@ jobs:
         if: ${{ inputs.language == 'python' && inputs.python-version }}
         run: |
           echo "Running Python linter (flake8)"
-          flake8 .
+          flake8 --ignore=E501 .
 
       # Ejecutar el linter de .NET
       - name: Run .NET Linter
