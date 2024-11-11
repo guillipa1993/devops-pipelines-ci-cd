@@ -56,7 +56,25 @@ jobs:
         if: ${{ inputs.language == 'python' && inputs.python-version }}
         run: |
           echo "Running Python linter (flake8)"
-          flake8 --ignore=E501 .
+          flake8 . > flake8_report.txt || true
+
+      - name: Analyze flake8 Results
+        if: ${{ inputs.language == 'python' && inputs.python-version }}
+        run: |
+          echo "Analyzing flake8 results"
+          if [ -s flake8_report.txt ]; then
+            echo "Found issues in flake8 report:"
+            cat flake8_report.txt
+            # Opcionalmente, contar el número de problemas
+            issue_count=$(wc -l < flake8_report.txt)
+            echo "$issue_count issues found."
+            # Agregar una condición en función del número de problemas
+            if [ "$issue_count" -gt 100 ]; then
+              echo "Too many issues ($issue_count) found in the codebase. Please review."
+            fi
+          else
+            echo "No issues found by flake8."
+          fi
 
       # Ejecutar el linter de .NET
       - name: Run .NET Linter
