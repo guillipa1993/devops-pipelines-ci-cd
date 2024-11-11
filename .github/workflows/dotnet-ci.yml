@@ -119,6 +119,7 @@ jobs:
     with:
       language: ${{ inputs.language }}
       dotnet-version: ${{ inputs.dotnet-version }} 
+      project-path: ${{ inputs.project-path }}
 
   # Job separado para ejecutar YAML Lint
   dotnet-lint:
