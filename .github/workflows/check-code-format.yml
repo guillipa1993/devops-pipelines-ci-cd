@@ -62,7 +62,6 @@ jobs:
             npx prettier --check .
           elif [ "${{ inputs.language }}" == "python" ]; then
             echo "Installing and running Black for Python"
-            pip install black
             black --check .
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running Maven formatter for Java"
