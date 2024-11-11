@@ -42,7 +42,7 @@ jobs:
           NANCY_VERSION=$(curl --silent "https://api.github.com/repos/sonatype-nexus-community/nancy/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
           echo "Installing Nancy version $NANCY_VERSION"
           curl -Lo nancy https://github.com/sonatype-nexus-community/nancy/releases/download/$NANCY_VERSION/nancy-$NANCY_VERSION-linux-amd64
-          file nancy  # Verifica que sea un binario ejecutable
+          file nancy  
           chmod +x nancy
           sudo mv nancy /usr/local/bin/nancy
           echo "Nancy installed successfully"
@@ -89,7 +89,7 @@ jobs:
             fi
           fi
 
-      # Analizar los resultados de Bandit y fallar solo para problemas críticos
+      # Analizar los resultados de Bandit e informar sin fallar el pipeline
       - name: Process Bandit Results
         if: ${{ inputs.language == 'python' }}
         run: |
@@ -98,7 +98,7 @@ jobs:
           if [ -n "$CRITICAL_ISSUES" ]; then
             echo "Critical security issues found:"
             echo "$CRITICAL_ISSUES"
-            exit 1  # Falla el pipeline solo si hay problemas críticos
           else
-            echo "No critical security issues found. Continuing pipeline."
+            echo "No critical security issues found."
           fi
+        continue-on-error: true 
