@@ -15,6 +15,10 @@ on:
         description: 'La ruta del proyecto donde se encuentra el código Python'
         required: true
         type: string
+      requirements-path:
+        description: 'La ruta del proyecto donde se encuentran los requisitos del proyecto Python'
+        required: true
+        type: string
       build-configuration:
         description: 'Configuración de build (Debug o Release)'
         required: true
@@ -79,9 +83,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          if [ -f "${{ inputs.project-path }}/requirements.txt" ]; then
+          if [ -f "${{ inputs.requirements-path }}/requirements.txt" ]; then
             echo "Installing dependencies from requirements.txt"
-            pip install -r ${{ inputs.project-path }}/requirements.txt
+            pip install -r ${{ inputs.requirements-path }}/requirements.txt
           elif [ -f "${{ inputs.project-path }}/pyproject.toml" ]; then
             echo "Installing dependencies from pyproject.toml"
             pip install .
@@ -143,6 +147,7 @@ jobs:
       language: ${{ inputs.language }}
       python-version: ${{ inputs.python-version }}
       project-path: ${{ inputs.project-path }}
+      requirements-path: ${{ inputs.requirements-path }}
 
   # Job separado para ejecutar Lint
   python-lint:
