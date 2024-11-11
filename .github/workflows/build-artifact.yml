@@ -54,16 +54,22 @@ jobs:
           if [ -n "${{ inputs.project-path }}" ]; then
             cd ${{ inputs.project-path }}
           fi
-          
+
           if [ "${{ inputs.language }}" == "go" ]; then
             echo "Building Go artifact"
-            go build -o output/app .
+            go build -o output/app
           elif [ "${{ inputs.language }}" == "node" ]; then
             echo "Building Node.js artifact"
             npm run build
           elif [ "${{ inputs.language }}" == "python" ]; then
-            echo "Building Python artifact"
-            python setup.py bdist_wheel
+            echo "Building Python artifact with pyproject.toml or requirements.txt"
+            if [ -f "pyproject.toml" ]; then
+              pip install .
+            elif [ -f "requirements.txt" ]; then
+              pip install -r requirements.txt
+            else
+              echo "No build configuration found. Skipping build step."
+            fi
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Building Java artifact"
             ./mvnw package
