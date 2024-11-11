@@ -9,7 +9,7 @@ on:
         type: string
       project-path:
         description: 'La ruta del proyecto donde se encuentra el código'
-        required: true
+        required: false  
         type: string
       dotnet-version:
         description: 'La versión de .NET para usar en este pipeline'
@@ -28,37 +28,36 @@ jobs:
   build-artifact:
     runs-on: ubuntu-latest
     steps:
-      # Realizar el checkout del código
       - name: Checkout code
         uses: actions/checkout@v2
 
-      # Instalar .NET si el lenguaje es 'dotnet' y hay una versión especificada
       - name: Set up .NET Core
         if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
         uses: actions/setup-dotnet@v2
         with:
           dotnet-version: "${{ inputs.dotnet-version }}"
 
-      # Instalar Go si el lenguaje es 'go' y hay una versión especificada
       - name: Set up Go
         if: ${{ inputs.language == 'go' && inputs.go-version }}
         uses: actions/setup-go@v2
         with:
           go-version: "${{ inputs.go-version }}"
 
-      # Instalar Python si el lenguaje es 'python' y hay una versión especificada
       - name: Set up Python
         if: ${{ inputs.language == 'python' && inputs.python-version }}
         uses: actions/setup-python@v2
         with:
           python-version: "${{ inputs.python-version }}"
 
-      # Construir el artefacto según el lenguaje
       - name: Build Artifact
         run: |
+          if [ -n "${{ inputs.project-path }}" ]; then
+            cd ${{ inputs.project-path }}
+          fi
+          
           if [ "${{ inputs.language }}" == "go" ]; then
             echo "Building Go artifact"
-            go build -o output/app ${{ inputs.project-path }}
+            go build -o output/app .
           elif [ "${{ inputs.language }}" == "node" ]; then
             echo "Building Node.js artifact"
             npm run build

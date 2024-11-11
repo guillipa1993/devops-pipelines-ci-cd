@@ -73,8 +73,8 @@ jobs:
             echo "Running npm audit for Node.js"
             npm audit --production
           elif [ "${{ inputs.language }}" == "python" ]; then
-            echo "Running safety check for Python"
-            safety check
+            echo "Running safety scan for Python"
+            safety scan
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running OWASP Dependency Check for Java"
             ./mvnw org.owasp:dependency-check-maven:check
