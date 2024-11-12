@@ -24,7 +24,7 @@ on:
         required: false
         type: string
       java-version:
-        description: 'La versión de java para usar en este pipeline'
+        description: 'La versión de Java para usar en este pipeline'
         required: false
         type: string
 
@@ -48,7 +48,7 @@ jobs:
         if: ${{ inputs.language == 'node' && inputs.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: "${{ inputs.node-version }}" # Especifica la versión de Node.js
+          node-version: "${{ inputs.node-version }}"
 
       # Instalar Black si el lenguaje es Python
       - name: Install Black for Python
@@ -68,8 +68,8 @@ jobs:
             echo "Installing and running Black for Python"
             black --check . || true 
           elif [ "${{ inputs.language }}" == "java" ]; then
-            echo "Running Maven formatter for Java"
-            ./mvnw formatter:validate
+            echo "Running Gradle formatter for Java"
+            ./gradlew -p ${{ inputs.project-path }} format || true
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
             version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
             if [ "$version" -lt 3 ]; then
