@@ -71,7 +71,12 @@ jobs:
           done
 
       - name: Build with Gradle
-        run: ./gradlew -p ${{ inputs.project-path }} build
+        run: |
+          if [ -n "${{ inputs.project-path }}" ]; then
+            ./gradlew -p "${{ inputs.project-path }}" build
+          else
+            ./gradlew build
+          fi
 
   # Job separado para formateo de código
   check-code-format:
