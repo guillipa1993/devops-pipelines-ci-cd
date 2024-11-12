@@ -23,6 +23,10 @@ on:
         description: 'La versión de Python para usar en este pipeline'
         required: false
         type: string
+      java-version:
+        description: 'La versión de Java para usar en este pipeline'
+        required: false
+        type: string
 
 jobs:
   generate-coverage:
