@@ -83,10 +83,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          if [ -f "${{ inputs.requirements-path }}/requirements.txt" ]; then
+          if [ -f "${{ inputs.requirements-path }}requirements.txt" ]; then
             echo "Installing dependencies from requirements.txt"
-            pip install -r ${{ inputs.requirements-path }}/requirements.txt
-          elif [ -f "${{ inputs.project-path }}/pyproject.toml" ]; then
+            pip install -r ${{ inputs.requirements-path }}requirements.txt
+          elif [ -f "${{ inputs.project-path }}pyproject.toml" ]; then
             echo "Installing dependencies from pyproject.toml"
             pip install .
           else
@@ -113,7 +113,7 @@ jobs:
           elif [ -f "${{ inputs.project-path }}/Makefile" ]; then
             echo "Building with Makefile"
             make -C ${{ inputs.project-path }} dev
-          elif [ -f "${{ inputs.project-path }}/pyproject.toml" ]; then
+          elif [ -f "${{ inputs.project-path }}pyproject.toml" ]; then
             echo "Building with pyproject.toml"
             pip install .
           else
