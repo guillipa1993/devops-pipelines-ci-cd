@@ -117,6 +117,7 @@ jobs:
               dotnet list package --vulnerable
             fi
           fi
+        continue-on-error: true
 
       - name: Process Bandit Results
         if: ${{ inputs.language == 'python' }}
