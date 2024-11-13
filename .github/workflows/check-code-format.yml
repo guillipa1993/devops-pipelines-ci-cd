@@ -73,11 +73,11 @@ jobs:
             black --check . || true 
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running Gradle formatter for Java"
-            if [ -f "./gradlew" ]; then
-              chmod +x ./gradlew
-              ./gradlew -p ${{ inputs.project-path }} format || true
+            if [ -f "${{ inputs.project-path }}/gradlew" ]; then
+              chmod +x "${{ inputs.project-path }}/gradlew"
+              "${{ inputs.project-path }}/gradlew" -p "${{ inputs.project-path }}" format || true
             else
-              echo "Gradle wrapper (gradlew) not found. Skipping Java code format check."
+              echo "Gradle wrapper (gradlew) not found in project path. Skipping Java code format check."
             fi
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
             version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
