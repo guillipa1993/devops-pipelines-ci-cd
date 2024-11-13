@@ -90,7 +90,7 @@ jobs:
             bandit -r . -o bandit_output.json -f json || true
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running OWASP Dependency Check for Java"
-            find "${{ inputs.project-path }}" -name "pom.xml" ! -path "*/test/*" ! -path "*/src/test/*" | while read -r pom_path; do
+            find "${{ inputs.project-path }}" -name "pom.xml" ! -path "*/test/*" ! -path "*/src/test/*" ! -path "*/multi-release-jar/*" | while read -r pom_path; do
               project_dir=$(dirname "$pom_path")
               echo "Running dependency check in $project_dir"
               if [ -f "$project_dir/mvnw" ]; then
