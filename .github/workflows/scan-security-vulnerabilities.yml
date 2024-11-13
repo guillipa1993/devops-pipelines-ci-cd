@@ -90,12 +90,12 @@ jobs:
             bandit -r . -o bandit_output.json -f json || true
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running OWASP Dependency Check for Java"
-            find . -name "pom.xml" | while read -r pom_path; do
+            find "${{ inputs.project-path }}" -name "pom.xml" | while read -r pom_path; do
               project_dir=$(dirname "$pom_path")
               echo "Running dependency check in $project_dir"
-              if [ -f "./mvnw" ]; then
-                chmod +x ./mvnw
-                ./mvnw -f "$pom_path" org.owasp:dependency-check-maven:check
+              if [ -f "$project_dir/mvnw" ]; then
+                chmod +x "$project_dir/mvnw"
+                "$project_dir/mvnw" -f "$pom_path" org.owasp:dependency-check-maven:check
               else
                 mvn -f "$pom_path" org.owasp:dependency-check-maven:check
               fi
@@ -122,4 +122,4 @@ jobs:
           else
             echo "No critical security issues found."
           fi
-        continue-on-error: true 
+        continue-on-error: true

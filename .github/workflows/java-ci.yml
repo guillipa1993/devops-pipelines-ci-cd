@@ -129,9 +129,31 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: ${{ inputs.java-version }}
+      
+      - name: Build Java artifact
+        run: |
+          if [ -n "${{ inputs.project-path }}" ]; then
+            cd "${{ inputs.project-path }}"
+          fi
+          echo "Building Java artifact"
+          if [ -f "./mvnw" ]; then
+            ./mvnw package
+          elif [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew build
+          else
+            echo "No build tool found (Maven or Gradle). Skipping Java build step."
+          fi
 
       - name: Run tests
-        run: ./gradlew -p ${{ inputs.project-path }} test
+        run: |
+          if [ -n "${{ inputs.project-path }}" ] && [ -f "${{ inputs.project-path }}/build.gradle" ]; then
+            echo "Running tests in specified project path: ${{ inputs.project-path }}"
+            ./gradlew -p "${{ inputs.project-path }}" test
+          else
+            echo "No valid project path specified or build.gradle not found. Running tests in the root directory."
+            ./gradlew test
+          fi
 
   # Job separado para la limpieza
   clean-up:
