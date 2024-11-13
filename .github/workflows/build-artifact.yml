@@ -28,7 +28,7 @@ on:
         required: false
         type: string
       java-version:
-        description: 'La versión de Python para usar en este pipeline'
+        description: 'La versión de Java para usar en este pipeline'
         required: false
         type: string
 
@@ -59,10 +59,12 @@ jobs:
 
       - name: Build Artifact
         run: |
+          # Cambiar al directorio especificado en `project-path` si se ha proporcionado
           if [ -n "${{ inputs.project-path }}" ]; then
             cd "${{ inputs.project-path }}"
           fi
 
+          # Condiciones de construcción basadas en el lenguaje
           if [ "${{ inputs.language }}" == "go" ]; then
             echo "Building Go artifact"
             go build -o output/app
@@ -82,7 +84,14 @@ jobs:
             fi
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Building Java artifact"
-            ./mvnw package
+            if [ -f "./mvnw" ]; then
+              ./mvnw package
+            elif [ -f "./gradlew" ]; then
+              chmod +x ./gradlew
+              ./gradlew build
+            else
+              echo "No build tool found (Maven or Gradle). Skipping Java build step."
+            fi
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
             echo "Building .NET artifact"
             dotnet publish -c Release -o ./publish
