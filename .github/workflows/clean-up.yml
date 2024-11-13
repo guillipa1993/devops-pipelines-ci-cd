@@ -67,11 +67,15 @@ jobs:
             rm -rf ./dist ./build ./__pycache__ ./*.egg-info
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Cleaning up Java build artifacts"
-            if [ -f "./mvnw" ]; then
-              ./mvnw clean
-            else
-              mvn clean
-            fi
+            find . -name "pom.xml" | while read -r pom_path; do
+              project_dir=$(dirname "$pom_path")
+              echo "Running Maven clean in $project_dir"
+              if [ -f "$project_dir/mvnw" ]; then
+                (cd "$project_dir" && ./mvnw clean)
+              else
+                (cd "$project_dir" && mvn clean)
+              fi
+            done
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
             echo "Cleaning up .NET build artifacts"
             rm -rf ./publish ./TestResults
