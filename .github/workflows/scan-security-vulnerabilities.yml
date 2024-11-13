@@ -7,6 +7,10 @@ on:
         description: 'The programming language for vulnerability scanning'
         required: true
         type: string
+      project-path:
+        description: 'La ruta del proyecto donde se encuentra el código Java'
+        required: true
+        type: string
       dotnet-version:
         description: 'La versión de .NET para usar en este pipeline'
         required: false
@@ -28,18 +32,21 @@ jobs:
   scan-security-vulnerabilities:
     runs-on: ubuntu-latest
     steps:
-      # Realizar el checkout del código
       - name: Checkout code
         uses: actions/checkout@v2
 
-      # Instalar .NET si el lenguaje es 'dotnet' y hay una versión especificada
+      - name: Set up JDK
+        if: ${{ inputs.language == 'java' && inputs.java-version }}
+        uses: actions/setup-java@v1
+        with:
+          java-version: "${{ inputs.java-version }}"
+
       - name: Set up .NET Core
         if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
         uses: actions/setup-dotnet@v2
         with:
           dotnet-version: "${{ inputs.dotnet-version }}"
 
-      # Instalar Go si el lenguaje es 'go' y hay una versión especificada
       - name: Install Nancy
         if: ${{ inputs.language == 'go' }}
         run: |
@@ -55,7 +62,6 @@ jobs:
         if: ${{ inputs.language == 'go' }}
         run: nancy --version
 
-      # Instalar Python si el lenguaje es 'python' y hay una versión especificada
       - name: Set up Python
         if: ${{ inputs.language == 'python' && inputs.python-version }}
         uses: actions/setup-python@v2
@@ -67,7 +73,6 @@ jobs:
         run: |
           pip install bandit
 
-      # Escanear vulnerabilidades basado en el lenguaje
       - name: Scan for Vulnerabilities
         run: |
           if [ "${{ inputs.language }}" == "go" ]; then
@@ -81,7 +86,12 @@ jobs:
             bandit -r . -o bandit_output.json -f json || true
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running OWASP Dependency Check for Java"
-            ./mvnw org.owasp:dependency-check-maven:check
+            if [ -f "./mvnw" ]; then
+              chmod +x ./mvnw
+              ./mvnw org.owasp:dependency-check-maven:check
+            else
+              mvn org.owasp:dependency-check-maven:check
+            fi
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
             version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
             if [ "$version" -lt 5 ]; then
@@ -93,7 +103,6 @@ jobs:
             fi
           fi
 
-      # Analizar los resultados de Bandit e informar sin fallar el pipeline
       - name: Process Bandit Results
         if: ${{ inputs.language == 'python' }}
         run: |
