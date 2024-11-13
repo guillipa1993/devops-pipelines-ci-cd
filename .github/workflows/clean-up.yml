@@ -67,7 +67,7 @@ jobs:
             rm -rf ./dist ./build ./__pycache__ ./*.egg-info
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Cleaning up Java build artifacts"
-            find . -name "pom.xml" | while read -r pom_path; do
+            find . -name "pom.xml" ! -path "*/test/*" ! -path "*/src/test/*" | while read -r pom_path; do
               project_dir=$(dirname "$pom_path")
               echo "Running Maven clean in $project_dir"
               if [ -f "$project_dir/mvnw" ]; then
