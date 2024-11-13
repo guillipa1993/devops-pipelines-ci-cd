@@ -67,7 +67,11 @@ jobs:
             rm -rf ./dist ./build ./__pycache__ ./*.egg-info
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Cleaning up Java build artifacts"
-            ./mvnw clean
+            if [ -f "./mvnw" ]; then
+              ./mvnw clean
+            else
+              mvn clean
+            fi
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
             echo "Cleaning up .NET build artifacts"
             rm -rf ./publish ./TestResults
