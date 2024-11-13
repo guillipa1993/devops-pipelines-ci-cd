@@ -137,6 +137,7 @@ jobs:
     with:
       language: ${{ inputs.language }}
       python-version: ${{ inputs.python-version }}
+      project-path: ${{ inputs.project-path }}
 
   # Job separado para generar artefacto de build
   build-artifact:

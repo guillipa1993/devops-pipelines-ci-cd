@@ -105,6 +105,7 @@ jobs:
     with:
       language: ${{ inputs.language }}
       go-version: ${{ inputs.go-version }}
+      project-path: ${{ inputs.project-path }}
 
   # Job separado para generar artefacto de build
   build-artifact:

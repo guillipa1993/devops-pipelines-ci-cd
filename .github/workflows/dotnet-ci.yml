@@ -110,6 +110,7 @@ jobs:
     with:
       language: ${{ inputs.language }}
       dotnet-version: ${{ inputs.dotnet-version }} 
+      project-path: ${{ inputs.project-path }}
 
   # Job separado para generar artefacto de build
   build-artifact:
