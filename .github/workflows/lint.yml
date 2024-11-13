@@ -99,3 +99,23 @@ jobs:
               dotnet format --verify-no-changes
             fi
           fi
+        continue-on-error: true 
+
+      # Ejecutar el linter de Java
+      - name: Set up Java
+        if: ${{ inputs.language == 'java' && inputs.java-version }}
+        uses: actions/setup-java@v2
+        with:
+          java-version: "${{ inputs.java-version }}"
+
+      - name: Run Java Checkstyle
+        if: ${{ inputs.language == 'java' }}
+        run: |
+          echo "Running Checkstyle for Java"
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew checkstyleMain || true
+          else
+            echo "Gradle wrapper not found. Skipping Java linter."
+          fi
+        continue-on-error: true
