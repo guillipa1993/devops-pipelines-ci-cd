@@ -75,6 +75,10 @@ jobs:
 
       - name: Scan for Vulnerabilities
         run: |
+          if [ -n "${{ inputs.project-path }}" ]; then
+            cd "${{ inputs.project-path }}"
+          fi
+
           if [ "${{ inputs.language }}" == "go" ]; then
             echo "Scanning Go modules for vulnerabilities"
             go list -m all | nancy sleuth
@@ -86,12 +90,16 @@ jobs:
             bandit -r . -o bandit_output.json -f json || true
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running OWASP Dependency Check for Java"
-            if [ -f "./mvnw" ]; then
-              chmod +x ./mvnw
-              ./mvnw org.owasp:dependency-check-maven:check
-            else
-              mvn org.owasp:dependency-check-maven:check
-            fi
+            find . -name "pom.xml" | while read -r pom_path; do
+              project_dir=$(dirname "$pom_path")
+              echo "Running dependency check in $project_dir"
+              if [ -f "./mvnw" ]; then
+                chmod +x ./mvnw
+                ./mvnw -f "$pom_path" org.owasp:dependency-check-maven:check
+              else
+                mvn -f "$pom_path" org.owasp:dependency-check-maven:check
+              fi
+            done
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
             version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
             if [ "$version" -lt 5 ]; then
