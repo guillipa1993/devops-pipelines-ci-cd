@@ -7,6 +7,10 @@ on:
         description: 'The programming language for the code format check'
         required: true
         type: string
+      project-path:
+        description: 'La ruta del proyecto donde se encuentra el código Java'
+        required: false
+        type: string
       dotnet-version:
         description: 'La versión de .NET para usar en este pipeline'
         required: false
@@ -69,7 +73,12 @@ jobs:
             black --check . || true 
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running Gradle formatter for Java"
-            ./gradlew -p ${{ inputs.project-path }} format || true
+            if [ -f "./gradlew" ]; then
+              chmod +x ./gradlew
+              ./gradlew -p ${{ inputs.project-path }} format || true
+            else
+              echo "Gradle wrapper (gradlew) not found. Skipping Java code format check."
+            fi
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
             version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
             if [ "$version" -lt 3 ]; then
