@@ -95,7 +95,7 @@ jobs:
     with:
       language: ${{ inputs.language }}
       java-version: ${{ inputs.java-version }}
-      project-path: ${{ input.project-path }}
+      project-path: ${{ inputs.project-path }}
 
   # Job separado para generar artefacto de build
   build-artifact:
