@@ -73,6 +73,13 @@ jobs:
         run: |
           pip install bandit
 
+      - name: Set Java Environment Variables
+        if: ${{ inputs.language == 'java' }}
+        run: |
+          export JUNIT_JUPITER_VERSION=5.7.1
+          export JUNIT_PLATFORM_VERSION=1.7.1
+          echo "JUNIT_JUPITER_VERSION and JUNIT_PLATFORM_VERSION set."          
+      
       - name: Scan for Vulnerabilities
         run: |
           if [ -n "${{ inputs.project-path }}" ]; then
