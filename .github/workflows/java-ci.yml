@@ -47,9 +47,12 @@ on:
         description: 'Variables de entorno para configurar en el pipeline (formato: "VAR1=value1, VAR2=value2")'
         required: false
         type: string
+      debug-mode:
+        description: 'Habilitar modo de depuración para la build'
+        required: false
+        type: boolean
 
 jobs:
-  # Job principal para construir el proyecto Java
   ci_pipeline:
     runs-on: ubuntu-latest
     steps:
@@ -73,9 +76,17 @@ jobs:
       - name: Build with Gradle
         run: |
           if [ -n "${{ inputs.project-path }}" ]; then
-            ./gradlew -p "${{ inputs.project-path }}" build
+            if [ "${{ inputs.debug-mode }}" = "true" ]; then
+              ./gradlew -p "${{ inputs.project-path }}" build --stacktrace --info --warning-mode all
+            else
+              ./gradlew -p "${{ inputs.project-path }}" build
+            fi
           else
-            ./gradlew build
+            if [ "${{ inputs.debug-mode }}" = "true" ]; then
+              ./gradlew build --stacktrace --info --warning-mode all
+            else
+              ./gradlew build
+            fi
           fi
 
   # Job separado para formateo de código
