@@ -77,18 +77,24 @@ jobs:
         run: |
           if [ -n "${{ inputs.project-path }}" ]; then
             if [ "${{ inputs.debug-mode }}" = "true" ]; then
-              ./gradlew -p "${{ inputs.project-path }}" build --stacktrace --info --warning-mode all
+            echo "Estoy en 1"  
+            ./gradlew -p "${{ inputs.project-path }}" build --stacktrace --info --warning-mode all
             elif  [ "${{ inputs.run-tests }}" = "false" ]; then
+              echo "Estoy en 2"  
               ./gradlew -p "${{ inputs.project-path }}" build -x test
             else
+              echo "Estoy en 3"  
               ./gradlew -p "${{ inputs.project-path }}" build
             fi
           else
             if [ "${{ inputs.debug-mode }}" = "true" ]; then
+              echo "Estoy en 4"  
               ./gradlew build --stacktrace --info --warning-mode all
             elif  [ "${{ inputs.run-tests }}" = "false" ]; then
+              echo "Estoy en 5"  
               ./gradlew build -x test
             else
+              echo "Estoy en 6"  
               ./gradlew build
             fi
           fi
