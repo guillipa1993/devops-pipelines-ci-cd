@@ -78,12 +78,16 @@ jobs:
           if [ -n "${{ inputs.project-path }}" ]; then
             if [ "${{ inputs.debug-mode }}" = "true" ]; then
               ./gradlew -p "${{ inputs.project-path }}" build --stacktrace --info --warning-mode all
+            elif  [ "${{ inputs.run-tests }}" = "false" ]; then
+              ./gradlew -p "${{ inputs.project-path }}" build -x test
             else
               ./gradlew -p "${{ inputs.project-path }}" build
             fi
           else
             if [ "${{ inputs.debug-mode }}" = "true" ]; then
               ./gradlew build --stacktrace --info --warning-mode all
+            elif  [ "${{ inputs.run-tests }}" = "false" ]; then
+              ./gradlew build -x test
             else
               ./gradlew build
             fi
