@@ -83,3 +83,15 @@ jobs:
             echo "Generating coverage report for .NET"
             dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
           fi
+      
+      # Subir reporte de cobertura
+      - name: Upload Coverage Report
+        uses: codecov/codecov-action@v2
+        with:
+          file: |
+            ${{ inputs.language == 'go' && 'coverage.out' || 
+               inputs.language == 'node' && './coverage/lcov.info' || 
+               inputs.language == 'python' && './coverage.xml' || 
+               inputs.language == 'java' && './target/site/jacoco/jacoco.xml' || 
+               inputs.language == 'dotnet' && './TestResults/opencover.xml' }}
+          flags: ${{ inputs.language }}

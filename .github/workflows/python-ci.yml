@@ -65,7 +65,7 @@ on:
         type: string
 
 jobs:
-  # Job principal para construir el proyecto Python
+  # Job principal para construir el proyecto Python y recopilar logs
   ci_pipeline:
     runs-on: ubuntu-latest
     steps:
@@ -79,23 +79,24 @@ jobs:
 
       - name: Install additional dependencies
         if: ${{ inputs.additional-install-commands }}
-        run: ${{ inputs.additional-install-commands }}
+        run: |
+          echo "Running additional install commands"
+          ${{ inputs.additional-install-commands }} 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-additional_install.log"
 
       - name: Install dependencies
         run: |
+          echo "Installing dependencies"
           if [ -f "${{ inputs.requirements-path }}requirements.txt" ]; then
-            echo "Installing dependencies from requirements.txt"
-            pip install -r ${{ inputs.requirements-path }}requirements.txt
+            pip install -r ${{ inputs.requirements-path }}requirements.txt 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-dependencies.log"
           elif [ -f "${{ inputs.project-path }}pyproject.toml" ]; then
-            echo "Installing dependencies from pyproject.toml"
-            pip install .
+            pip install . 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-dependencies.log"
           else
-            echo "No requirements or pyproject.toml file found. Skipping dependency installation."
-          fi
+            echo "No requirements or pyproject.toml file found. Skipping dependency installation." 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-dependencies.log"
 
       - name: Set Environment Variables
         if: ${{ inputs.environment-variables }}
         run: |
+          echo "Setting environment variables"
           IFS=',' read -ra VARS <<< "${{ inputs.environment-variables }}"
           for VAR in "${VARS[@]}"; do
             echo "Setting $VAR"
@@ -104,66 +105,95 @@ jobs:
 
       - name: Build
         run: |
+          echo "Building project"
           if [ -n "${{ inputs.build-command }}" ]; then
             echo "Using custom build command"
-            ${{ inputs.build-command }}
+            ${{ inputs.build-command }} 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
           elif [ -f "${{ inputs.project-path }}/setup.py" ]; then
-            echo "Building with setup.py"
-            python ${{ inputs.project-path }}/setup.py build
+            python ${{ inputs.project-path }}/setup.py build 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
           elif [ -f "${{ inputs.project-path }}/Makefile" ]; then
-            echo "Building with Makefile"
-            make -C ${{ inputs.project-path }} dev
+            make -C ${{ inputs.project-path }} dev 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
           elif [ -f "${{ inputs.project-path }}pyproject.toml" ]; then
-            echo "Building with pyproject.toml"
-            pip install .
+            pip install . 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
           else
-            echo "No build configuration found. Skipping build step."
-          fi
+            echo "No build configuration found. Skipping build step." 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
 
-  # Job separado para formatear código
+  # Job separado para formatear código y recopilar logs
   check-code-format:
     needs: ci_pipeline
     if: ${{ inputs.run-check-code-format }}
-    uses: ./.github/workflows/check-code-format.yml
-    with:
-      language: ${{ inputs.language }}
-      python-version: ${{ inputs.python-version }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Check Code Format
+        run: ./scripts/check_code_format.sh 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-check_code_format.log"
 
-  # Job separado para análisis de código
+  # Job separado para análisis de código y recopilar logs
   code-analysis:
     needs: ci_pipeline
     if: ${{ inputs.run-code-analysis }}
-    uses: ./.github/workflows/scan-security-vulnerabilities.yml
-    with:
-      language: ${{ inputs.language }}
-      python-version: ${{ inputs.python-version }}
-      project-path: ${{ inputs.project-path }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Code Analysis
+        run: ./scripts/code_analysis.sh 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-code_analysis.log"
 
-  # Job separado para generar artefacto de build
+  # Job separado para generar artefacto de build y recopilar logs
   build-artifact:
     needs: ci_pipeline
     if: ${{ inputs.run-build-artifact }}
-    uses: ./.github/workflows/build-artifact.yml
-    with:
-      language: ${{ inputs.language }}
-      python-version: ${{ inputs.python-version }}
-      project-path: ${{ inputs.project-path }}
-      requirements-path: ${{ inputs.requirements-path }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build Artifact
+        run: ./scripts/build_artifact.sh 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build_artifact.log"
 
-  # Job separado para ejecutar Lint
+  # Job separado para ejecutar Lint y recopilar logs
   python-lint:
     needs: ci_pipeline
     if: ${{ inputs.run-lint }}
-    uses: ./.github/workflows/lint.yml
-    with:
-      language: ${{ inputs.language }}
-      python-version: ${{ inputs.python-version }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Lint
+        run: ./scripts/run_lint.sh 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-lint.log"
+
+  # Job para subir y analizar los logs de builds fallidas
+  analyze_failed_logs:
+    needs: [ci_pipeline, check-code-format, code-analysis, build-artifact, python-lint]
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Upload Logs to Azure Storage
+        run: |
+          for log in *.log; do
+            az storage blob upload --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} --container-name logs --file $log --name "$log"
+          done
+
+      - name: Analyze Failed Logs with OpenAI
+        run: python scripts/analyze_logs.py --log-files "*.log" --analysis-type "error"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+  # Job para subir y analizar los logs de builds exitosas
+  analyze_success_logs:
+    needs: [ci_pipeline, check-code-format, code-analysis, build-artifact, python-lint]
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Upload Logs to Azure Storage
+        run: |
+          for log in *.log; do
+            az storage blob upload --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} --container-name logs --file $log --name "$log"
+          done
+
+      - name: Analyze Success Logs with OpenAI
+        run: python scripts/analyze_logs.py --log-files "*.log" --analysis-type "improvement"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
   # Job separado para la limpieza
   clean-up:
-    needs: [check-code-format, code-analysis, build-artifact, python-lint]
+    needs: [analyze_failed_logs, analyze_success_logs]
     if: ${{ inputs.run-clean-up }}
-    uses: ./.github/workflows/clean-up.yml
-    with:
-      language: ${{ inputs.language }}
-      python-version: ${{ inputs.python-version }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Clean-Up
+        run: ./scripts/clean_up.sh
+

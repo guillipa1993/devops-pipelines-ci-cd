@@ -1,10 +1,10 @@
-name: "Go CI/CD Pipeline"
+name: "Python CI/CD Pipeline"
 
 on:
   workflow_call:
     inputs:
-      go-version:
-        description: 'La versión de Go para usar en este pipeline'
+      python-version:
+        description: 'La versión de Python para usar en este pipeline'
         required: true
         type: string
       language:
@@ -12,8 +12,12 @@ on:
         required: true
         type: string
       project-path:
-        description: 'La ruta del proyecto donde se encuentra el código Go'
+        description: 'La ruta del proyecto donde se encuentra el código Python'
         required: true
+        type: string
+      requirements-path:
+        description: 'La ruta del proyecto donde se encuentran los requisitos del proyecto Python'
+        required: false
         type: string
       build-configuration:
         description: 'Configuración de build (Debug o Release)'
@@ -21,6 +25,10 @@ on:
         type: string
       additional-install-commands:
         description: 'Comandos adicionales para instalar dependencias antes de construir'
+        required: false
+        type: string
+      build-command:
+        description: 'Comando personalizado para construir el proyecto'
         required: false
         type: string
       run-tests:
@@ -57,28 +65,38 @@ on:
         type: string
 
 jobs:
-  # Job principal para construir el proyecto Go
+  # Job principal para construir el proyecto Python y recopilar logs
   ci_pipeline:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Set up Go
-        uses: actions/setup-go@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
         with:
-          go-version: ${{ inputs.go-version }}
+          python-version: ${{ inputs.python-version }}
 
       - name: Install additional dependencies
         if: ${{ inputs.additional-install-commands }}
-        run: ${{ inputs.additional-install-commands }}
+        run: |
+          echo "Running additional install commands"
+          ${{ inputs.additional-install-commands }} 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-additional-install.log"
 
       - name: Install dependencies
-        run: go mod tidy
+        run: |
+          echo "Installing dependencies"
+          if [ -f "${{ inputs.requirements-path }}requirements.txt" ]; then
+            pip install -r ${{ inputs.requirements-path }}requirements.txt 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-dependencies.log"
+          elif [ -f "${{ inputs.project-path }}pyproject.toml" ]; then
+            pip install . 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-dependencies.log"
+          else
+            echo "No requirements or pyproject.toml file found. Skipping dependency installation." 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-dependencies.log"
 
       - name: Set Environment Variables
         if: ${{ inputs.environment-variables }}
         run: |
+          echo "Setting environment variables"
           IFS=',' read -ra VARS <<< "${{ inputs.environment-variables }}"
           for VAR in "${VARS[@]}"; do
             echo "Setting $VAR"
@@ -86,51 +104,97 @@ jobs:
           done
 
       - name: Build
-        run: go build -o output/app ${{ inputs.project-path }}
+        run: |
+          echo "Building project"
+          if [ -n "${{ inputs.build-command }}" ]; then
+            echo "Using custom build command"
+            ${{ inputs.build-command }} 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
+          elif [ -f "${{ inputs.project-path }}/setup.py" ]; then
+            python ${{ inputs.project-path }}/setup.py build 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
+          elif [ -f "${{ inputs.project-path }}/Makefile" ]; then
+            make -C ${{ inputs.project-path }} dev 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
+          elif [ -f "${{ inputs.project-path }}pyproject.toml" ]; then
+            pip install . 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
+          else
+            echo "No build configuration found. Skipping build step." 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
 
-  # Job separado para formatear código
+  # Job separado para formatear código y recopilar logs usando workflow reutilizable
   check-code-format:
     needs: ci_pipeline
     if: ${{ inputs.run-check-code-format }}
     uses: ./.github/workflows/check-code-format.yml
     with:
       language: ${{ inputs.language }}
-      go-version: ${{ inputs.go-version }}
+      python-version: ${{ inputs.python-version }}
 
-  # Job separado para análisis de código
+  # Job separado para análisis de código y recopilar logs usando workflow reutilizable
   code-analysis:
     needs: ci_pipeline
     if: ${{ inputs.run-code-analysis }}
     uses: ./.github/workflows/scan-security-vulnerabilities.yml
     with:
       language: ${{ inputs.language }}
-      go-version: ${{ inputs.go-version }}
+      python-version: ${{ inputs.python-version }}
       project-path: ${{ inputs.project-path }}
 
-  # Job separado para generar artefacto de build
+  # Job separado para generar artefacto de build y recopilar logs usando workflow reutilizable
   build-artifact:
     needs: ci_pipeline
     if: ${{ inputs.run-build-artifact }}
     uses: ./.github/workflows/build-artifact.yml
     with:
       language: ${{ inputs.language }}
-      go-version: ${{ inputs.go-version }}
+      python-version: ${{ inputs.python-version }}
       project-path: ${{ inputs.project-path }}
 
-  # Job separado para ejecutar Lint
-  go-lint:
+  # Job separado para ejecutar Lint y recopilar logs usando workflow reutilizable
+  python-lint:
     needs: ci_pipeline
     if: ${{ inputs.run-lint }}
     uses: ./.github/workflows/lint.yml
     with:
       language: ${{ inputs.language }}
-      go-version: ${{ inputs.go-version }}
+      python-version: ${{ inputs.python-version }}
 
-  # Job separado para la limpieza
+  # Job para subir y analizar los logs de builds fallidas
+  analyze-failed-logs:
+    needs: [ci_pipeline, check-code-format, code-analysis, build-artifact, python-lint]
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Upload Logs to Azure Storage
+        run: |
+          for log in *.log; do
+            az storage blob upload --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} --container-name logs --file $log --name "$log"
+          done
+
+      - name: Analyze Failed Logs with OpenAI
+        run: python scripts/analyze-logs.py --log-files "*.log" --analysis-type "error"
+        env:
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+
+  # Job para subir y analizar los logs de builds exitosas
+  analyze-success-logs:
+    needs: [ci_pipeline, check-code-format, code-analysis, build-artifact, python-lint]
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Upload Logs to Azure Storage
+        run: |
+          for log in *.log; do
+            az storage blob upload --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} --container-name logs --file $log --name "$log"
+          done
+
+      - name: Analyze Success Logs with OpenAI
+        run: python scripts/analyze-logs.py --log-files "*.log" --analysis-type "improvement"
+        env:
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+
+  # Job separado para la limpieza usando el workflow reutilizable
   clean-up:
-    needs: [check-code-format, code-analysis, build-artifact, go-lint]
+    needs: [analyze-failed-logs, analyze-success-logs]
     if: ${{ inputs.run-clean-up }}
     uses: ./.github/workflows/clean-up.yml
     with:
       language: ${{ inputs.language }}
-      go-version: ${{ inputs.go-version }}
+      python-version: ${{ inputs.python-version }}

@@ -1,0 +1,29 @@
+{
+    "id": null,
+    "uid": "loki-test-dashboard",
+    "title": "Loki Test Dashboard",
+    "tags": ["loki", "test"],
+    "timezone": "browser",
+    "schemaVersion": 30,
+    "version": 1,
+    "panels": [
+      {
+        "type": "logs",
+        "title": "Loki Logs Panel",
+        "gridPos": {
+          "x": 0,
+          "y": 0,
+          "w": 24,
+          "h": 9
+        },
+        "datasource": null,
+        "targets": [
+          {
+            "expr": "{job=\"github-actions\"}",
+            "refId": "A"
+          }
+        ]
+      }
+    ]
+  }
+  
