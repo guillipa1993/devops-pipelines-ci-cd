@@ -83,7 +83,7 @@ jobs:
           echo "Running additional install commands"
           mkdir -p "${GITHUB_WORKSPACE}/logs"
           ${{ inputs.additional-install-commands }} 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${{ github.repository }}-${{ github.run_id }}-additional_install.log"
-
+  
       - name: Install dependencies
         run: |
           echo "Installing dependencies"
