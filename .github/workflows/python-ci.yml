@@ -81,7 +81,8 @@ jobs:
         if: ${{ inputs.additional-install-commands }}
         run: |
           echo "Running additional install commands"
-          ${{ inputs.additional-install-commands }} 2>&1 | tee "${GITHUB_WORKSPACE}/${{ github.repository }}-${{ github.run_id }}-additional_install.log"
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          ${{ inputs.additional-install-commands }} 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${{ github.repository }}-${{ github.run_id }}-additional_install.log"
 
       - name: Install dependencies
         run: |
