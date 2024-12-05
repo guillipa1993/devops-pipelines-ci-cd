@@ -63,6 +63,16 @@ on:
         description: 'Variables de entorno para configurar en el pipeline (formato: "VAR1=value1, VAR2=value2")'
         required: false
         type: string
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME:
+        description: 'Nombre de la cuenta de almacenamiento de Azure'
+        required: true
+      AZURE_STORAGE_ACCOUNT_KEY:
+        description: 'Clave de la cuenta de almacenamiento de Azure'
+        required: true
+      OPENAI_API_KEY:
+        description: 'Clave de API de OpenAI'
+        required: true
 
 jobs:
   # Job principal para construir el proyecto Python y recopilar logs
@@ -76,6 +86,12 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: ${{ inputs.python-version }}
+
+      - name: Set Azure Environment Variables
+        run: |
+          echo "Setting Azure environment variables..."
+          echo "AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" >> $GITHUB_ENV
+          echo "AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" >> $GITHUB_ENV
 
       - name: Set Environment Variables
         if: ${{ inputs.environment-variables }}
