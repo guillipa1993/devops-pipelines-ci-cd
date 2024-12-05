@@ -145,8 +145,16 @@ jobs:
       
       - name: Move wheel file to workspace
         run: |
-          mkdir -p ${GITHUB_WORKSPACE}/dist
-          mv /home/runner/.cache/pip/wheels/**/*.whl ${GITHUB_WORKSPACE}/dist/
+          echo "Searching for wheel files..."
+          WHEEL_FILE=$(find /home/runner/.cache/pip/wheels/ -type f -name "*.whl")
+          if [ -n "$WHEEL_FILE" ]; then
+            echo "Wheel file found: $WHEEL_FILE"
+            mkdir -p ${GITHUB_WORKSPACE}/dist
+            mv "$WHEEL_FILE" ${GITHUB_WORKSPACE}/dist/
+          else
+            echo "ERROR: No wheel file found!"
+            exit 1
+          fi
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v3
