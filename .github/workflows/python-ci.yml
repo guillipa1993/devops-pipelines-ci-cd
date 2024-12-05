@@ -222,16 +222,31 @@ jobs:
     runs-on: ubuntu-latest
     if: success()
     steps:
+      # Paso para verificar el nombre de la cuenta de almacenamiento
       - name: Debug Storage Account Name
         run: |
-          echo "Account Name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}"
-      
+          if [ -z "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" ]; then
+            echo "ERROR: AZURE_STORAGE_ACCOUNT_NAME is not set." >&2
+            exit 1
+          else
+            echo "Account Name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}"
+          fi
+
+      # Paso para subir los logs al contenedor de Azure Storage
       - name: Upload Logs to Azure Storage
         run: |
           for log in *.log; do
-            az storage blob upload --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} --container-name logs --file $log --name "$log"
+            if [ -f "$log" ]; then
+              echo "Uploading $log to Azure Storage..."
+              az storage blob upload --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} --container-name logs --file "$log" --name "$log"
+            else
+              echo "No log files found to upload." >&2
+            fi
           done
+        env:
+          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }} # Necesario para autenticarse si el contenedor no es público
 
+      # Paso para analizar los logs exitosos
       - name: Analyze Success Logs with OpenAI
         run: python scripts/analyze_logs.py --log-files "*.log" --analysis-type "improvement"
         env:
