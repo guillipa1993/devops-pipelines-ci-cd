@@ -142,6 +142,17 @@ jobs:
           else
             echo "SUCCESS : Log file for build was created!" >&2
           fi
+      
+      - name: Move wheel file to workspace
+        run: |
+          mkdir -p ${GITHUB_WORKSPACE}/dist
+          mv /home/runner/.cache/pip/wheels/**/*.whl ${GITHUB_WORKSPACE}/dist/
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: scikit-learn-wheel-${{ github.run_id }}
+          path: ${GITHUB_WORKSPACE}/dist/**/*.whl
 
   # Job separado para formatear código y recopilar logs
   check-code-format:
@@ -158,16 +169,6 @@ jobs:
     needs: ci_pipeline
     if: ${{ inputs.run-code-analysis }}
     uses: ./.github/workflows/scan-security-vulnerabilities.yml
-    with:
-      language: ${{ inputs.language }}
-      python-version: ${{ inputs.python-version }}
-      project-path: ${{ inputs.project-path }}
-
-  # Job separado para generar artefacto de build y recopilar logs
-  build-artifact:
-    needs: ci_pipeline
-    if: ${{ inputs.run-build-artifact }}
-    uses: ./.github/workflows/build-artifact.yml
     with:
       language: ${{ inputs.language }}
       python-version: ${{ inputs.python-version }}
