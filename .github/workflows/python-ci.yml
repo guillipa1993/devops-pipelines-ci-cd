@@ -134,7 +134,8 @@ jobs:
             pip install . 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
           else
             echo "No build configuration found. Skipping build step." 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
-
+          fi
+          
   # Job separado para formatear código y recopilar logs
   check-code-format:
     needs: ci_pipeline
