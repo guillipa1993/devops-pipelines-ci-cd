@@ -185,7 +185,7 @@ jobs:
 
   # Job para subir y analizar los logs de builds fallidas
   analyze_failed_logs:
-    needs: [ci_pipeline, check-code-format, code-analysis, build-artifact, python-lint]
+    needs: [ci_pipeline, check-code-format, code-analysis, python-lint]
     runs-on: ubuntu-latest
     if: failure()
     steps:
@@ -202,7 +202,7 @@ jobs:
 
   # Job para subir y analizar los logs de builds exitosas
   analyze_success_logs:
-    needs: [ci_pipeline, check-code-format, code-analysis, build-artifact, python-lint]
+    needs: [ci_pipeline, check-code-format, code-analysis, python-lint]
     runs-on: ubuntu-latest
     if: success()
     steps:
