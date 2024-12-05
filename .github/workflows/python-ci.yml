@@ -123,54 +123,58 @@ jobs:
       - name: Build
         run: |
           echo "Building project"
+          repo_name=$(basename "${{ github.repository }}")
           if [ -n "${{ inputs.build-command }}" ]; then
             echo "Using custom build command"
-            ${{ inputs.build-command }} 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
+            ${{ inputs.build-command }} 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
           elif [ -f "${{ inputs.project-path }}/setup.py" ]; then
-            python ${{ inputs.project-path }}/setup.py build 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
+            python ${{ inputs.project-path }}/setup.py build 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
           elif [ -f "${{ inputs.project-path }}/Makefile" ]; then
-            make -C ${{ inputs.project-path }} dev 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
-          elif [ -f "${{ inputs.project-path }}pyproject.toml" ]; then
-            pip install . 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
+            make -C ${{ inputs.project-path }} dev 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+          elif [ -f "${{ inputs.project-path }}/pyproject.toml" ]; then
+            pip install . 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
           else
-            echo "No build configuration found. Skipping build step." 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build.log"
+            echo "No build configuration found. Skipping build step." 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
           fi
-          
+
   # Job separado para formatear código y recopilar logs
   check-code-format:
     needs: ci_pipeline
     if: ${{ inputs.run-check-code-format }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run Check Code Format
-        run: ./scripts/check_code_format.sh 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-check_code_format.log"
+    uses: ./.github/workflows/check-code-format.yml
+    with:
+      language: ${{ inputs.language }}
+      python-version: ${{ inputs.python-version }}
+      project-path: ${{ inputs.project-path }}
 
   # Job separado para análisis de código y recopilar logs
   code-analysis:
     needs: ci_pipeline
     if: ${{ inputs.run-code-analysis }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run Code Analysis
-        run: ./scripts/code_analysis.sh 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-code_analysis.log"
+    uses: ./.github/workflows/scan-security-vulnerabilities.yml
+    with:
+      language: ${{ inputs.language }}
+      python-version: ${{ inputs.python-version }}
+      project-path: ${{ inputs.project-path }}
 
   # Job separado para generar artefacto de build y recopilar logs
   build-artifact:
     needs: ci_pipeline
     if: ${{ inputs.run-build-artifact }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Build Artifact
-        run: ./scripts/build_artifact.sh 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-build_artifact.log"
+    uses: ./.github/workflows/build-artifact.yml
+    with:
+      language: ${{ inputs.language }}
+      python-version: ${{ inputs.python-version }}
+      project-path: ${{ inputs.project-path }}
 
   # Job separado para ejecutar Lint y recopilar logs
   python-lint:
     needs: ci_pipeline
     if: ${{ inputs.run-lint }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Run Lint
-        run: ./scripts/run_lint.sh 2>&1 | tee "${{ github.repository }}-${{ github.run_id }}-lint.log"
+    uses: ./.github/workflows/lint.yml
+    with:
+      language: ${{ inputs.language }}
+      python-version: ${{ inputs.python-version }}
 
   # Job para subir y analizar los logs de builds fallidas
   analyze_failed_logs:
