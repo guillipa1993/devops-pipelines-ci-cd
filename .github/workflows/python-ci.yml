@@ -136,6 +136,12 @@ jobs:
           else
             echo "No build configuration found. Skipping build step." 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
           fi
+          if [ ! -f "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log" ]; then
+            echo "ERROR : Log file for build was not created!" >&2
+            exit 1
+          else
+            echo "SUCCESS : Log file for build was created!" >&2
+          fi
 
   # Job separado para formatear código y recopilar logs
   check-code-format:
@@ -199,6 +205,10 @@ jobs:
     runs-on: ubuntu-latest
     if: success()
     steps:
+      - name: Debug Storage Account Name
+        run: |
+          echo "Account Name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}"
+      
       - name: Upload Logs to Azure Storage
         run: |
           for log in *.log; do
