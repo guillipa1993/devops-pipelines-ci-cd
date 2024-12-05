@@ -145,12 +145,19 @@ jobs:
       
       - name: Move wheel file to workspace
         run: |
+          echo "GITHUB_WORKSPACE is: ${GITHUB_WORKSPACE}"
           echo "Searching for wheel files..."
           WHEEL_FILE=$(find /home/runner/.cache/pip/wheels/ -type f -name "*.whl")
           if [ -n "$WHEEL_FILE" ]; then
             echo "Wheel file found: $WHEEL_FILE"
-            mkdir -p ${GITHUB_WORKSPACE}/dist
-            mv "$WHEEL_FILE" ${GITHUB_WORKSPACE}/dist/
+            mkdir -p "${GITHUB_WORKSPACE}/dist"
+            mv "$WHEEL_FILE" "${GITHUB_WORKSPACE}/dist/"
+            if [ -f "${GITHUB_WORKSPACE}/dist/$(basename $WHEEL_FILE)" ]; then
+              echo "SUCCESS: Wheel file moved to dist directory."
+            else
+              echo "ERROR: Failed to move the wheel file." >&2
+              exit 1
+            fi
           else
             echo "ERROR: No wheel file found!"
             exit 1
@@ -161,6 +168,7 @@ jobs:
         with:
           name: scikit-learn-wheel-${{ github.run_id }}
           path: ${GITHUB_WORKSPACE}/dist/**/*.whl
+          if-no-files-found: error
 
   # Job separado para formatear código y recopilar logs
   check-code-format:
