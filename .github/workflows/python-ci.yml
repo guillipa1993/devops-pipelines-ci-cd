@@ -222,9 +222,10 @@ jobs:
     runs-on: ubuntu-latest
     if: success()
     steps:
-      # Paso para verificar el nombre de la cuenta de almacenamiento
+      # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
       - name: Debug Storage Account Name
         run: |
+          echo "Checking if AZURE_STORAGE_ACCOUNT_NAME is set..."
           if [ -z "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" ]; then
             echo "ERROR: AZURE_STORAGE_ACCOUNT_NAME is not set." >&2
             exit 1
@@ -232,21 +233,29 @@ jobs:
             echo "Account Name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}"
           fi
 
+      # Paso para establecer las variables de entorno necesarias para Azure
+      - name: Set Azure Environment Variables
+        run: |
+          echo "Setting Azure environment variables..."
+          echo "AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" >> $GITHUB_ENV
+          echo "AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" >> $GITHUB_ENV
+
       # Paso para subir los logs al contenedor de Azure Storage
       - name: Upload Logs to Azure Storage
         run: |
           for log in *.log; do
             if [ -f "$log" ]; then
               echo "Uploading $log to Azure Storage..."
-              az storage blob upload --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} --container-name logs --file "$log" --name "$log"
+              az storage blob upload --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --container-name logs --file "$log" --name "$log"
             else
               echo "No log files found to upload." >&2
             fi
           done
         env:
-          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }} # Necesario para autenticarse si el contenedor no es público
+          AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
 
-      # Paso para analizar los logs exitosos
+      # Paso para analizar los logs exitosos con OpenAI
       - name: Analyze Success Logs with OpenAI
         run: python scripts/analyze_logs.py --log-files "*.log" --analysis-type "improvement"
         env:
