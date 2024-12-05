@@ -167,7 +167,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: scikit-learn-wheel-${{ github.run_id }}
-          path: ${GITHUB_WORKSPACE}/dist/*.whl
+          path: ${{ github.workspace }}/dist/*.whl
           if-no-files-found: error
 
   # Job separado para formatear código y recopilar logs
