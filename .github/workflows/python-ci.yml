@@ -168,7 +168,7 @@ jobs:
           else
             echo "SUCCESS : Log file for build was created!" >&2
           fi
-      
+
       - name: Move wheel file to workspace
         run: |
           echo "GITHUB_WORKSPACE is: ${GITHUB_WORKSPACE}"
@@ -195,6 +195,19 @@ jobs:
           name: scikit-learn-wheel-${{ github.run_id }}
           path: ${{ github.workspace }}/dist/*.whl
           if-no-files-found: error
+
+      # Paso para descargar analyze_logs.py desde el repositorio de la librería
+      - name: Download analyze_logs.py from library repo
+        run: |
+          echo "Cloning the devops-pipelines-ci-cd repository to obtain analyze_logs.py script..."
+          git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+          cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
+          if [ -f "scripts/analyze_logs.py" ]; then
+            echo "SUCCESS: analyze_logs.py copied to scripts directory."
+          else
+            echo "ERROR: Failed to copy analyze_logs.py to scripts directory." >&2
+            exit 1
+          fi
 
   # Job separado para formatear código y recopilar logs
   check-code-format:
@@ -283,13 +296,7 @@ jobs:
 
       # Paso para analizar los logs exitosos con OpenAI
       - name: Analyze Success Logs with OpenAI
-        run: |
-          echo "Verifying if analyze_logs.py exists in scripts directory..."
-          if [ ! -f "scripts/analyze_logs.py" ]; then
-            echo "ERROR: analyze_logs.py not found in scripts directory!" >&2
-            exit 1
-          fi
-          python scripts/analyze_logs.py --log-files "*.log" --analysis-type "improvement"
+        run: python scripts/analyze_logs.py --log-files "*.log" --analysis-type "improvement"
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
