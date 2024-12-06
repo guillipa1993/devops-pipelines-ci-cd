@@ -272,7 +272,7 @@ jobs:
           for log in *.log; do
             if [ -f "$log" ]; then
               echo "Uploading $log to Azure Storage..."
-              az storage blob upload --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --container-name logs --file "$log" --name "$log"
+              az storage blob upload --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --account-key "$AZURE_STORAGE_ACCOUNT_KEY" --container-name logs --file "$log" --name "$log"
             else
               echo "No log files found to upload." >&2
             fi
@@ -283,7 +283,13 @@ jobs:
 
       # Paso para analizar los logs exitosos con OpenAI
       - name: Analyze Success Logs with OpenAI
-        run: python scripts/analyze_logs.py --log-files "*.log" --analysis-type "improvement"
+        run: |
+          echo "Verifying if analyze_logs.py exists in scripts directory..."
+          if [ ! -f "scripts/analyze_logs.py" ]; then
+            echo "ERROR: analyze_logs.py not found in scripts directory!" >&2
+            exit 1
+          fi
+          python scripts/analyze_logs.py --log-files "*.log" --analysis-type "improvement"
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
