@@ -325,6 +325,13 @@ jobs:
             echo "ERROR: Failed to copy analyze_logs.py to scripts directory." >&2
             exit 1
           fi
+      
+      - name: Install OpenAI Python Library
+        run: |
+          echo "Installing OpenAI Python library..."
+          pip install openai
+          echo "Verifying OpenAI library installation..."
+          python -c "import openai; print('OpenAI library installed successfully')"
 
       # Paso para analizar los logs exitosos con OpenAI
       - name: Analyze Success Logs with OpenAI
