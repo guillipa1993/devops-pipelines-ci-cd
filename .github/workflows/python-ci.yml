@@ -299,7 +299,7 @@ jobs:
         run: |
           echo "Cloning the devops-pipelines-ci-cd repository to obtain analyze_logs.py script..."
           git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
-          echo "Creating scripts directory if it doesn't exist..."
+          echo "Ensuring scripts directory exists..."
           mkdir -p scripts
           echo "Copying analyze_logs.py to scripts directory..."
           cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
