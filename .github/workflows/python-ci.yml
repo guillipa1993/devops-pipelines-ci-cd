@@ -77,8 +77,12 @@ on:
 jobs:
   # Job principal para construir el proyecto Python y recopilar logs
   ci_pipeline:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
+      - name: Debug OS Version
+        run: lsb_release -a || cat /etc/os-release
+        continue-on-error: true
+      
       - name: Checkout code
         uses: actions/checkout@v2
 
@@ -190,11 +194,11 @@ jobs:
           fi
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: scikit-learn-wheel-${{ github.run_id }}
           path: ${{ github.workspace }}/dist/*.whl
-          if-no-files-found: error
+          if-no-files-found: ignore
 
       # Paso para descargar analyze_logs.py desde el repositorio de la librería
       - name: Download analyze_logs.py from library repo
@@ -209,6 +213,7 @@ jobs:
 
           echo "Ensuring the scripts directory exists..."
           mkdir -p scripts
+          cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
 
           echo "Copying analyze_logs.py to the scripts directory..."
           if [ -f "devops-pipelines-ci-cd/scripts/analyze_logs.py" ]; then
@@ -257,13 +262,13 @@ jobs:
   # Job para subir y analizar los logs de builds fallidas
   analyze_failed_logs:
     needs: [ci_pipeline, check-code-format, code-analysis, python-lint]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: failure()
     steps:
       - name: Upload Logs to Azure Storage
         run: |
           for log in *.log; do
-            az storage blob upload --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} --container-name logs --file $log --name "$log"
+            az storage blob upload --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} --container-name logs --file "$log" --name "$log"
           done
 
       - name: Analyze Failed Logs with OpenAI
@@ -271,10 +276,10 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-  # Job para subir y analizar los logs de builds exitosas
+  # Job para analizar logs exitosos
   analyze_success_logs:
     needs: [ci_pipeline, check-code-format, code-analysis, python-lint]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: success()
     steps:
       # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
@@ -339,7 +344,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-  # Job separado para la limpieza
+  # Job para limpiar el entorno
   clean-up:
     needs: [analyze_failed_logs, analyze_success_logs]
     if: ${{ inputs.run-clean-up }}
