@@ -230,6 +230,21 @@ jobs:
             exit 1
           fi
 
+      - name: Debug Logs Directory
+        run: |
+          echo "Current working directory: $(pwd)"
+          echo "Listing contents of the current directory:"
+          ls -la
+          echo "Listing contents of the GITHUB_WORKSPACE directory:"
+          ls -la $GITHUB_WORKSPACE
+          echo "Checking if the logs directory exists in the workspace:"
+          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
+            echo "Logs directory exists in the workspace."
+            ls -la $GITHUB_WORKSPACE/logs
+          else
+            echo "ERROR: Logs directory does not exist in the workspace!"
+          fi
+
   # Job separado para formatear código y recopilar logs
   check-code-format:
     needs: ci_pipeline
