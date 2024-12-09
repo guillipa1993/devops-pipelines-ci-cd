@@ -244,6 +244,12 @@ jobs:
           else
             echo "ERROR: Logs directory does not exist in the workspace!"
           fi
+      
+      - name: Upload Logs Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: logs
+          path: $GITHUB_WORKSPACE/logs
 
   # Job separado para formatear código y recopilar logs
   check-code-format:
@@ -346,6 +352,21 @@ jobs:
             exit 1
           fi
       
+      - name: Download Logs Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: logs
+          path: $GITHUB_WORKSPACE/logs
+
+      - name: Verify Logs Artifact
+        run: |
+          if [ ! -d "$GITHUB_WORKSPACE/logs" ]; then
+            echo "ERROR: Logs directory does not exist after downloading artifact!" >&2
+            exit 1
+          fi
+          echo "Logs directory exists. Listing contents:"
+          ls -la $GITHUB_WORKSPACE/logs
+
       - name: Install OpenAI Python Library
         run: |
           echo "Installing OpenAI Python library..."
