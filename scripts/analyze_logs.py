@@ -1,13 +1,29 @@
 import os
 import openai
+import argparse
 
 # Inicializar la API de OpenAI con la clave
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def analyze_logs(log_dir):
-    # Recorrer todos los archivos de logs
-    for log_file in os.listdir(log_dir):
-        with open(os.path.join(log_dir, log_file), 'r') as f:
+def validate_logs_directory(log_dir):
+    """
+    Valida si el directorio de logs existe y contiene archivos.
+    """
+    if not os.path.exists(log_dir):
+        raise FileNotFoundError(f"ERROR: The logs directory '{log_dir}' does not exist.")
+    
+    log_files = [os.path.join(log_dir, f) for f in os.listdir(log_dir) if os.path.isfile(os.path.join(log_dir, f))]
+    if not log_files:
+        raise FileNotFoundError(f"ERROR: No log files found in the directory '{log_dir}'.")
+    
+    return log_files
+
+def analyze_logs(log_files):
+    """
+    Analiza los logs utilizando la API de OpenAI.
+    """
+    for log_file in log_files:
+        with open(log_file, 'r') as f:
             log_content = f.read()
             
             # Dividir el log en fragmentos para enviarlos a la API
@@ -25,15 +41,30 @@ def analyze_logs(log_dir):
                 save_analysis(log_file, analysis)
 
 def save_analysis(log_file, analysis):
-    # Guardar el resultado del análisis en un archivo con el mismo nombre pero en otro directorio
+    """
+    Guarda el análisis en un archivo en el directorio `analysis-results`.
+    """
     analysis_dir = "./analysis-results"
     if not os.path.exists(analysis_dir):
         os.makedirs(analysis_dir)
     
-    analysis_file_path = os.path.join(analysis_dir, f"{log_file}_analysis.txt")
+    analysis_file_path = os.path.join(analysis_dir, f"{os.path.basename(log_file)}_analysis.txt")
     with open(analysis_file_path, 'w') as f:
         f.write(analysis)
 
 if __name__ == "__main__":
-    log_directory = "./logs"
-    analyze_logs(log_directory)
+    parser = argparse.ArgumentParser(description="Analyze logs using OpenAI")
+    parser.add_argument("--log-dir", type=str, required=True, help="Path to the logs directory")
+    args = parser.parse_args()
+
+    try:
+        # Validar el directorio de logs
+        log_files = validate_logs_directory(args.log_dir)
+        print(f"Found {len(log_files)} log files in '{args.log_dir}'.")
+        
+        # Analizar los logs
+        analyze_logs(log_files)
+        print("Log analysis completed successfully.")
+    except Exception as e:
+        print(str(e))
+        exit(1)
