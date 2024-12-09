@@ -201,11 +201,27 @@ jobs:
         run: |
           echo "Cloning the devops-pipelines-ci-cd repository to obtain analyze_logs.py script..."
           git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
-          cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
-          if [ -f "scripts/analyze_logs.py" ]; then
-            echo "SUCCESS: analyze_logs.py copied to scripts directory."
+          echo "Verifying the repository was cloned successfully..."
+          if [ ! -d "devops-pipelines-ci-cd" ]; then
+            echo "ERROR: Repository devops-pipelines-ci-cd was not cloned successfully!" >&2
+            exit 1
+          fi
+
+          echo "Ensuring the scripts directory exists..."
+          mkdir -p scripts
+
+          echo "Copying analyze_logs.py to the scripts directory..."
+          if [ -f "devops-pipelines-ci-cd/scripts/analyze_logs.py" ]; then
+            cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
+            echo "Verifying that analyze_logs.py was copied successfully..."
+            if [ -f "scripts/analyze_logs.py" ]; then
+              echo "SUCCESS: analyze_logs.py copied to scripts directory."
+            else
+              echo "ERROR: analyze_logs.py was not copied to scripts directory!" >&2
+              exit 1
+            fi
           else
-            echo "ERROR: Failed to copy analyze_logs.py to scripts directory." >&2
+            echo "ERROR: analyze_logs.py does not exist in the cloned repository!" >&2
             exit 1
           fi
 
