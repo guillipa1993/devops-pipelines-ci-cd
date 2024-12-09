@@ -355,7 +355,7 @@ jobs:
 
       # Paso para analizar los logs exitosos con OpenAI
       - name: Analyze Success Logs with OpenAI
-        run: python scripts/analyze_logs.py --log-dir ./logs
+        run: python scripts/analyze_logs.py --log-dir $GITHUB_WORKSPACE/logs
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
