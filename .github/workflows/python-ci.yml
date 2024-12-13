@@ -201,34 +201,34 @@ jobs:
           if-no-files-found: ignore
 
       # Paso para descargar analyze_logs.py desde el repositorio de la librería
-      - name: Download analyze_logs.py from library repo
-        run: |
-          echo "Cloning the devops-pipelines-ci-cd repository to obtain analyze_logs.py script..."
-          git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
-          echo "Verifying the repository was cloned successfully..."
-          if [ ! -d "devops-pipelines-ci-cd" ]; then
-            echo "ERROR: Repository devops-pipelines-ci-cd was not cloned successfully!" >&2
-            exit 1
-          fi
+      # - name: Download analyze_logs.py from library repo
+      #   run: |
+      #     echo "Cloning the devops-pipelines-ci-cd repository to obtain analyze_logs.py script..."
+      #     git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+      #     echo "Verifying the repository was cloned successfully..."
+      #     if [ ! -d "devops-pipelines-ci-cd" ]; then
+      #       echo "ERROR: Repository devops-pipelines-ci-cd was not cloned successfully!" >&2
+      #       exit 1
+      #     fi
 
-          echo "Ensuring the scripts directory exists..."
-          mkdir -p scripts
-          cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
+      #     echo "Ensuring the scripts directory exists..."
+      #     mkdir -p scripts
+      #     cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
 
-          echo "Copying analyze_logs.py to the scripts directory..."
-          if [ -f "devops-pipelines-ci-cd/scripts/analyze_logs.py" ]; then
-            cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
-            echo "Verifying that analyze_logs.py was copied successfully..."
-            if [ -f "scripts/analyze_logs.py" ]; then
-              echo "SUCCESS: analyze_logs.py copied to scripts directory."
-            else
-              echo "ERROR: analyze_logs.py was not copied to scripts directory!" >&2
-              exit 1
-            fi
-          else
-            echo "ERROR: analyze_logs.py does not exist in the cloned repository!" >&2
-            exit 1
-          fi
+      #     echo "Copying analyze_logs.py to the scripts directory..."
+      #     if [ -f "devops-pipelines-ci-cd/scripts/analyze_logs.py" ]; then
+      #       cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
+      #       echo "Verifying that analyze_logs.py was copied successfully..."
+      #       if [ -f "scripts/analyze_logs.py" ]; then
+      #         echo "SUCCESS: analyze_logs.py copied to scripts directory."
+      #       else
+      #         echo "ERROR: analyze_logs.py was not copied to scripts directory!" >&2
+      #         exit 1
+      #       fi
+      #     else
+      #       echo "ERROR: analyze_logs.py does not exist in the cloned repository!" >&2
+      #       exit 1
+      #     fi
 
       - name: Debug Logs Directory
         run: |
@@ -246,10 +246,49 @@ jobs:
           fi
       
       - name: Upload Logs Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: logs
           path: $GITHUB_WORKSPACE/logs
+      
+      - name: Upload Logs to Azure Storage
+        run: |
+          for log in *.log; do
+            az storage blob upload --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} --container-name logs --file "$log" --name "$log"
+          done
+      
+            # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
+      - name: Debug Storage Account Name
+        run: |
+          echo "Checking if AZURE_STORAGE_ACCOUNT_NAME is set..."
+          if [ -z "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" ]; then
+            echo "ERROR: AZURE_STORAGE_ACCOUNT_NAME is not set." >&2
+            exit 1
+          else
+            echo "Account Name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}"
+          fi
+
+      # Paso para establecer las variables de entorno necesarias para Azure
+      - name: Set Azure Environment Variables
+        run: |
+          echo "Setting Azure environment variables..."
+          echo "AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" >> $GITHUB_ENV
+          echo "AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" >> $GITHUB_ENV
+
+      # Paso para subir los logs al contenedor de Azure Storage
+      - name: Upload Logs to Azure Storage
+        run: |
+          for log in *.log; do
+            if [ -f "$log" ]; then
+              echo "Uploading $log to Azure Storage..."
+              az storage blob upload --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --account-key "$AZURE_STORAGE_ACCOUNT_KEY" --container-name logs --file "$log" --name "$log"
+            else
+              echo "No log files found to upload." >&2
+            fi
+          done
+        env:
+          AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
 
   # Job separado para formatear código y recopilar logs
   check-code-format:
@@ -286,11 +325,12 @@ jobs:
     runs-on: ubuntu-24.04
     if: failure()
     steps:
-      - name: Upload Logs to Azure Storage
-        run: |
-          for log in *.log; do
-            az storage blob upload --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} --container-name logs --file "$log" --name "$log"
-          done
+
+      - name: Download Logs Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: logs
+          path: $GITHUB_WORKSPACE/logs
 
       - name: Analyze Failed Logs with OpenAI
         run: python scripts/analyze_logs.py --log-files "*.log" --analysis-type "error"
@@ -303,39 +343,6 @@ jobs:
     runs-on: ubuntu-24.04
     if: success()
     steps:
-      # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
-      - name: Debug Storage Account Name
-        run: |
-          echo "Checking if AZURE_STORAGE_ACCOUNT_NAME is set..."
-          if [ -z "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" ]; then
-            echo "ERROR: AZURE_STORAGE_ACCOUNT_NAME is not set." >&2
-            exit 1
-          else
-            echo "Account Name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}"
-          fi
-
-      # Paso para establecer las variables de entorno necesarias para Azure
-      - name: Set Azure Environment Variables
-        run: |
-          echo "Setting Azure environment variables..."
-          echo "AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" >> $GITHUB_ENV
-          echo "AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" >> $GITHUB_ENV
-
-      # Paso para subir los logs al contenedor de Azure Storage
-      - name: Upload Logs to Azure Storage
-        run: |
-          for log in *.log; do
-            if [ -f "$log" ]; then
-              echo "Uploading $log to Azure Storage..."
-              az storage blob upload --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --account-key "$AZURE_STORAGE_ACCOUNT_KEY" --container-name logs --file "$log" --name "$log"
-            else
-              echo "No log files found to upload." >&2
-            fi
-          done
-        env:
-          AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
-          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
-
       # Paso para descargar analyze_logs.py desde el repositorio de la librería
       - name: Download analyze_logs.py from library repo
         run: |
@@ -353,7 +360,7 @@ jobs:
           fi
       
       - name: Download Logs Artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: logs
           path: $GITHUB_WORKSPACE/logs
