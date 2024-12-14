@@ -84,10 +84,10 @@ jobs:
         continue-on-error: true
       
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ inputs.python-version }}
 
@@ -253,9 +253,14 @@ jobs:
       
       - name: Upload Logs to Azure Storage
         run: |
-          for log in *.log; do
-            az storage blob upload --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }} --container-name logs --file "$log" --name "$log"
-          done
+          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
+            for log in $GITHUB_WORKSPACE/logs/*.log; do
+              az storage blob upload --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --account-key "$AZURE_STORAGE_ACCOUNT_KEY" --container-name logs --file "$log" --name "$(basename $log)"
+            done
+          else
+            echo "ERROR: Logs directory does not exist. Skipping upload." >&2
+            exit 1
+          fi
       
             # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
       - name: Debug Storage Account Name
@@ -275,17 +280,28 @@ jobs:
           echo "AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" >> $GITHUB_ENV
           echo "AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" >> $GITHUB_ENV
 
+      - name: Verify Logs Directory
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/logs" ] && [ "$(ls -A $GITHUB_WORKSPACE/logs)" ]; then
+            echo "Logs directory exists and contains files:"
+            ls -la $GITHUB_WORKSPACE/logs
+          else
+            echo "ERROR: Logs directory is empty or does not exist!" >&2
+            exit 1
+          fi
+        
       # Paso para subir los logs al contenedor de Azure Storage
       - name: Upload Logs to Azure Storage
         run: |
-          for log in *.log; do
-            if [ -f "$log" ]; then
+          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
+            for log in $GITHUB_WORKSPACE/logs/*.log; do
               echo "Uploading $log to Azure Storage..."
-              az storage blob upload --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --account-key "$AZURE_STORAGE_ACCOUNT_KEY" --container-name logs --file "$log" --name "$log"
-            else
-              echo "No log files found to upload." >&2
-            fi
-          done
+              az storage blob upload --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --account-key "$AZURE_STORAGE_ACCOUNT_KEY" --container-name logs --file "$log" --name "$(basename $log)"
+            done
+          else
+            echo "ERROR: Logs directory does not exist. Skipping upload." >&2
+            exit 1
+          fi
         env:
           AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
           AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
