@@ -200,36 +200,6 @@ jobs:
           path: ${{ github.workspace }}/dist/*.whl
           if-no-files-found: ignore
 
-      # Paso para descargar analyze_logs.py desde el repositorio de la librería
-      # - name: Download analyze_logs.py from library repo
-      #   run: |
-      #     echo "Cloning the devops-pipelines-ci-cd repository to obtain analyze_logs.py script..."
-      #     git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
-      #     echo "Verifying the repository was cloned successfully..."
-      #     if [ ! -d "devops-pipelines-ci-cd" ]; then
-      #       echo "ERROR: Repository devops-pipelines-ci-cd was not cloned successfully!" >&2
-      #       exit 1
-      #     fi
-
-      #     echo "Ensuring the scripts directory exists..."
-      #     mkdir -p scripts
-      #     cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
-
-      #     echo "Copying analyze_logs.py to the scripts directory..."
-      #     if [ -f "devops-pipelines-ci-cd/scripts/analyze_logs.py" ]; then
-      #       cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
-      #       echo "Verifying that analyze_logs.py was copied successfully..."
-      #       if [ -f "scripts/analyze_logs.py" ]; then
-      #         echo "SUCCESS: analyze_logs.py copied to scripts directory."
-      #       else
-      #         echo "ERROR: analyze_logs.py was not copied to scripts directory!" >&2
-      #         exit 1
-      #       fi
-      #     else
-      #       echo "ERROR: analyze_logs.py does not exist in the cloned repository!" >&2
-      #       exit 1
-      #     fi
-
       - name: Debug Logs Directory
         run: |
           echo "Current working directory: $(pwd)"
@@ -245,17 +215,6 @@ jobs:
             echo "ERROR: Logs directory does not exist in the workspace!"
           fi      
      
-      # - name: Upload Logs to Azure Storage
-      #   run: |
-      #     if [ -d "$GITHUB_WORKSPACE/logs" ]; then
-      #       for log in $GITHUB_WORKSPACE/logs/*.log; do
-      #         az storage blob upload --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --account-key "$AZURE_STORAGE_ACCOUNT_KEY" --container-name logs --file "$log" --name "$(basename $log)"
-      #       done
-      #     else
-      #       echo "ERROR: Logs directory does not exist. Skipping upload." >&2
-      #       exit 1
-      #     fi
-      
       # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
       - name: Debug Storage Account Name
         run: |
@@ -283,12 +242,6 @@ jobs:
             echo "ERROR: Logs directory is empty or does not exist!" >&2
             exit 1
           fi
-      
-      - name: Upload Logs Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: logs
-          path: $GITHUB_WORKSPACE/logs
       
       # Paso para subir los logs al contenedor de Azure Storage
       - name: Upload Logs to Azure Storage
@@ -375,12 +328,51 @@ jobs:
             exit 1
           fi
       
-      - name: Download Logs Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: logs
-          path: $GITHUB_WORKSPACE/logs
-
+      - name: Download All Logs Matching Pattern from Azure Storage
+        run: |
+          echo "Creating logs directory..."
+          mkdir -p $GITHUB_WORKSPACE/logs
+      
+          echo "Constructing log name pattern..."
+          REPO_NAME="${GITHUB_REPOSITORY##*/}" # Extrae el nombre del repositorio
+          RUN_ID="${{ github.run_id }}"
+          LOG_NAME_PREFIX="${REPO_NAME}-${RUN_ID}-"
+      
+          echo "Listing blobs in Azure Storage container..."
+          az storage blob list \
+            --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
+            --account-key "$AZURE_STORAGE_ACCOUNT_KEY" \
+            --container-name logs \
+            --query "[].{name:name}" -o tsv | grep "^${LOG_NAME_PREFIX}" > blob_list.txt
+      
+          if [ ! -s blob_list.txt ]; then
+            echo "No logs found matching pattern: ${LOG_NAME_PREFIX}*.log"
+            exit 1
+          fi
+      
+          echo "Downloading logs matching pattern: ${LOG_NAME_PREFIX}*.log"
+          while IFS= read -r blob_name; do
+            echo "Downloading $blob_name..."
+            az storage blob download \
+              --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
+              --account-key "$AZURE_STORAGE_ACCOUNT_KEY" \
+              --container-name logs \
+              --name "$blob_name" \
+              --file "$GITHUB_WORKSPACE/logs/$(basename $blob_name)"
+          done < blob_list.txt
+      
+          echo "Verifying downloaded log files..."
+          if [ "$(ls -1 $GITHUB_WORKSPACE/logs | wc -l)" -eq 0 ]; then
+            echo "ERROR: No log files were downloaded!" >&2
+            exit 1
+          fi
+      
+          echo "Log files downloaded successfully. Listing contents:"
+          ls -la $GITHUB_WORKSPACE/logs
+        env:
+          AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}    
+      
       - name: Verify Logs Artifact
         run: |
           if [ ! -d "$GITHUB_WORKSPACE/logs" ]; then
