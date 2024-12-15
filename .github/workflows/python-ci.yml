@@ -196,7 +196,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: scikit-learn-wheel-${{ github.run_id }}
+          name: ${repo_name}-${{ github.run_id }}
           path: ${{ github.workspace }}/dist/*.whl
           if-no-files-found: ignore
 

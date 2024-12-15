@@ -123,6 +123,19 @@ jobs:
         if: ${{ inputs.language == 'python' }}
         run: |
           echo "Processing Bandit results..."
+          CRITICAL_ISSUES=$(jq '.results[]' bandit_output.json)
+          if [ -n "$CRITICAL_ISSUES" ]; then
+            echo "Critical security issues found:"
+            echo "$CRITICAL_ISSUES"
+          else
+            echo "No critical security issues found."
+          fi
+        continue-on-error: true
+
+      - name: Process Bandit HIGH severity Results
+        if: ${{ inputs.language == 'python' }}
+        run: |
+          echo "Processing Bandit results..."
           CRITICAL_ISSUES=$(jq '.results[] | select(.issue_severity == "HIGH")' bandit_output.json)
           if [ -n "$CRITICAL_ISSUES" ]; then
             echo "Critical security issues found:"

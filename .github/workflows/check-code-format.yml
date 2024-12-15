@@ -62,29 +62,57 @@ jobs:
       # Ejecutar el formateo de código basado en el lenguaje
       - name: Run Code Formatter
         run: |
+          # Crear carpeta de logs si no existe
+          mkdir -p logs
+
+          # Definir nombre base para el log
+          log_name="${{ github.repository }}-${{ github.run_id }}"
+
+          # Ejecutar el formateo de código según el lenguaje
           if [ "${{ inputs.language }}" == "go" ]; then
             echo "Running Go formatter"
-            gofmt -l .
+            gofmt -l . > "logs/${log_name}-go-format.log" || true
           elif [ "${{ inputs.language }}" == "node" ]; then
             echo "Running Prettier for Node.js"
-            npx prettier --check .
+            npx prettier --check . > "logs/${log_name}-node-format.log" || true
           elif [ "${{ inputs.language }}" == "python" ]; then
-            echo "Installing and running Black for Python"
-            black --check . || true 
+            echo "Running Black for Python"
+            black --check . > "logs/${log_name}-python-format.log" || true
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running Gradle formatter for Java"
             if [ -f "${{ inputs.project-path }}/gradlew" ]; then
               chmod +x "${{ inputs.project-path }}/gradlew"
-              "${{ inputs.project-path }}/gradlew" -p "${{ inputs.project-path }}" format || true
+              "${{ inputs.project-path }}/gradlew" -p "${{ inputs.project-path }}" format > "logs/${log_name}-java-format.log" || true
             else
-              echo "Gradle wrapper (gradlew) not found in project path. Skipping Java code format check."
+              echo "Gradle wrapper (gradlew) not found in project path. Skipping Java code format check." > "logs/${log_name}-java-format.log"
             fi
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
             version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
             if [ "$version" -lt 3 ]; then
-              echo "Skipping dotnet format: version is less than 3. Your version: ${{ inputs.dotnet-version }}"
+              echo "Skipping dotnet format: version is less than 3. Your version: ${{ inputs.dotnet-version }}" > "logs/${log_name}-dotnet-format.log"
             else
               echo "Running dotnet format"
-              dotnet format
+              dotnet format > "logs/${log_name}-dotnet-format.log" || true
             fi
+          else
+            echo "Unsupported language: ${{ inputs.language }}" > "logs/${log_name}-unsupported-format.log"
           fi
+
+          # Listar logs generados
+          echo "Generated logs:"
+          ls -la logs/
+
+      - name: Upload Logs to Azure Storage
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
+            for log in $GITHUB_WORKSPACE/logs/*.log; do
+              echo "Uploading $log to Azure Storage..."
+              az storage blob upload --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --account-key "$AZURE_STORAGE_ACCOUNT_KEY" --container-name logs --file "$log" --name "$(basename $log)" --overwrite
+            done
+          else
+            echo "ERROR: Logs directory does not exist. Skipping upload." >&2
+            exit 1
+          fi
+        env:
+          AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
