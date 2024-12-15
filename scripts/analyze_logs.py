@@ -30,12 +30,15 @@ def analyze_logs(log_files):
             log_fragments = [log_content[i:i+2000] for i in range(0, len(log_content), 2000)]
             
             for fragment in log_fragments:
-                response = openai.Completion.create(
-                    engine="text-davinci-003",
-                    prompt=f"Analyze the following log fragment: \n{fragment}\n",
+                response = openai.ChatCompletion.create(
+                    model="gpt-4",
+                    messages=[
+                        {"role": "system", "content": "You are a log analysis assistant."},
+                        {"role": "user", "content": f"Analyze the following log fragment: \n{fragment}\n"}
+                    ],
                     max_tokens=150
                 )
-                analysis = response['choices'][0]['text'].strip()
+                analysis = response['choices'][0]['message']['content'].strip()
                 
                 # Guardar el análisis
                 save_analysis(log_file, analysis)
