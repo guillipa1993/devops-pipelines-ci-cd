@@ -11,6 +11,14 @@ on:
         description: 'La ruta del proyecto donde se encuentra el código Java'
         required: false
         type: string
+      azure-account-name:
+        description: 'Azure Storage Account Name'
+        required: true
+        type: string
+      azure-account-key:
+        description: 'Azure Storage Account Key'
+        required: true
+        type: string
       dotnet-version:
         description: 'La versión de .NET para usar en este pipeline'
         required: false
@@ -110,8 +118,8 @@ jobs:
       - name: Set Azure Environment Variables
         run: |
           echo "Setting Azure environment variables..."
-          echo "AZURE_STORAGE_ACCOUNT_NAME=$AZURE_STORAGE_ACCOUNT_NAME" >> $GITHUB_ENV
-          echo "AZURE_STORAGE_ACCOUNT_KEY=$AZURE_STORAGE_ACCOUNT_KEY" >> $GITHUB_ENV
+          echo "AZURE_STORAGE_ACCOUNT_NAME=${{ inputs.azure-account-name }}" >> $GITHUB_ENV
+          echo "AZURE_STORAGE_ACCOUNT_KEY=${{ inputs.azure-account-key }}" >> $GITHUB_ENV
 
       - name: Upload Logs to Azure Storage
         run: |
