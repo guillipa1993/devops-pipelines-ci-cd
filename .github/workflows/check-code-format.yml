@@ -11,14 +11,6 @@ on:
         description: 'La ruta del proyecto donde se encuentra el código Java'
         required: false
         type: string
-      azure-account-name:
-        description: 'Azure Storage Account Name'
-        required: true
-        type: string
-      azure-account-key:
-        description: 'Azure Storage Account Key'
-        required: true
-        type: string
       dotnet-version:
         description: 'La versión de .NET para usar en este pipeline'
         required: false
@@ -110,12 +102,23 @@ jobs:
           echo "Generated logs:"
           ls -la logs/
 
+      - name: Debug Azure Variables
+        run: |
+          echo "Azure Storage Account Name: $AZURE_STORAGE_ACCOUNT_NAME"
+          echo "Azure Storage Account Key is set: [hidden]"
+
+      - name: Set Azure Environment Variables
+        run: |
+          echo "Setting Azure environment variables..."
+          echo "AZURE_STORAGE_ACCOUNT_NAME=$AZURE_STORAGE_ACCOUNT_NAME" >> $GITHUB_ENV
+          echo "AZURE_STORAGE_ACCOUNT_KEY=$AZURE_STORAGE_ACCOUNT_KEY" >> $GITHUB_ENV
+
       - name: Upload Logs to Azure Storage
         run: |
           if [ -d "$GITHUB_WORKSPACE/logs" ]; then
             for log in $GITHUB_WORKSPACE/logs/*.log; do
               echo "Uploading $log to Azure Storage..."
-              az storage blob upload --account-name "${{ inputs.azure-account-name }}" --account-key "${{ inputs.azure-account-key }}" --container-name logs --file "$log" --name "$(basename $log)" --overwrite
+              az storage blob upload --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --account-key "$AZURE_STORAGE_ACCOUNT_KEY" --container-name logs --file "$log" --name "$(basename $log)" --overwrite
             done
           else
             echo "ERROR: Logs directory does not exist. Skipping upload." >&2
