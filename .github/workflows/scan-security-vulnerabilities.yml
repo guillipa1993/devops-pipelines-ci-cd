@@ -11,6 +11,14 @@ on:
         description: 'La ruta del proyecto donde se encuentra el código Java'
         required: true
         type: string
+      azure-account-name:
+        description: 'Azure Storage Account Name'
+        required: true
+        type: string
+      azure-account-key:
+        description: 'Azure Storage Account Key'
+        required: true
+        type: string
       dotnet-version:
         description: 'La versión de .NET para usar en este pipeline'
         required: false
@@ -82,19 +90,25 @@ jobs:
       
       - name: Scan for Vulnerabilities
         run: |
+          # Crear la carpeta de logs si no existe
+          mkdir -p "$GITHUB_WORKSPACE/logs"
+      
+          # Generar nombre base para los logs
+          log_name="${{ github.repository }}-${{ github.run_id }}"
+      
           if [ -n "${{ inputs.project-path }}" ]; then
             cd "${{ inputs.project-path }}"
           fi
-
+      
           if [ "${{ inputs.language }}" == "go" ]; then
             echo "Scanning Go modules for vulnerabilities"
-            go list -m all | nancy sleuth
+            go list -m all | nancy sleuth > "$GITHUB_WORKSPACE/logs/${log_name}-go-vulnerabilities.log" 2>&1 || true
           elif [ "${{ inputs.language }}" == "node" ]; then
             echo "Running npm audit for Node.js"
-            npm audit --production
+            npm audit --production > "$GITHUB_WORKSPACE/logs/${log_name}-node-vulnerabilities.log" 2>&1 || true
           elif [ "${{ inputs.language }}" == "python" ]; then
             echo "Running bandit scan for Python"
-            bandit -r . -o bandit_output.json -f json || true
+            bandit -r . -o bandit_output.json -f json > "$GITHUB_WORKSPACE/logs/${log_name}-python-vulnerabilities.log" 2>&1 || true
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running OWASP Dependency Check for Java"
             find "${{ inputs.project-path }}" -name "pom.xml" ! -path "*/test/*" ! -path "*/src/test/*" ! -path "*/multi-release-jar/*" | while read -r pom_path; do
@@ -102,22 +116,22 @@ jobs:
               echo "Running dependency check in $project_dir"
               if [ -f "$project_dir/mvnw" ]; then
                 chmod +x "$project_dir/mvnw"
-                "$project_dir/mvnw" -f "$pom_path" org.owasp:dependency-check-maven:check
+                "$project_dir/mvnw" -f "$pom_path" org.owasp:dependency-check-maven:check >> "$GITHUB_WORKSPACE/logs/${log_name}-java-vulnerabilities.log" 2>&1 || true
               else
-                mvn -f "$pom_path" org.owasp:dependency-check-maven:check
+                mvn -f "$pom_path" org.owasp:dependency-check-maven:check >> "$GITHUB_WORKSPACE/logs/${log_name}-java-vulnerabilities.log" 2>&1 || true
               fi
             done
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
             version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
             if [ "$version" -lt 5 ]; then
               echo "Using 'dotnet list package --outdated' since '--vulnerable' is not available in versions less than .NET 5"
-              dotnet list package --outdated
+              dotnet list package --outdated > "$GITHUB_WORKSPACE/logs/${log_name}-dotnet-vulnerabilities.log" 2>&1 || true
             else
               echo "Scanning .NET packages for vulnerabilities"
-              dotnet list package --vulnerable
+              dotnet list package --vulnerable > "$GITHUB_WORKSPACE/logs/${log_name}-dotnet-vulnerabilities.log" 2>&1 || true
             fi
           fi
-        continue-on-error: true
+        continue-on-error: true       
 
       - name: Process Bandit Results
         if: ${{ inputs.language == 'python' }}
@@ -144,3 +158,15 @@ jobs:
             echo "No critical security issues found."
           fi
         continue-on-error: true
+
+      - name: Upload Logs to Azure Storage
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
+            for log in $GITHUB_WORKSPACE/logs/*.log; do
+              echo "Uploading $log to Azure Storage..."
+              az storage blob upload --account-name "${{ inputs.azure-account-name }}" --account-key "${{ inputs.azure-account-key }}" --container-name logs --file "$log" --name "$(basename $log)" --overwrite
+            done
+          else
+            echo "ERROR: Logs directory does not exist. Skipping upload." >&2
+            exit 1
+          fi
