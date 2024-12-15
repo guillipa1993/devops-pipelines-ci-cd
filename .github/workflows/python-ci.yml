@@ -63,16 +63,18 @@ on:
         description: 'Variables de entorno para configurar en el pipeline (formato: "VAR1=value1, VAR2=value2")'
         required: false
         type: string
-    secrets:
       azure-account-name:
         description: 'Azure Storage Account Name'
         required: true
+        type: string
       azure-account-key:
         description: 'Azure Storage Account Key'
         required: true
+        type: string
       openai-api-key:
         description: 'OpenAI API Key'
         required: true
+        type: string
 
 jobs:
   # Job principal para construir el proyecto Python y recopilar logs
@@ -94,12 +96,18 @@ jobs:
       - name: Set Azure Environment Variables
         run: |
           echo "Setting Azure environment variables..."
-          echo "AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.azure-account-name }}" >> $GITHUB_ENV
-          echo "AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.azure-account-key }}" >> $GITHUB_ENV
+          echo "AZURE_STORAGE_ACCOUNT_NAME=${{ inputs.azure-account-name }}" >> $GITHUB_ENV
+          echo "AZURE_STORAGE_ACCOUNT_KEY=${{ inputs.azure-account-key }}" >> $GITHUB_ENV
       
       - name: Set OpenAI API Key
         run: |
-          echo "OPENAI_API_KEY=${{ secrets.openai-api-key }}" >> $GITHUB_ENV
+          echo "OPENAI_API_KEY=${{ inputs.openai-api-key }}" >> $GITHUB_ENV
+      
+      - name: Verify Secrets
+        run: |
+          echo "Azure Account Name: ${AZURE_STORAGE_ACCOUNT_NAME}"
+          echo "Azure Account Key: ${AZURE_STORAGE_ACCOUNT_KEY}"
+          echo "OpenAI API Key: ${OPENAI_API_KEY}"
 
       - name: Set Environment Variables
         if: ${{ inputs.environment-variables }}
@@ -223,11 +231,11 @@ jobs:
       - name: Debug Storage Account Name
         run: |
           echo "Checking if AZURE_STORAGE_ACCOUNT_NAME is set..."
-          if [ -z "${{ secrets.azure-account-name }}" ]; then
+          if [ -z "${{ inputs.azure-account-name }}" ]; then
             echo "ERROR: AZURE_STORAGE_ACCOUNT_NAME is not set." >&2
             exit 1
           else
-            echo "Account Name: ${{ secrets.azure-account-name }}"
+            echo "Account Name: ${{ inputs.azure-account-name }}"
           fi
 
       - name: Verify Logs Directory
@@ -246,8 +254,8 @@ jobs:
           if [ -d "$GITHUB_WORKSPACE/logs" ]; then
             for log in $GITHUB_WORKSPACE/logs/*.log; do
               echo "Uploading $log to Azure Storage..."
-              az storage blob upload --account-name "${{ secrets.azure-account-name }}" \
-                                    --account-key "${{ secrets.azure-account-key }}" \
+              az storage blob upload --account-name "${{ inputs.azure-account-name }}" \
+                                    --account-key "${{ inputs.azure-account-key }}" \
                                     --container-name logs \
                                     --file "$log" \
                                     --name "$(basename $log)" \
@@ -267,8 +275,8 @@ jobs:
       language: ${{ inputs.language }}
       python-version: ${{ inputs.python-version }}
       project-path: ${{ inputs.project-path }}
-      azure-account-name: ${{ secrets.azure-account-name }}
-      azure-account-key: ${{ secrets.azure-account-key }}
+      azure-account-name: ${{ inputs.azure-account-name }}
+      azure-account-key: ${{ inputs.azure-account-key }}
 
   # Job separado para análisis de código y recopilar logs
   code-analysis:
@@ -279,8 +287,8 @@ jobs:
       language: ${{ inputs.language }}
       python-version: ${{ inputs.python-version }}
       project-path: ${{ inputs.project-path }}
-      azure-account-name: ${{ secrets.azure-account-name }}
-      azure-account-key: ${{ secrets.azure-account-key }}
+      azure-account-name: ${{ inputs.azure-account-name }}
+      azure-account-key: ${{ inputs.azure-account-key }}
 
   # Job separado para ejecutar Lint y recopilar logs
   python-lint:
@@ -290,8 +298,8 @@ jobs:
     with:
       language: ${{ inputs.language }}
       python-version: ${{ inputs.python-version }}
-      azure-account-name: ${{ secrets.azure-account-name }}
-      azure-account-key: ${{ secrets.azure-account-key }}
+      azure-account-name: ${{ inputs.azure-account-name }}
+      azure-account-key: ${{ inputs.azure-account-key }}
 
   # Job para subir y analizar los logs de builds fallidas
   analyze_failed_logs:
@@ -308,7 +316,7 @@ jobs:
       - name: Analyze Failed Logs with OpenAI
         run: python scripts/analyze_logs.py --log-files "*.log" --analysis-type "error"
         env:
-          OPENAI_API_KEY: ${{ secrets.openai-api-key }}
+          OPENAI_API_KEY: ${{ inputs.openai-api-key }}
 
   # Job para analizar logs exitosos
   analyze_success_logs:
@@ -336,8 +344,8 @@ jobs:
           RUN_ID="${{ github.run_id }}"
           LOG_NAME_PREFIX="${REPO_NAME}-${RUN_ID}-"
           az storage blob list \
-            --account-name "${{ secrets.azure-account-name }}" \
-            --account-key "${{ secrets.azure-account-key }}" \
+            --account-name "${{ inputs.azure-account-name }}" \
+            --account-key "${{ inputs.azure-account-key }}" \
             --container-name logs \
             --query "[].{name:name}" -o tsv | grep "^${LOG_NAME_PREFIX}" > blob_list.txt
           if [ ! -s blob_list.txt ]; then
@@ -346,8 +354,8 @@ jobs:
           fi
           while IFS= read -r blob_name; do
             az storage blob download \
-              --account-name "${{ secrets.azure-account-name }}" \
-              --account-key "${{ secrets.azure-account-key }}" \
+              --account-name "${{ inputs.azure-account-name }}" \
+              --account-key "${{ inputs.azure-account-key }}" \
               --container-name logs \
               --name "$blob_name" \
               --file "$GITHUB_WORKSPACE/logs/$(basename $blob_name)"
@@ -358,8 +366,8 @@ jobs:
           fi
           ls -la $GITHUB_WORKSPACE/logs
         env:
-          AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.azure-account-name }}
-          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.azure-account-key }}
+          AZURE_STORAGE_ACCOUNT_NAME: ${{ inputs.azure-account-name }}
+          AZURE_STORAGE_ACCOUNT_KEY: ${{ inputs.azure-account-key }}
 
       - name: Verify Logs Artifact
         run: |
@@ -378,7 +386,7 @@ jobs:
       - name: Analyze Success Logs with OpenAI
         run: python scripts/analyze_logs.py --log-dir $GITHUB_WORKSPACE/logs
         env:
-          OPENAI_API_KEY: ${{ secrets.openai-api-key }}  
+          OPENAI_API_KEY: ${{ inputs.openai-api-key }}  
 
   # Job para limpiar el entorno
   clean-up:
