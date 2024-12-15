@@ -268,8 +268,8 @@ jobs:
       language: ${{ inputs.language }}
       python-version: ${{ inputs.python-version }}
       project-path: ${{ inputs.project-path }}
-      azure-account-name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
-      azure-account-key: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      azure-account-name: ${{ inputs.azure-account-name }}
+      azure-account-key: ${{ inputs.azure-account-key }}
 
   # Job separado para análisis de código y recopilar logs
   code-analysis:
@@ -280,8 +280,8 @@ jobs:
       language: ${{ inputs.language }}
       python-version: ${{ inputs.python-version }}
       project-path: ${{ inputs.project-path }}
-      azure-account-name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
-      azure-account-key: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      azure-account-name: ${{ inputs.azure-account-name }}
+      azure-account-key: ${{ inputs.azure-account-key }}
 
   # Job separado para ejecutar Lint y recopilar logs
   python-lint:
