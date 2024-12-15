@@ -7,6 +7,14 @@ on:
         description: 'The programming language for linting'
         required: true
         type: string
+      azure-account-name:
+        description: 'Azure Storage Account Name'
+        required: true
+        type: string
+      azure-account-key:
+        description: 'Azure Storage Account Key'
+        required: true
+        type: string
       dotnet-version:
         description: 'La versión de .NET para usar en este pipeline'
         required: false
