@@ -225,11 +225,11 @@ jobs:
       - name: Debug Storage Account Name
         run: |
           echo "Checking if AZURE_STORAGE_ACCOUNT_NAME is set..."
-          if [ -z "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" ]; then
+          if [ -z "${{ inputs.azure-account-name }}" ]; then
             echo "ERROR: AZURE_STORAGE_ACCOUNT_NAME is not set." >&2
             exit 1
           else
-            echo "Account Name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}"
+            echo "Account Name: ${{ inputs.azure-account-name }}"
           fi
 
       - name: Verify Logs Directory
