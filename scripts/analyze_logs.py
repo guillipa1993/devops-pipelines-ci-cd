@@ -30,17 +30,24 @@ def analyze_logs(log_files):
             log_fragments = [log_content[i:i+4000] for i in range(0, len(log_content), 4000)]
             
             for fragment in log_fragments:
-                response = openai.ChatCompletion.create(
-                    model="gpt-4",
-                    messages=[
-                        {"role": "system", "content": "You are a log analysis assistant."},
-                        {"role": "user", "content": f"Analyze the following log fragment:\n{fragment}"}
-                    ]
-                )
-                analysis = response["choices"][0]["message"]["content"].strip()
-                
-                # Guardar el análisis
-                save_analysis(log_file, analysis)
+                try:
+                    # Usando el método correcto con ChatCompletion
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4",
+                        messages=[
+                            {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
+                            {"role": "user", "content": fragment}
+                        ],
+                        max_tokens=500,
+                        temperature=0.5
+                    )
+                    analysis = response["choices"][0]["message"]["content"].strip()
+                    
+                    # Guardar el análisis
+                    save_analysis(log_file, analysis)
+                except openai.error.OpenAIError as e:
+                    print(f"Error analyzing log fragment: {e}")
+                    continue
 
 def save_analysis(log_file, analysis):
     """
