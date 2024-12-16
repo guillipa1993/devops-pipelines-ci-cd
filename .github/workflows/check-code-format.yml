@@ -15,27 +15,27 @@ on:
         required: true
         type: string
       project-path:
-        description: 'La ruta del proyecto donde se encuentra el código Java'
+        description: 'The project path containing the code'
         required: false
         type: string
       dotnet-version:
-        description: 'La versión de .NET para usar en este pipeline'
+        description: 'The .NET version to use for this pipeline'
         required: false
         type: string
       node-version:
-        description: 'La versión de Node.js para usar en este pipeline'
+        description: 'The Node.js version to use for this pipeline'
         required: false
         type: string
       go-version:
-        description: 'La versión de Go para usar en este pipeline'
+        description: 'The Go version to use for this pipeline'
         required: false
         type: string
       python-version:
-        description: 'La versión de Python para usar en este pipeline'
+        description: 'The Python version to use for this pipeline'
         required: false
         type: string
       java-version:
-        description: 'La versión de Java para usar en este pipeline'
+        description: 'The Java version to use for this pipeline'
         required: false
         type: string
 
@@ -43,71 +43,72 @@ jobs:
   check-code-format:
     runs-on: ubuntu-latest
     steps:
-      # Realizar el checkout del código
       - name: Checkout code
         uses: actions/checkout@v2
 
-      # Instalar .NET si el lenguaje es 'dotnet' y hay una versión especificada
       - name: Set up .NET Core
         if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
         uses: actions/setup-dotnet@v2
         with:
           dotnet-version: "${{ inputs.dotnet-version }}"
 
-      # Instalar Node.js si el lenguaje es 'node' y hay una versión especificada
       - name: Set up Node.js
         if: ${{ inputs.language == 'node' && inputs.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: "${{ inputs.node-version }}"
   
-      # Instalar Black si el lenguaje es Python
       - name: Install Black for Python
         if: ${{ inputs.language == 'python' }}
         run: pip install black
 
-      # Ejecutar el formateo de código basado en el lenguaje
       - name: Run Code Formatter
         run: |
           # Crear carpeta de logs si no existe
-          mkdir -p logs
+          mkdir -p "$GITHUB_WORKSPACE/logs"
 
           # Definir nombre base para el log
-          log_name="${{ github.repository }}-${{ github.run_id }}"
+          repo_name="${GITHUB_REPOSITORY##*/}"
+          log_name="${repo_name}-${GITHUB_RUN_ID}"
+
+          # Cambiar al directorio del proyecto si se especifica
+          if [ -n "${{ inputs.project-path }}" ]; then
+            cd "${{ inputs.project-path }}"
+          fi
 
           # Ejecutar el formateo de código según el lenguaje
           if [ "${{ inputs.language }}" == "go" ]; then
             echo "Running Go formatter"
-            gofmt -l . > "logs/${log_name}-go-format.log" || true
+            gofmt -l . > "$GITHUB_WORKSPACE/logs/${log_name}-go-format.log" || true
           elif [ "${{ inputs.language }}" == "node" ]; then
             echo "Running Prettier for Node.js"
-            npx prettier --check . > "logs/${log_name}-node-format.log" || true
+            npx prettier --check . > "$GITHUB_WORKSPACE/logs/${log_name}-node-format.log" || true
           elif [ "${{ inputs.language }}" == "python" ]; then
             echo "Running Black for Python"
-            black --check . > "logs/${log_name}-python-format.log" 2>&1 || true
+            black --check . > "$GITHUB_WORKSPACE/logs/${log_name}-python-format.log" 2>&1 || true
           elif [ "${{ inputs.language }}" == "java" ]; then
             echo "Running Gradle formatter for Java"
             if [ -f "${{ inputs.project-path }}/gradlew" ]; then
               chmod +x "${{ inputs.project-path }}/gradlew"
-              "${{ inputs.project-path }}/gradlew" -p "${{ inputs.project-path }}" format > "logs/${log_name}-java-format.log" || true
+              "${{ inputs.project-path }}/gradlew" -p "${{ inputs.project-path }}" format > "$GITHUB_WORKSPACE/logs/${log_name}-java-format.log" || true
             else
-              echo "Gradle wrapper (gradlew) not found in project path. Skipping Java code format check." > "logs/${log_name}-java-format.log"
+              echo "Gradle wrapper (gradlew) not found in project path. Skipping Java code format check." > "$GITHUB_WORKSPACE/logs/${log_name}-java-format.log"
             fi
           elif [ "${{ inputs.language }}" == "dotnet" ]; then
             version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
             if [ "$version" -lt 3 ]; then
-              echo "Skipping dotnet format: version is less than 3. Your version: ${{ inputs.dotnet-version }}" > "logs/${log_name}-dotnet-format.log"
+              echo "Skipping dotnet format: version is less than 3. Your version: ${{ inputs.dotnet-version }}" > "$GITHUB_WORKSPACE/logs/${log_name}-dotnet-format.log"
             else
               echo "Running dotnet format"
-              dotnet format > "logs/${log_name}-dotnet-format.log" || true
+              dotnet format > "$GITHUB_WORKSPACE/logs/${log_name}-dotnet-format.log" || true
             fi
           else
-            echo "Unsupported language: ${{ inputs.language }}" > "logs/${log_name}-unsupported-format.log"
+            echo "Unsupported language: ${{ inputs.language }}" > "$GITHUB_WORKSPACE/logs/${log_name}-unsupported-format.log"
           fi
 
           # Listar logs generados
           echo "Generated logs:"
-          ls -la logs/
+          ls -la "$GITHUB_WORKSPACE/logs/"
 
       - name: Debug Azure Variables
         run: |
@@ -123,9 +124,14 @@ jobs:
       - name: Upload Logs to Azure Storage
         run: |
           if [ -d "$GITHUB_WORKSPACE/logs" ]; then
-            for log in $GITHUB_WORKSPACE/logs/*.log; do
+            for log in "$GITHUB_WORKSPACE/logs"/*.log; do
               echo "Uploading $log to Azure Storage..."
-              az storage blob upload --account-name "$AZURE_STORAGE_ACCOUNT_NAME" --account-key "$AZURE_STORAGE_ACCOUNT_KEY" --container-name logs --file "$log" --name "$(basename $log)" --overwrite
+              az storage blob upload --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
+                                     --account-key "$AZURE_STORAGE_ACCOUNT_KEY" \
+                                     --container-name logs \
+                                     --file "$log" \
+                                     --name "$(basename "$log")" \
+                                     --overwrite
             done
           else
             echo "ERROR: Logs directory does not exist. Skipping upload." >&2
