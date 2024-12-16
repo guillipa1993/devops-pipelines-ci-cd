@@ -2,6 +2,13 @@ name: "Scan Security Vulnerabilities"
 
 on:
   workflow_call:
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME:
+        description: 'Azure Storage Account Name'
+        required: true
+      AZURE_STORAGE_ACCOUNT_KEY:
+        description: 'Azure Storage Account Key'
+        required: true
     inputs:
       language:
         description: 'The programming language for vulnerability scanning'
@@ -9,14 +16,6 @@ on:
         type: string
       project-path:
         description: 'La ruta del proyecto donde se encuentra el código Java'
-        required: true
-        type: string
-      azure-account-name:
-        description: 'Azure Storage Account Name'
-        required: true
-        type: string
-      azure-account-key:
-        description: 'Azure Storage Account Key'
         required: true
         type: string
       dotnet-version:
@@ -164,7 +163,7 @@ jobs:
           if [ -d "$GITHUB_WORKSPACE/logs" ]; then
             for log in $GITHUB_WORKSPACE/logs/*.log; do
               echo "Uploading $log to Azure Storage..."
-              az storage blob upload --account-name "${{ inputs.azure-account-name }}" --account-key "${{ inputs.azure-account-key }}" --container-name logs --file "$log" --name "$(basename $log)" --overwrite
+              az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" --container-name logs --file "$log" --name "$(basename $log)" --overwrite
             done
           else
             echo "ERROR: Logs directory does not exist. Skipping upload." >&2

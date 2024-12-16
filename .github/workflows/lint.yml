@@ -2,17 +2,16 @@ name: "Lint Code"
 
 on:
   workflow_call:
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME:
+        description: 'Azure Storage Account Name'
+        required: true
+      AZURE_STORAGE_ACCOUNT_KEY:
+        description: 'Azure Storage Account Key'
+        required: true
     inputs:
       language:
         description: 'The programming language for linting'
-        required: true
-        type: string
-      azure-account-name:
-        description: 'Azure Storage Account Name'
-        required: true
-        type: string
-      azure-account-key:
-        description: 'Azure Storage Account Key'
         required: true
         type: string
       dotnet-version:
