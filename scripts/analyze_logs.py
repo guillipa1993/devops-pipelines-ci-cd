@@ -1,7 +1,7 @@
 import os
 import openai
 import argparse
-from openai.error import AuthenticationError, APIError, InvalidRequestError
+from openai import AuthenticationError, APIError, InvalidRequestError
 
 # Verificar si la clave de API está configurada
 api_key = os.getenv("OPENAI_API_KEY")
