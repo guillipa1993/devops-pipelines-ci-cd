@@ -30,13 +30,13 @@ def analyze_logs(log_files):
             log_fragments = [log_content[i:i+2000] for i in range(0, len(log_content), 2000)]
             
             for fragment in log_fragments:
+                # Prompt ajustado para análisis detallado y generación de informe
                 response = openai.ChatCompletion.create(
                     model="gpt-4",
                     messages=[
-                        {"role": "system", "content": "You are a log analysis assistant."},
-                        {"role": "user", "content": f"Analyze the following log fragment: \n{fragment}\n"}
-                    ],
-                    max_tokens=150
+                        {"role": "system", "content": "You are an expert log analysis assistant. Your task is to identify errors, propose improvements, and generate a summary for creating a GitHub issue."},
+                        {"role": "user", "content": f"Analyze the following log fragment: \n{fragment}\n Provide detailed recommendations and improvements based on the errors or warnings found. Format your response as a summary suitable for a GitHub issue."}
+                    ]
                 )
                 analysis = response['choices'][0]['message']['content'].strip()
                 
@@ -51,9 +51,14 @@ def save_analysis(log_file, analysis):
     if not os.path.exists(analysis_dir):
         os.makedirs(analysis_dir)
     
+    # Archivo de salida para el análisis del log
     analysis_file_path = os.path.join(analysis_dir, f"{os.path.basename(log_file)}_analysis.txt")
     with open(analysis_file_path, 'w') as f:
         f.write(analysis)
+
+    # Mostrar en consola el resultado para revisión
+    print(f"Analysis saved for {log_file}:")
+    print(analysis)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze logs using OpenAI")
