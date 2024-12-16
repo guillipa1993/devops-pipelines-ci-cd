@@ -42,13 +42,13 @@ def analyze_logs(log_files):
                 print(f"Analyzing fragment {idx}/{len(log_fragments)} of file '{log_file}'")
                 try:
                     # Usar el cliente correcto con el nuevo formato
-                    response = openai.ChatCompletions.create(
-                        model="gpt-4o",
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4",
                         messages=[
                             {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
                             {"role": "user", "content": fragment}
                         ],
-                        max_completion_tokens=500,
+                        max_tokens=500,
                         temperature=0.5
                     )
                     analysis = response.choices[0].message.content.strip()
