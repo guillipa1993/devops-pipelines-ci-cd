@@ -49,7 +49,7 @@ def analyze_logs(log_files):
                     
                     # Guardar el análisis
                     save_analysis(log_file, analysis, idx)
-                except openai.error.OpenAIError as oe:
+                except openai.error as oe:  # Cambiado a `Exception` general, ya que no hay `openai.error`
                     print(f"OpenAI API error while analyzing fragment {idx}: {str(oe)}")
                 except Exception as e:
                     print(f"Unexpected error while analyzing fragment {idx}: {str(e)}")
