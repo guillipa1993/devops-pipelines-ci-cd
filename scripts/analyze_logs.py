@@ -1,9 +1,9 @@
 import os
-import openai
 import argparse
+from openai import OpenAI, APIConnectionError, APIStatusError, RateLimitError
 
-# Inicializar la API de OpenAI con la clave
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Instanciar cliente de OpenAI
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def validate_logs_directory(log_dir):
     """
@@ -34,8 +34,7 @@ def analyze_logs(log_files):
             for idx, fragment in enumerate(log_fragments, 1):
                 print(f"Analyzing fragment {idx}/{len(log_fragments)} of file '{log_file}'")
                 try:
-                    # Usando el método correcto con ChatCompletion
-                    response = openai.ChatCompletion.create(
+                    response = client.chat.completions.create(
                         model="gpt-4",
                         messages=[
                             {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
@@ -44,13 +43,17 @@ def analyze_logs(log_files):
                         max_tokens=500,
                         temperature=0.5
                     )
-                    analysis = response["choices"][0]["message"]["content"].strip()
+                    analysis = response.choices[0].message.content.strip()
                     print(f"Fragment {idx} analysis complete.")
                     
                     # Guardar el análisis
                     save_analysis(log_file, analysis, idx)
-                except openai.error as oe:  # Cambiado a `Exception` general, ya que no hay `openai.error`
-                    print(f"OpenAI API error while analyzing fragment {idx}: {str(oe)}")
+                except APIConnectionError as e:
+                    print(f"Connection error while analyzing fragment {idx}: {e}")
+                except RateLimitError as e:
+                    print(f"Rate limit exceeded while analyzing fragment {idx}: {e}")
+                except APIStatusError as e:
+                    print(f"API status error while analyzing fragment {idx}: {e.status_code}, {e.response}")
                 except Exception as e:
                     print(f"Unexpected error while analyzing fragment {idx}: {str(e)}")
                     continue
@@ -76,11 +79,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
-        # Validar el directorio de logs
         log_files = validate_logs_directory(args.log_dir)
         print(f"Found {len(log_files)} log files in '{args.log_dir}'.")
-        
-        # Analizar los logs
         analyze_logs(log_files)
         print("Log analysis completed successfully.")
     except Exception as e:
