@@ -1,9 +1,16 @@
 import os
+import openai
 import argparse
-from openai import OpenAI, APIConnectionError, APIStatusError, RateLimitError
+from openai.error import AuthenticationError, APIError, InvalidRequestError
 
-# Instanciar cliente de OpenAI
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Verificar si la clave de API está configurada
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    print("ERROR: 'OPENAI_API_KEY' is not set. Please set it as an environment variable.")
+    exit(1)
+
+# Inicializar la API de OpenAI con la clave
+openai.api_key = api_key
 
 def validate_logs_directory(log_dir):
     """
@@ -34,13 +41,14 @@ def analyze_logs(log_files):
             for idx, fragment in enumerate(log_fragments, 1):
                 print(f"Analyzing fragment {idx}/{len(log_fragments)} of file '{log_file}'")
                 try:
-                    response = client.chat.completions.create(
-                        model="gpt-4",
+                    # Usar el cliente correcto con el nuevo formato
+                    response = openai.ChatCompletions.create(
+                        model="gpt-4o",
                         messages=[
                             {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
                             {"role": "user", "content": fragment}
                         ],
-                        max_tokens=500,
+                        max_completion_tokens=500,
                         temperature=0.5
                     )
                     analysis = response.choices[0].message.content.strip()
@@ -48,14 +56,15 @@ def analyze_logs(log_files):
                     
                     # Guardar el análisis
                     save_analysis(log_file, analysis, idx)
-                except APIConnectionError as e:
-                    print(f"Connection error while analyzing fragment {idx}: {e}")
-                except RateLimitError as e:
-                    print(f"Rate limit exceeded while analyzing fragment {idx}: {e}")
-                except APIStatusError as e:
-                    print(f"API status error while analyzing fragment {idx}: {e.status_code}, {e.response}")
+                except AuthenticationError:
+                    print("ERROR: Authentication failed. Check your API key.")
+                    return
+                except InvalidRequestError as ire:
+                    print(f"Invalid request error for fragment {idx}: {ire}")
+                except APIError as ae:
+                    print(f"API error while analyzing fragment {idx}: {ae}")
                 except Exception as e:
-                    print(f"Unexpected error while analyzing fragment {idx}: {str(e)}")
+                    print(f"Unexpected error while analyzing fragment {idx}: {e}")
                     continue
 
 def save_analysis(log_file, analysis, fragment_idx):
@@ -79,10 +88,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
+        # Validar el directorio de logs
         log_files = validate_logs_directory(args.log_dir)
         print(f"Found {len(log_files)} log files in '{args.log_dir}'.")
+        
+        # Analizar los logs
         analyze_logs(log_files)
         print("Log analysis completed successfully.")
     except Exception as e:
-        print(f"Critical error: {str(e)}")
+        print(f"Critical error: {e}")
         exit(1)
