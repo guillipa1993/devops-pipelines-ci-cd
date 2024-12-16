@@ -15,23 +15,23 @@ on:
         required: true
         type: string
       project-path:
-        description: 'La ruta del proyecto donde se encuentra el código Java'
+        description: 'The project path containing the code to scan'
         required: true
         type: string
       dotnet-version:
-        description: 'La versión de .NET para usar en este pipeline'
+        description: 'The .NET version to use for the pipeline'
         required: false
         type: string
       go-version:
-        description: 'La versión de Go para usar en este pipeline'
+        description: 'The Go version to use for the pipeline'
         required: false
         type: string
       python-version:
-        description: 'La versión de Python para usar en este pipeline'
+        description: 'The Python version to use for the pipeline'
         required: false
         type: string
       java-version:
-        description: 'La versión de Java para usar en este pipeline'
+        description: 'The Java version to use for the pipeline'
         required: false
         type: string
 
@@ -85,77 +85,69 @@ jobs:
         run: |
           export JUNIT_JUPITER_VERSION=5.7.1
           export JUNIT_PLATFORM_VERSION=1.7.1
-          echo "JUNIT_JUPITER_VERSION and JUNIT_PLATFORM_VERSION set."          
-      
+          echo "Java environment variables set."
+
       - name: Scan for Vulnerabilities
         run: |
           # Crear la carpeta de logs si no existe
           mkdir -p "$GITHUB_WORKSPACE/logs"
-      
+
           # Generar nombre base para los logs
-          log_name="${{ github.repository }}-${{ github.run_id }}"
-      
+          repo_name="${GITHUB_REPOSITORY##*/}"
+          log_name="${repo_name}-${GITHUB_RUN_ID}"
+
           if [ -n "${{ inputs.project-path }}" ]; then
             cd "${{ inputs.project-path }}"
           fi
-      
-          if [ "${{ inputs.language }}" == "go" ]; then
-            echo "Scanning Go modules for vulnerabilities"
-            go list -m all | nancy sleuth > "$GITHUB_WORKSPACE/logs/${log_name}-go-vulnerabilities.log" 2>&1 || true
-          elif [ "${{ inputs.language }}" == "node" ]; then
-            echo "Running npm audit for Node.js"
-            npm audit --production > "$GITHUB_WORKSPACE/logs/${log_name}-node-vulnerabilities.log" 2>&1 || true
-          elif [ "${{ inputs.language }}" == "python" ]; then
-            echo "Running bandit scan for Python"
-            bandit -r . -o bandit_output.json -f json > "$GITHUB_WORKSPACE/logs/${log_name}-python-vulnerabilities.log" 2>&1 || true
-          elif [ "${{ inputs.language }}" == "java" ]; then
-            echo "Running OWASP Dependency Check for Java"
-            find "${{ inputs.project-path }}" -name "pom.xml" ! -path "*/test/*" ! -path "*/src/test/*" ! -path "*/multi-release-jar/*" | while read -r pom_path; do
-              project_dir=$(dirname "$pom_path")
-              echo "Running dependency check in $project_dir"
-              if [ -f "$project_dir/mvnw" ]; then
-                chmod +x "$project_dir/mvnw"
-                "$project_dir/mvnw" -f "$pom_path" org.owasp:dependency-check-maven:check >> "$GITHUB_WORKSPACE/logs/${log_name}-java-vulnerabilities.log" 2>&1 || true
-              else
-                mvn -f "$pom_path" org.owasp:dependency-check-maven:check >> "$GITHUB_WORKSPACE/logs/${log_name}-java-vulnerabilities.log" 2>&1 || true
+
+          case "${{ inputs.language }}" in
+            go)
+              echo "Scanning Go modules for vulnerabilities"
+              go list -m all | nancy sleuth > "$GITHUB_WORKSPACE/logs/${log_name}-go-vulnerabilities.log" 2>&1 || true
+              ;;
+            node)
+              echo "Running npm audit for Node.js"
+              npm audit --production > "$GITHUB_WORKSPACE/logs/${log_name}-node-vulnerabilities.log" 2>&1 || true
+              ;;
+            python)
+              echo "Running Bandit scan for Python"
+              bandit -r . -o "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" -f json 2>&1 | tee "$GITHUB_WORKSPACE/logs/${log_name}-python-vulnerabilities.log" || true
+              if [ ! -f "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" ]; then
+                echo "ERROR: Bandit output JSON file not created!" >&2
+                exit 1
               fi
-            done
-          elif [ "${{ inputs.language }}" == "dotnet" ]; then
-            version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
-            if [ "$version" -lt 5 ]; then
-              echo "Using 'dotnet list package --outdated' since '--vulnerable' is not available in versions less than .NET 5"
-              dotnet list package --outdated > "$GITHUB_WORKSPACE/logs/${log_name}-dotnet-vulnerabilities.log" 2>&1 || true
-            else
-              echo "Scanning .NET packages for vulnerabilities"
-              dotnet list package --vulnerable > "$GITHUB_WORKSPACE/logs/${log_name}-dotnet-vulnerabilities.log" 2>&1 || true
-            fi
-          fi
-        continue-on-error: true       
+              ;;
+            java)
+              echo "Running OWASP Dependency Check for Java"
+              find "${{ inputs.project-path }}" -name "pom.xml" ! -path "*/test/*" ! -path "*/src/test/*" ! -path "*/multi-release-jar/*" | while read -r pom_path; do
+                project_dir=$(dirname "$pom_path")
+                echo "Running dependency check in $project_dir"
+                if [ -f "$project_dir/mvnw" ]; then
+                  chmod +x "$project_dir/mvnw"
+                  "$project_dir/mvnw" -f "$pom_path" org.owasp:dependency-check-maven:check >> "$GITHUB_WORKSPACE/logs/${log_name}-java-vulnerabilities.log" 2>&1 || true
+                else
+                  mvn -f "$pom_path" org.owasp:dependency-check-maven:check >> "$GITHUB_WORKSPACE/logs/${log_name}-java-vulnerabilities.log" 2>&1 || true
+                fi
+              done
+              ;;
+            dotnet)
+              version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
+              if [ "$version" -lt 5 ]; then
+                echo "Using 'dotnet list package --outdated' since '--vulnerable' is not available in versions less than .NET 5"
+                dotnet list package --outdated > "$GITHUB_WORKSPACE/logs/${log_name}-dotnet-vulnerabilities.log" 2>&1 || true
+              else
+                echo "Scanning .NET packages for vulnerabilities"
+                dotnet list package --vulnerable > "$GITHUB_WORKSPACE/logs/${log_name}-dotnet-vulnerabilities.log" 2>&1 || true
+              fi
+              ;;
+            *)
+              echo "Unsupported language: ${{ inputs.language }}" > "$GITHUB_WORKSPACE/logs/${log_name}-unsupported-format.log"
+              ;;
+          esac
 
-      - name: Process Bandit Results
-        if: ${{ inputs.language == 'python' }}
-        run: |
-          echo "Processing Bandit results..."
-          CRITICAL_ISSUES=$(jq '.results[]' bandit_output.json)
-          if [ -n "$CRITICAL_ISSUES" ]; then
-            echo "Critical security issues found:"
-            echo "$CRITICAL_ISSUES"
-          else
-            echo "No critical security issues found."
-          fi
-        continue-on-error: true
-
-      - name: Process Bandit HIGH severity Results
-        if: ${{ inputs.language == 'python' }}
-        run: |
-          echo "Processing Bandit results..."
-          CRITICAL_ISSUES=$(jq '.results[] | select(.issue_severity == "HIGH")' bandit_output.json)
-          if [ -n "$CRITICAL_ISSUES" ]; then
-            echo "Critical security issues found:"
-            echo "$CRITICAL_ISSUES"
-          else
-            echo "No critical security issues found."
-          fi
+          # Listar logs generados
+          echo "Generated logs:"
+          ls -la "$GITHUB_WORKSPACE/logs/"
         continue-on-error: true
 
       - name: Upload Logs to Azure Storage
@@ -163,9 +155,15 @@ jobs:
           if [ -d "$GITHUB_WORKSPACE/logs" ]; then
             for log in $GITHUB_WORKSPACE/logs/*.log; do
               echo "Uploading $log to Azure Storage..."
-              az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" --container-name logs --file "$log" --name "$(basename $log)" --overwrite
+              az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+                                     --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+                                     --container-name logs \
+                                     --file "$log" \
+                                     --name "$(basename "$log")" \
+                                     --overwrite
             done
           else
             echo "ERROR: Logs directory does not exist. Skipping upload." >&2
             exit 1
           fi
+        continue-on-error: true
