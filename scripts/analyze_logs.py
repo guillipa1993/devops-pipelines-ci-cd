@@ -1,7 +1,7 @@
 import os
 import openai
 import argparse
-from openai import AuthenticationError, APIError, InvalidRequestError
+from openai import AuthenticationError, APIError, BadRequestError
 
 # Verificar si la clave de API está configurada
 api_key = os.getenv("OPENAI_API_KEY")
@@ -59,8 +59,8 @@ def analyze_logs(log_files):
                 except AuthenticationError:
                     print("ERROR: Authentication failed. Check your API key.")
                     return
-                except InvalidRequestError as ire:
-                    print(f"Invalid request error for fragment {idx}: {ire}")
+                except BadRequestError as bre:
+                    print(f"Bad request error for fragment {idx}: {bre}")
                 except APIError as ae:
                     print(f"API error while analyzing fragment {idx}: {ae}")
                 except Exception as e:
