@@ -45,8 +45,8 @@ def analyze_logs(log_files):
                     
                     # Guardar el análisis
                     save_analysis(log_file, analysis)
-                except openai.error.OpenAIError as e:
-                    print(f"Error analyzing log fragment: {e}")
+                except Exception as e:
+                    print(f"Error analyzing log fragment: {str(e)}")
                     continue
 
 def save_analysis(log_file, analysis):
