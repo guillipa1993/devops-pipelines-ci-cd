@@ -381,8 +381,8 @@ jobs:
 
       - name: Install OpenAI Python Library
         run: |
-          pip install openai --upgrade
-          python -c "import openai; print('OpenAI library version:', openai.__version__)"
+          pip install openai
+          python -c "import openai; print('OpenAI library installed successfully')"        
         
       - name: Analyze Success Logs with OpenAI
         run: python scripts/analyze_logs.py --log-dir $GITHUB_WORKSPACE/logs

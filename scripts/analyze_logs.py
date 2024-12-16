@@ -27,18 +27,17 @@ def analyze_logs(log_files):
             log_content = f.read()
             
             # Dividir el log en fragmentos para enviarlos a la API
-            log_fragments = [log_content[i:i+2000] for i in range(0, len(log_content), 2000)]
+            log_fragments = [log_content[i:i+4000] for i in range(0, len(log_content), 4000)]
             
             for fragment in log_fragments:
-                # Usar el nuevo endpoint `openai.ChatCompletion.acreate`
                 response = openai.ChatCompletion.create(
                     model="gpt-4",
                     messages=[
                         {"role": "system", "content": "You are a log analysis assistant."},
-                        {"role": "user", "content": f"Analyze the following log fragment: \n{fragment}"}
+                        {"role": "user", "content": f"Analyze the following log fragment:\n{fragment}"}
                     ]
                 )
-                analysis = response.choices[0].message["content"].strip()
+                analysis = response["choices"][0]["message"]["content"].strip()
                 
                 # Guardar el análisis
                 save_analysis(log_file, analysis)
@@ -51,14 +50,9 @@ def save_analysis(log_file, analysis):
     if not os.path.exists(analysis_dir):
         os.makedirs(analysis_dir)
     
-    # Archivo de salida para el análisis del log
     analysis_file_path = os.path.join(analysis_dir, f"{os.path.basename(log_file)}_analysis.txt")
     with open(analysis_file_path, 'w') as f:
         f.write(analysis)
-
-    # Mostrar en consola el resultado para revisión
-    print(f"Analysis saved for {log_file}:")
-    print(analysis)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze logs using OpenAI")
