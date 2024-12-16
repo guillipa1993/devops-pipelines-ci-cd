@@ -30,15 +30,15 @@ def analyze_logs(log_files):
             log_fragments = [log_content[i:i+2000] for i in range(0, len(log_content), 2000)]
             
             for fragment in log_fragments:
-                # Prompt ajustado para análisis detallado y generación de informe
+                # Usar el nuevo endpoint `openai.ChatCompletion.acreate`
                 response = openai.ChatCompletion.create(
                     model="gpt-4",
                     messages=[
-                        {"role": "system", "content": "You are an expert log analysis assistant. Your task is to identify errors, propose improvements, and generate a summary for creating a GitHub issue."},
-                        {"role": "user", "content": f"Analyze the following log fragment: \n{fragment}\n Provide detailed recommendations and improvements based on the errors or warnings found. Format your response as a summary suitable for a GitHub issue."}
+                        {"role": "system", "content": "You are a log analysis assistant."},
+                        {"role": "user", "content": f"Analyze the following log fragment: \n{fragment}"}
                     ]
                 )
-                analysis = response['choices'][0]['message']['content'].strip()
+                analysis = response.choices[0].message["content"].strip()
                 
                 # Guardar el análisis
                 save_analysis(log_file, analysis)
