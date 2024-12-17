@@ -54,7 +54,7 @@ jobs:
         with:
           dotnet-version: "${{ inputs.dotnet-version }}"
 
-      - name: Install Nancy
+      - name: Install Nancy for Go
         if: ${{ inputs.language == 'go' }}
         run: |
           NANCY_VERSION=$(curl --silent "https://api.github.com/repos/sonatype-nexus-community/nancy/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
@@ -63,11 +63,7 @@ jobs:
           file nancy  
           chmod +x nancy
           sudo mv nancy /usr/local/bin/nancy
-          echo "Nancy installed successfully"
-        
-      - name: Check Nancy installation
-        if: ${{ inputs.language == 'go' }}
-        run: nancy --version
+          nancy --version
 
       - name: Set up Python
         if: ${{ inputs.language == 'python' && inputs.python-version }}
@@ -78,7 +74,9 @@ jobs:
       - name: Install Bandit for Python Security Scan
         if: ${{ inputs.language == 'python' && inputs.python-version }}
         run: |
+          echo "Installing Bandit..."
           pip install bandit
+          bandit --version
 
       - name: Set Java Environment Variables
         if: ${{ inputs.language == 'java' }}
@@ -89,15 +87,13 @@ jobs:
 
       - name: Scan for Vulnerabilities
         run: |
-          # Crear la carpeta de logs si no existe
           mkdir -p "$GITHUB_WORKSPACE/logs"
-
-          # Generar nombre base para los logs
           repo_name="${GITHUB_REPOSITORY##*/}"
           log_name="${repo_name}-${GITHUB_RUN_ID}"
 
           if [ -n "${{ inputs.project-path }}" ]; then
             cd "${{ inputs.project-path }}"
+            echo "Changed to project directory: ${{ inputs.project-path }}"
           fi
 
           case "${{ inputs.language }}" in
@@ -110,16 +106,26 @@ jobs:
               npm audit --production > "$GITHUB_WORKSPACE/logs/${log_name}-node-vulnerabilities.log" 2>&1 || true
               ;;
             python)
+              echo "Listing Python files for Bandit analysis:"
+              find . -name "*.py"
               echo "Running Bandit scan for Python"
-              bandit -r . -o "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" -f json 2>&1 | tee "$GITHUB_WORKSPACE/logs/${log_name}-python-vulnerabilities.log" || true
-              if [ ! -f "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" ]; then
+              bandit -r . -o "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" -f json | tee "$GITHUB_WORKSPACE/logs/${log_name}-python-vulnerabilities.log" || true
+
+              # Convertir el JSON a formato log
+              if [ -f "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" ]; then
+                echo "Converting JSON output to log format"
+                jq -r '.results[] | "Filename: \(.filename)\nIssue: \(.issue_text)\nSeverity: \(.severity)\nLine: \(.line_number)\n---"' \
+                  "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" > "$GITHUB_WORKSPACE/logs/${log_name}-bandit-converted.log"
+
+                echo "Bandit output JSON file converted to LOG format successfully."
+              else
                 echo "ERROR: Bandit output JSON file not created!" >&2
                 exit 1
               fi
               ;;
             java)
               echo "Running OWASP Dependency Check for Java"
-              find "${{ inputs.project-path }}" -name "pom.xml" ! -path "*/test/*" ! -path "*/src/test/*" ! -path "*/multi-release-jar/*" | while read -r pom_path; do
+              find "${{ inputs.project-path }}" -name "pom.xml" | while read -r pom_path; do
                 project_dir=$(dirname "$pom_path")
                 echo "Running dependency check in $project_dir"
                 if [ -f "$project_dir/mvnw" ]; then
@@ -133,7 +139,7 @@ jobs:
             dotnet)
               version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
               if [ "$version" -lt 5 ]; then
-                echo "Using 'dotnet list package --outdated' since '--vulnerable' is not available in versions less than .NET 5"
+                echo "Using 'dotnet list package --outdated'"
                 dotnet list package --outdated > "$GITHUB_WORKSPACE/logs/${log_name}-dotnet-vulnerabilities.log" 2>&1 || true
               else
                 echo "Scanning .NET packages for vulnerabilities"
@@ -141,7 +147,7 @@ jobs:
               fi
               ;;
             *)
-              echo "Unsupported language: ${{ inputs.language }}" > "$GITHUB_WORKSPACE/logs/${log_name}-unsupported-format.log"
+              echo "Unsupported language: ${{ inputs.language }}" > "$GITHUB_WORKSPACE/logs/${log_name}-unsupported-language.log"
               ;;
           esac
 
@@ -153,7 +159,7 @@ jobs:
       - name: Upload Logs to Azure Storage
         run: |
           if [ -d "$GITHUB_WORKSPACE/logs" ]; then
-            for log in $GITHUB_WORKSPACE/logs/*.log; do
+            for log in $GITHUB_WORKSPACE/logs/*; do
               echo "Uploading $log to Azure Storage..."
               az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
                                      --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
