@@ -37,6 +37,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+      
+      - name: Ensure logs directory exists
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          echo "Logs directory created: ${GITHUB_WORKSPACE}/logs"
 
       # Ejecutar el linter de Go
       - name: Run Go Linter
