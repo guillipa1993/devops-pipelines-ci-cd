@@ -2,7 +2,6 @@ import os
 import time
 import argparse
 import openai
-import json
 from openai import OpenAI, OpenAIError, RateLimitError, AuthenticationError, APIError, BadRequestError
 
 # Verificar si la clave de API está configurada
@@ -16,14 +15,18 @@ client = OpenAI(api_key=api_key)
 
 def validate_logs_directory(log_dir):
     """
-    Valida si el directorio de logs existe y contiene archivos.
+    Valida si el directorio de logs existe y contiene archivos .log excluyendo archivos JSON.
     """
     if not os.path.exists(log_dir):
         raise FileNotFoundError(f"ERROR: The logs directory '{log_dir}' does not exist.")
-    
-    log_files = [os.path.join(log_dir, f) for f in os.listdir(log_dir) if os.path.isfile(os.path.join(log_dir, f))]
+
+    log_files = [
+        os.path.join(log_dir, f)
+        for f in os.listdir(log_dir)
+        if os.path.isfile(os.path.join(log_dir, f)) and f.endswith(".log") and "python-vulnerabilities.log" not in f
+    ]
     if not log_files:
-        raise FileNotFoundError(f"ERROR: No log files found in the directory '{log_dir}'.")
+        raise FileNotFoundError(f"ERROR: No valid .log files found in the directory '{log_dir}'.")
     
     return log_files
 
@@ -88,37 +91,8 @@ def save_analysis(log_file, analysis, fragment_idx):
         f.write(analysis)
     print(f"   Analysis for fragment {fragment_idx} saved to {analysis_file_path}", flush=True)
 
-def filter_high_severity_issues(log_dir):
-    """
-    Filtra los archivos JSON generados por Bandit para extraer sólo las vulnerabilidades de alta severidad.
-    """
-    for file in os.listdir(log_dir):
-        if file.endswith(".json"):
-            json_path = os.path.join(log_dir, file)
-            with open(json_path, 'r') as f:
-                try:
-                    data = json.load(f)
-                    high_severity_issues = [
-                        result for result in data.get("results", []) 
-                        if result.get("severity") == "HIGH"
-                    ]
-                    # Guardar sólo las vulnerabilidades HIGH
-                    if high_severity_issues:
-                        high_severity_file = os.path.join(log_dir, f"{os.path.basename(file)}_HIGH.log")
-                        with open(high_severity_file, 'w') as high_f:
-                            for issue in high_severity_issues:
-                                high_f.write(
-                                    f"Filename: {issue['filename']}\n"
-                                    f"Issue: {issue['issue_text']}\n"
-                                    f"Severity: {issue['severity']}\n"
-                                    f"Line: {issue['line_number']}\n---\n"
-                                )
-                        print(f"Filtered HIGH severity issues saved to {high_severity_file}", flush=True)
-                except json.JSONDecodeError:
-                    print(f"Error decoding JSON in file: {json_path}", flush=True)
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Analyze logs using OpenAI")
+    parser = argparse.ArgumentParser(description="Analyze log files using OpenAI")
     parser.add_argument("--log-dir", type=str, required=True, help="Path to the logs directory")
     args = parser.parse_args()
 
@@ -126,14 +100,11 @@ if __name__ == "__main__":
         # Validar el directorio de logs
         log_files = validate_logs_directory(args.log_dir)
         print(f"Found {len(log_files)} log files in '{args.log_dir}'.", flush=True)
-        
+
         # Analizar los logs
         analyze_logs(log_files)
-        
-        # Filtrar sólo SEVERITY.HIGH si hay JSON generados
-        filter_high_severity_issues(args.log_dir)
-        
-        print("Log analysis and filtering completed successfully.", flush=True)
+
+        print("Log analysis completed successfully.", flush=True)
     except Exception as e:
         print(f"Critical error: {e}", flush=True)
         exit(1)
