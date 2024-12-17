@@ -131,23 +131,32 @@ jobs:
             echo "SUCCESS : Log file for additional dependencies installation was created!" >&2
           fi
         
-      - name: Install dependencies
+      - name: Install dependencies and Save Logs
         run: |
-          echo "Installing dependencies"
+          echo "Installing dependencies with increased timeout and fallback to PyPI"
           mkdir -p "${GITHUB_WORKSPACE}/logs"
-          repo_name=$(basename "${{ github.repository }}")
+      
+          # Variables dinámicas
+          repo_name=$(basename "${GITHUB_REPOSITORY}")
+          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-dependencies.log"
+      
+          # Instalación de dependencias
           if [ -f "${{ inputs.requirements-path }}requirements.txt" ]; then
-            pip install -r ${{ inputs.requirements-path }}requirements.txt 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-dependencies.log"
-          elif [ -f "${{ inputs.project-path }}pyproject.toml" ]; then
-            pip install . 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-dependencies.log"
+            echo "Installing dependencies from ${{ inputs.requirements-path }}requirements.txt"
+            pip install --timeout 60 --index-url https://pypi.org/simple -r ${{ inputs.requirements-path }}requirements.txt 2>&1 | tee "$log_file"
+          elif [ -f "pyproject.toml" ]; then
+            echo "Installing dependencies from pyproject.toml"
+            pip install . 2>&1 | tee "$log_file"
           else
-            echo "No requirements or pyproject.toml file found. Skipping dependency installation." 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-dependencies.log"
+            echo "No requirements or pyproject.toml file found. Skipping dependency installation." 2>&1 | tee "$log_file"
           fi
-          if [ ! -f "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-dependencies.log" ]; then
-            echo "ERROR : Log file for dependencies installation was not created!" >&2
+      
+          # Verificación de creación del log
+          if [ ! -f "$log_file" ]; then
+            echo "ERROR: Log file $log_file was not created!" >&2
             exit 1
           else
-            echo "SUCCESS : Log file for dependencies installation was created!" >&2
+            echo "SUCCESS: Log file $log_file was created!" >&2
           fi
 
       - name: Set Environment Variables
@@ -395,7 +404,7 @@ jobs:
   # Job para limpiar el entorno
   clean-up:
     needs: [analyze_failed_logs, analyze_success_logs]
-    if: ${{ inputs.run-clean-up }}
+    if: always() && inputs.run-clean-up
     uses: ./.github/workflows/clean-up.yml
     with:
       language: ${{ inputs.language }}
