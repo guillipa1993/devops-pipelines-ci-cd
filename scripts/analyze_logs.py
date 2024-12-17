@@ -1,5 +1,6 @@
 import os
 import argparse
+import time
 from openai import OpenAI
 from openai import AuthenticationError, APIError, BadRequestError
 
@@ -41,8 +42,7 @@ def analyze_logs(log_files):
             for idx, fragment in enumerate(log_fragments, 1):
                 print(f"Analyzing fragment {idx}/{len(log_fragments)} of file '{log_file}'")
                 try:
-                    # Usar el cliente correcto con el formato actualizado
-                    response = client.chat.completions.create(
+                    response = openai.ChatCompletion.create(
                         model="gpt-4o-mini",
                         messages=[
                             {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
@@ -52,10 +52,11 @@ def analyze_logs(log_files):
                         temperature=0.5
                     )
                     analysis = response.choices[0].message.content.strip()
+                    save_analysis(log_file, analysis, idx)
                     print(f"Fragment {idx} analysis complete.")
                     
-                    # Guardar el análisis
-                    save_analysis(log_file, analysis, idx)
+                    # Introducir una pausa para no superar el límite de 3 RPM
+                    time.sleep(20)  # Pausa de 20 segundos
                 except AuthenticationError:
                     print("ERROR: Authentication failed. Check your API key.")
                     return
