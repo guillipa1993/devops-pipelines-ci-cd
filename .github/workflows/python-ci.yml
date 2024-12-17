@@ -400,6 +400,19 @@ jobs:
         run: python scripts/analyze_logs.py --log-dir $GITHUB_WORKSPACE/logs
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Verify Analysis Results
+        run: |
+          ANALYSIS_DIR="./analysis-results"
+          if [ -d "$ANALYSIS_DIR" ]; then
+            echo "Analysis results directory exists. Listing contents:"
+            ls -la "$ANALYSIS_DIR"
+          else
+            echo "ERROR: Analysis results directory does not exist. Searching for analysis files..." >&2
+            echo "Searching for potential analysis result files in the workspace:"
+            find $GITHUB_WORKSPACE -type f -name "*analysis*.txt"
+            exit 1
+          fi
       
       - name: Combine Analysis Results into a Single File
         run: |
