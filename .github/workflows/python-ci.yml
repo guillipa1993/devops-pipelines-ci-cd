@@ -325,16 +325,29 @@ jobs:
     runs-on: ubuntu-24.04
     if: success()
     steps:
-      - name: Download analyze_logs.py from library repo
+      - name: Download scripts from library repo
         run: |
-          echo "Cloning the devops-pipelines-ci-cd repository to obtain analyze_logs.py script..."
+          echo "Cloning the devops-pipelines-ci-cd repository to obtain scripts..."
           git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+
+          # Crear el directorio de destino
           mkdir -p scripts
+
+          # Copiar analyze_logs.py
           cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
           if [ -f "scripts/analyze_logs.py" ]; then
             echo "SUCCESS: analyze_logs.py copied to scripts directory."
           else
             echo "ERROR: Failed to copy analyze_logs.py to scripts directory." >&2
+            exit 1
+          fi
+
+          # Copiar available_models.py
+          cp devops-pipelines-ci-cd/scripts/available_models.py scripts/
+          if [ -f "scripts/available_models.py" ]; then
+            echo "SUCCESS: available_models.py copied to scripts directory."
+          else
+            echo "ERROR: Failed to copy available_models.py to scripts directory." >&2
             exit 1
           fi
 
@@ -385,6 +398,13 @@ jobs:
           pip install --upgrade openai
           python -c "import openai; print('OpenAI library installed successfully')"        
         
+      - name: Run Available Models Script
+        run: |
+          echo "Running available_models.py to analyze logs..."
+          python scripts/available_models.py --log-dir $GITHUB_WORKSPACE/logs
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}  
+      
       - name: Analyze Success Logs with OpenAI
         run: python scripts/analyze_logs.py --log-dir $GITHUB_WORKSPACE/logs
         env:
