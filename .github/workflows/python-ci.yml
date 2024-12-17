@@ -399,8 +399,64 @@ jobs:
       - name: Analyze Success Logs with OpenAI
         run: python scripts/analyze_logs.py --log-dir $GITHUB_WORKSPACE/logs
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}  
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      
+      - name: Combine Analysis Results into a Single File
+        run: |
+          ANALYSIS_DIR="./analysis-results"
+          PROJECT_NAME="${{ github.event.repository.name }}"
+          RUN_ID="${{ github.run_id }}"
+          OUTPUT_FILE="$GITHUB_WORKSPACE/${PROJECT_NAME}-${RUN_ID}-combined-analysis-results.tar.gz"
 
+          if [ -d "$ANALYSIS_DIR" ]; then
+            echo "Combining analysis results into a single compressed file..."
+            tar -czf "$OUTPUT_FILE" -C "$ANALYSIS_DIR" .
+            echo "Combined file created at $OUTPUT_FILE"
+          else
+            echo "ERROR: Analysis results directory does not exist. Skipping combination." >&2
+            exit 1
+          fi
+  
+      - name: Upload Combined Analysis Results to Azure Storage
+        run: |
+          PROJECT_NAME="${{ github.event.repository.name }}"
+          RUN_ID="${{ github.run_id }}"
+          OUTPUT_FILE="$GITHUB_WORKSPACE/${PROJECT_NAME}-${RUN_ID}-combined-analysis-results.tar.gz"
+
+          if [ -f "$OUTPUT_FILE" ]; then
+            echo "Uploading $OUTPUT_FILE to Azure Storage..."
+            az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+                                  --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+                                  --container-name logs \
+                                  --file "$OUTPUT_FILE" \
+                                  --name "${PROJECT_NAME}-${RUN_ID}-combined-analysis-results-$(date +%Y-%m-%d_%H-%M-%S).tar.gz" \
+                                  --overwrite
+          else
+            echo "ERROR: Combined analysis file does not exist. Skipping upload." >&2
+            exit 1
+          fi
+      
+      - name: Send Analysis Results via Email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "Combined Analysis Results for ${{ github.event.repository.name }} - Run ID: ${{ github.run_id }}"
+          to: "guillipa1993@gmail.com"
+          from: "CI/CD Pipeline <${{ secrets.SMTP_USERNAME }}>"
+          body: |
+            Hello,
+
+            Please find attached the combined analysis results for the project '${{ github.event.repository.name }}'
+            from Run ID '${{ github.run_id }}'.
+
+            Regards,
+            Your CI/CD Pipeline
+          attachments: |
+            $GITHUB_WORKSPACE/${{ github.event.repository.name }}-${{ github.run_id }}-combined-analysis-results.tar.gz
+  
   # Job para limpiar el entorno
   clean-up:
     needs: [analyze_failed_logs, analyze_success_logs]
