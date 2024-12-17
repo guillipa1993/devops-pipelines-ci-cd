@@ -382,6 +382,7 @@ jobs:
       - name: Install OpenAI Python Library
         run: |
           pip install openai
+          pip install --upgrade openai
           python -c "import openai; print('OpenAI library installed successfully')"        
         
       - name: Analyze Success Logs with OpenAI

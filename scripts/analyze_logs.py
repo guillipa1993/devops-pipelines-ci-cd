@@ -1,6 +1,6 @@
 import os
-import openai
 import argparse
+from openai import OpenAI
 from openai import AuthenticationError, APIError, BadRequestError
 
 # Verificar si la clave de API está configurada
@@ -9,8 +9,8 @@ if not api_key:
     print("ERROR: 'OPENAI_API_KEY' is not set. Please set it as an environment variable.")
     exit(1)
 
-# Inicializar la API de OpenAI con la clave
-openai.api_key = api_key
+# Inicializar la API de OpenAI con el cliente
+client = OpenAI(api_key=api_key)
 
 def validate_logs_directory(log_dir):
     """
@@ -41,9 +41,9 @@ def analyze_logs(log_files):
             for idx, fragment in enumerate(log_fragments, 1):
                 print(f"Analyzing fragment {idx}/{len(log_fragments)} of file '{log_file}'")
                 try:
-                    # Usar el cliente correcto con el nuevo formato
-                    response = openai.ChatCompletion.create(
-                        model="gpt-4",
+                    # Usar el cliente correcto con el formato actualizado
+                    response = client.chat.completions.create(
+                        model="gpt-4o",
                         messages=[
                             {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
                             {"role": "user", "content": fragment}
