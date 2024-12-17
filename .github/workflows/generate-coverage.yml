@@ -32,60 +32,57 @@ jobs:
   generate-coverage:
     runs-on: ubuntu-latest
     steps:
-      # Realizar el checkout del código
       - name: Checkout code
         uses: actions/checkout@v2
 
-      # Instalar .NET si el lenguaje es 'dotnet' y hay una versión especificada
-      - name: Set up .NET Core
-        if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
-        uses: actions/setup-dotnet@v2
-        with:
-          dotnet-version: "${{ inputs.dotnet-version }}"
+      # Crear carpeta de logs
+      - name: Prepare Logs Directory
+        run: mkdir -p "${GITHUB_WORKSPACE}/logs"
 
-      # Instalar Node.js si el lenguaje es 'node' y hay una versión especificada
-      - name: Set up Node.js
-        if: ${{ inputs.language == 'node' && inputs.node-version }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: "${{ inputs.node-version }}" # Especifica la versión de Node.js si es necesario
-
-      # Instalar Go si el lenguaje es 'go' y hay una versión especificada
-      - name: Set up Go
+      # Setup y generar cobertura para Go
+      - name: Generate Coverage Report for Go
         if: ${{ inputs.language == 'go' && inputs.go-version }}
-        uses: actions/setup-go@v2
-        with:
-          go-version: "${{ inputs.go-version }}"
-
-      # Instalar Python si el lenguaje es 'python' y hay una versión especificada
-      - name: Set up Python
-        if: ${{ inputs.language == 'python' && inputs.python-version }}
-        uses: actions/setup-python@v2
-        with:
-          python-version: "${{ inputs.python-version }}"
-
-      # Generar el reporte de cobertura basado en el lenguaje
-      - name: Generate Coverage Report
         run: |
-          if [ "${{ inputs.language }}" == "go" ]; then
-            echo "Generating coverage report for Go"
-            go test -coverprofile=coverage.out ./...
-          elif [ "${{ inputs.language }}" == "node" ]; then
-            echo "Generating coverage report for Node.js"
-            npm run coverage
-          elif [ "${{ inputs.language }}" == "python" ]; then
-            echo "Generating coverage report for Python"
-            pytest --cov=.
-          elif [ "${{ inputs.language }}" == "java" ]; then
-            echo "Generating coverage report for Java"
-            ./mvnw jacoco:report
-          elif [ "${{ inputs.language }}" == "dotnet" ]; then
-            echo "Generating coverage report for .NET"
-            dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
+          echo "Setting up Go and generating coverage report" | tee "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-go-coverage.log"
+          go test -coverprofile=coverage.out ./... 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-go-coverage.log"
+
+      # Setup y generar cobertura para Node.js
+      - name: Generate Coverage Report for Node.js
+        if: ${{ inputs.language == 'node' && inputs.node-version }}
+        run: |
+          echo "Setting up Node.js and generating coverage report" | tee "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-node-coverage.log"
+          npm install 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-node-coverage.log"
+          npm run coverage 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-node-coverage.log"
+
+      # Setup y generar cobertura para Python
+      - name: Generate Coverage Report for Python
+        if: ${{ inputs.language == 'python' && inputs.python-version }}
+        run: |
+          echo "Setting up Python and generating coverage report" | tee "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-python-coverage.log"
+          pip install pytest pytest-cov 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-python-coverage.log"
+          pytest --cov=. 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-python-coverage.log"
+
+      # Setup y generar cobertura para .NET
+      - name: Generate Coverage Report for .NET
+        if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
+        run: |
+          echo "Setting up .NET and generating coverage report" | tee "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-dotnet-coverage.log"
+          dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-dotnet-coverage.log"
+
+      # Setup y generar cobertura para Java
+      - name: Generate Coverage Report for Java
+        if: ${{ inputs.language == 'java' && inputs.java-version }}
+        run: |
+          echo "Setting up Java and generating coverage report" | tee "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-java-coverage.log"
+          if [ -f "./mvnw" ]; then
+            chmod +x ./mvnw
+            ./mvnw jacoco:report 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-java-coverage.log"
+          else
+            echo "Maven wrapper not found. Skipping coverage report." | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-java-coverage.log"
           fi
-      
-      # Subir reporte de cobertura
-      - name: Upload Coverage Report
+
+      # Subir reporte de cobertura a Codecov
+      - name: Upload Coverage Report to Codecov
         uses: codecov/codecov-action@v2
         with:
           file: |
@@ -95,3 +92,21 @@ jobs:
                inputs.language == 'java' && './target/site/jacoco/jacoco.xml' || 
                inputs.language == 'dotnet' && './TestResults/opencover.xml' }}
           flags: ${{ inputs.language }}
+
+      # Subir logs a Azure Storage
+      - name: Upload Logs to Azure Storage
+        run: |
+          if [ -d "${GITHUB_WORKSPACE}/logs" ]; then
+            for log in ${GITHUB_WORKSPACE}/logs/*.log; do
+              echo "Uploading $log to Azure Storage..."
+              az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+                                    --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+                                    --container-name logs \
+                                    --file "$log" \
+                                    --name "$(basename $log)" \
+                                    --overwrite
+            done
+          else
+            echo "ERROR: Logs directory does not exist. Skipping upload." >&2
+            exit 1
+          fi

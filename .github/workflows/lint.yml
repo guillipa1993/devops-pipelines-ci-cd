@@ -42,16 +42,16 @@ jobs:
       - name: Run Go Linter
         if: ${{ inputs.language == 'go' && inputs.go-version }}
         run: |
-          echo "Running Go formatter"
-          gofmt -l .
+          echo "Running Go formatter" | tee "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-go-linter.log"
+          gofmt -l . 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-go-linter.log"
 
       # Ejecutar el linter de Node.js
       - name: Run Node.js Linter
         if: ${{ inputs.language == 'node' }}
         run: |
-          echo "Running Prettier for Node.js"
+          echo "Running Prettier for Node.js" | tee "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-node-linter.log"
           npm install --global prettier
-          prettier --check .
+          prettier --check . 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-node-linter.log"
 
       # Ejecutar el linter de Python
       - name: Set up Python
@@ -68,8 +68,8 @@ jobs:
       - name: Run Python Linter and Save Results
         if: ${{ inputs.language == 'python' && inputs.python-version }}
         run: |
-          echo "Running Python linter (flake8) and saving results"
-          flake8 . > flake8_report.txt || true
+          echo "Running Python linter (flake8)" | tee "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-python-linter.log"
+          flake8 . 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-python-linter.log" || true
 
       - name: Analyze flake8 Results
         if: ${{ inputs.language == 'python' && inputs.python-version }}
@@ -100,10 +100,10 @@ jobs:
             version=$(echo "${{ inputs.dotnet-version }}" | cut -d'.' -f1)
             if [ "$version" -lt 3 ]; then
               echo "Skipping .NET format: version is less than 3. Using 'dotnet build' instead."
-              dotnet build --nologo --no-restore --verbosity=minimal
+              dotnet build --nologo --no-restore --verbosity=minimal 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-dotnet-linter.log" || true
             else
               echo "Running .NET linter (dotnet format)"
-              dotnet format --verify-no-changes
+              dotnet format --verify-no-changes 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-dotnet-linter.log" || true
             fi
           fi
         continue-on-error: true 
@@ -119,11 +119,28 @@ jobs:
       - name: Run Java Checkstyle
         if: ${{ inputs.language == 'java' }}
         run: |
-          echo "Running Checkstyle for Java"
+          echo "Running Checkstyle for Java" | tee "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-java-linter.log"
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
-            ./gradlew checkstyleMain || true
+            ./gradlew checkstyleMain 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-java-linter.log" || true
           else
-            echo "Gradle wrapper not found. Skipping Java linter."
-          fi
+            echo "Gradle wrapper not found. Skipping Java linter." | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-java-linter.log"
+          fi        
         continue-on-error: true
+      
+      - name: Upload Logs to Azure Storage
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
+            for log in $GITHUB_WORKSPACE/logs/*.log; do
+              echo "Uploading $log to Azure Storage..."
+              az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+                                    --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+                                    --container-name logs \
+                                    --file "$log" \
+                                    --name "$(basename $log)" \
+                                    --overwrite
+            done
+          else
+            echo "ERROR: Logs directory does not exist. Skipping upload." >&2
+            exit 1
+          fi

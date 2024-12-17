@@ -3,7 +3,7 @@ import time
 import argparse
 import openai
 from openai import OpenAI
-from openai import AuthenticationError, APIError, BadRequestError, RateLimitError
+from openai.error import AuthenticationError, APIError, BadRequestError, RateLimitError
 
 # Verificar si la clave de API está configurada
 api_key = os.getenv("OPENAI_API_KEY")
@@ -35,15 +35,17 @@ def analyze_logs(log_files):
         print(f"Analyzing file: {log_file}")
         with open(log_file, 'r') as f:
             log_content = f.read()
-
+            
+            # Dividir el log en fragmentos para enviarlos a la API
             log_fragments = [log_content[i:i+4000] for i in range(0, len(log_content), 4000)]
             print(f"Total fragments for file '{log_file}': {len(log_fragments)}")
-
+            
             for idx, fragment in enumerate(log_fragments, 1):
-                while True:
+                retries = 0
+                while retries < 5:  # Máximo 5 reintentos
                     try:
                         print(f"Analyzing fragment {idx}/{len(log_fragments)} of file '{log_file}'")
-                        response = openai.ChatCompletion.create(
+                        response = client.chat.completions.create(
                             model="gpt-4o-mini",
                             messages=[
                                 {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
@@ -57,9 +59,14 @@ def analyze_logs(log_files):
                         print(f"Fragment {idx} analysis complete.")
                         time.sleep(10)  # Pausa mínima entre solicitudes
                         break  # Salir del bucle si la solicitud fue exitosa
-                    except RateLimitError as rle:
-                        print(f"Rate limit reached: {rle}. Waiting before retrying...")
-                        time.sleep(30)  # Esperar 30 segundos si se alcanza el límite
+                    except RateLimitError:
+                        retries += 1
+                        wait_time = 2 ** retries  # Exponential backoff
+                        print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
+                        time.sleep(wait_time)
+                    except (AuthenticationError, BadRequestError, APIError) as e:
+                        print(f"Error while analyzing fragment {idx}: {e}")
+                        break
                     except Exception as e:
                         print(f"Unexpected error while analyzing fragment {idx}: {e}")
                         break
