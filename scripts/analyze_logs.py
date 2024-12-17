@@ -1,8 +1,9 @@
 import os
-import argparse
 import time
+import argparse
+import openai
 from openai import OpenAI
-from openai import AuthenticationError, APIError, BadRequestError
+from openai.error import AuthenticationError, APIError, BadRequestError, RateLimitError
 
 # Verificar si la clave de API está configurada
 api_key = os.getenv("OPENAI_API_KEY")
@@ -34,39 +35,34 @@ def analyze_logs(log_files):
         print(f"Analyzing file: {log_file}")
         with open(log_file, 'r') as f:
             log_content = f.read()
-            
-            # Dividir el log en fragmentos para enviarlos a la API
+
             log_fragments = [log_content[i:i+4000] for i in range(0, len(log_content), 4000)]
             print(f"Total fragments for file '{log_file}': {len(log_fragments)}")
-            
+
             for idx, fragment in enumerate(log_fragments, 1):
-                print(f"Analyzing fragment {idx}/{len(log_fragments)} of file '{log_file}'")
-                try:
-                    response = openai.ChatCompletion.create(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
-                            {"role": "user", "content": fragment}
-                        ],
-                        max_tokens=500,
-                        temperature=0.5
-                    )
-                    analysis = response.choices[0].message.content.strip()
-                    save_analysis(log_file, analysis, idx)
-                    print(f"Fragment {idx} analysis complete.")
-                    
-                    # Introducir una pausa para no superar el límite de 3 RPM
-                    time.sleep(20)  # Pausa de 20 segundos
-                except AuthenticationError:
-                    print("ERROR: Authentication failed. Check your API key.")
-                    return
-                except BadRequestError as bre:
-                    print(f"Bad request error for fragment {idx}: {bre}")
-                except APIError as ae:
-                    print(f"API error while analyzing fragment {idx}: {ae}")
-                except Exception as e:
-                    print(f"Unexpected error while analyzing fragment {idx}: {e}")
-                    continue
+                while True:
+                    try:
+                        print(f"Analyzing fragment {idx}/{len(log_fragments)} of file '{log_file}'")
+                        response = openai.ChatCompletion.create(
+                            model="gpt-4o-mini",
+                            messages=[
+                                {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
+                                {"role": "user", "content": fragment}
+                            ],
+                            max_tokens=500,
+                            temperature=0.5
+                        )
+                        analysis = response.choices[0].message.content.strip()
+                        save_analysis(log_file, analysis, idx)
+                        print(f"Fragment {idx} analysis complete.")
+                        time.sleep(10)  # Pausa mínima entre solicitudes
+                        break  # Salir del bucle si la solicitud fue exitosa
+                    except RateLimitError as rle:
+                        print(f"Rate limit reached: {rle}. Waiting before retrying...")
+                        time.sleep(30)  # Esperar 30 segundos si se alcanza el límite
+                    except Exception as e:
+                        print(f"Unexpected error while analyzing fragment {idx}: {e}")
+                        break
 
 def save_analysis(log_file, analysis, fragment_idx):
     """
