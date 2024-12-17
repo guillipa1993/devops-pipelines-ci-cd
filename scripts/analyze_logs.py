@@ -43,7 +43,7 @@ def analyze_logs(log_files):
                 try:
                     # Usar el cliente correcto con el formato actualizado
                     response = client.chat.completions.create(
-                        model="gpt-4o",
+                        model="gpt-4",
                         messages=[
                             {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
                             {"role": "user", "content": fragment}
