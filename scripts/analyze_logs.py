@@ -2,6 +2,7 @@ import os
 import time
 import argparse
 import openai
+import json
 from openai import OpenAI, OpenAIError, RateLimitError, AuthenticationError, APIError, BadRequestError
 
 # Verificar si la clave de API está configurada
@@ -30,20 +31,22 @@ def analyze_logs(log_files):
     """
     Analiza los logs utilizando la API de OpenAI.
     """
-    for log_file in log_files:
-        print(f"Analyzing file: {log_file}")
+    total_files = len(log_files)
+    for file_idx, log_file in enumerate(log_files, start=1):
+        print(f"\n[{file_idx}/{total_files}] Analyzing file: {log_file}", flush=True)
         with open(log_file, 'r') as f:
             log_content = f.read()
             
             # Dividir el log en fragmentos para enviarlos a la API
             log_fragments = [log_content[i:i+4000] for i in range(0, len(log_content), 4000)]
-            print(f"Total fragments for file '{log_file}': {len(log_fragments)}")
+            total_fragments = len(log_fragments)
+            print(f"File '{log_file}' divided into {total_fragments} fragments for analysis.", flush=True)
             
             for idx, fragment in enumerate(log_fragments, 1):
                 retries = 0
                 while retries < 5:  # Máximo 5 reintentos
                     try:
-                        print(f"Analyzing fragment {idx}/{len(log_fragments)} of file '{log_file}'")
+                        print(f"   Analyzing fragment {idx}/{total_fragments} of file '{log_file}'...", flush=True)
                         response = client.chat.completions.create(
                             model="gpt-4o-mini",
                             messages=[
@@ -55,19 +58,19 @@ def analyze_logs(log_files):
                         )
                         analysis = response.choices[0].message.content.strip()
                         save_analysis(log_file, analysis, idx)
-                        print(f"Fragment {idx} analysis complete.")
-                        time.sleep(10)  # Pausa mínima entre solicitudes
+                        print(f"   Fragment {idx}/{total_fragments} analysis complete.", flush=True)
+                        time.sleep(5)  # Pausa mínima entre solicitudes
                         break  # Salir del bucle si la solicitud fue exitosa
                     except RateLimitError:
                         retries += 1
                         wait_time = 2 ** retries  # Exponential backoff
-                        print(f"Rate limit exceeded. Retrying in {wait_time} seconds...")
+                        print(f"Rate limit exceeded. Retrying in {wait_time} seconds...", flush=True)
                         time.sleep(wait_time)
                     except (AuthenticationError, BadRequestError, APIError) as e:
-                        print(f"Error while analyzing fragment {idx}: {e}")
+                        print(f"Error while analyzing fragment {idx}: {e}", flush=True)
                         break
                     except Exception as e:
-                        print(f"Unexpected error while analyzing fragment {idx}: {e}")
+                        print(f"Unexpected error while analyzing fragment {idx}: {e}", flush=True)
                         break
 
 def save_analysis(log_file, analysis, fragment_idx):
@@ -83,7 +86,36 @@ def save_analysis(log_file, analysis, fragment_idx):
     )
     with open(analysis_file_path, 'w') as f:
         f.write(analysis)
-    print(f"Analysis for fragment {fragment_idx} saved to {analysis_file_path}")
+    print(f"   Analysis for fragment {fragment_idx} saved to {analysis_file_path}", flush=True)
+
+def filter_high_severity_issues(log_dir):
+    """
+    Filtra los archivos JSON generados por Bandit para extraer sólo las vulnerabilidades de alta severidad.
+    """
+    for file in os.listdir(log_dir):
+        if file.endswith(".json"):
+            json_path = os.path.join(log_dir, file)
+            with open(json_path, 'r') as f:
+                try:
+                    data = json.load(f)
+                    high_severity_issues = [
+                        result for result in data.get("results", []) 
+                        if result.get("severity") == "HIGH"
+                    ]
+                    # Guardar sólo las vulnerabilidades HIGH
+                    if high_severity_issues:
+                        high_severity_file = os.path.join(log_dir, f"{os.path.basename(file)}_HIGH.log")
+                        with open(high_severity_file, 'w') as high_f:
+                            for issue in high_severity_issues:
+                                high_f.write(
+                                    f"Filename: {issue['filename']}\n"
+                                    f"Issue: {issue['issue_text']}\n"
+                                    f"Severity: {issue['severity']}\n"
+                                    f"Line: {issue['line_number']}\n---\n"
+                                )
+                        print(f"Filtered HIGH severity issues saved to {high_severity_file}", flush=True)
+                except json.JSONDecodeError:
+                    print(f"Error decoding JSON in file: {json_path}", flush=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze logs using OpenAI")
@@ -93,11 +125,15 @@ if __name__ == "__main__":
     try:
         # Validar el directorio de logs
         log_files = validate_logs_directory(args.log_dir)
-        print(f"Found {len(log_files)} log files in '{args.log_dir}'.")
+        print(f"Found {len(log_files)} log files in '{args.log_dir}'.", flush=True)
         
         # Analizar los logs
         analyze_logs(log_files)
-        print("Log analysis completed successfully.")
+        
+        # Filtrar sólo SEVERITY.HIGH si hay JSON generados
+        filter_high_severity_issues(args.log_dir)
+        
+        print("Log analysis and filtering completed successfully.", flush=True)
     except Exception as e:
-        print(f"Critical error: {e}")
+        print(f"Critical error: {e}", flush=True)
         exit(1)
