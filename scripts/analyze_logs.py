@@ -2,7 +2,7 @@ import os
 import time
 import argparse
 import openai
-from openai import OpenAI, OpenAIError, RateLimitError, AuthenticationError, APIError, BadRequestError
+from openai import OpenAI, RateLimitError, AuthenticationError, APIError, BadRequestError
 
 # Verificar si la clave de API está configurada
 api_key = os.getenv("OPENAI_API_KEY")
@@ -56,37 +56,32 @@ def analyze_logs(log_files):
             print(f"File '{log_file}' divided into {total_fragments} fragments for analysis.", flush=True)
             
             for idx, fragment in enumerate(log_fragments, 1):
-                retries = 0
-                while retries < 5:  # Máximo 5 reintentos
-                    try:
-                        print(f"   Analyzing fragment {idx}/{total_fragments} of file '{log_file}'...", flush=True)
-                        response = client.chat.completions.create(
-                            model="gpt-4o-mini",
-                            messages=[
-                                {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
-                                {"role": "user", "content": fragment}
-                            ],
-                            max_tokens=1000,  # Incremento de tokens para aprovechar el límite
-                            temperature=0.5
-                        )
-                        analysis = response.choices[0].message.content.strip()
-                        save_analysis(log_file, analysis, idx)
-                        print(f"   Fragment {idx}/{total_fragments} analysis complete.", flush=True)
-
-                        # Pausa dinámica para respetar 3 RPM
-                        time.sleep(20)  # 20 segundos entre cada llamada (60/3 = 20)
-                        break  # Salir del bucle si la solicitud fue exitosa
-                    except RateLimitError:
-                        retries += 1
-                        wait_time = 2 ** retries  # Exponential backoff
-                        print(f"Rate limit exceeded. Retrying in {wait_time} seconds...", flush=True)
-                        time.sleep(wait_time)
-                    except (AuthenticationError, BadRequestError, APIError) as e:
-                        print(f"Error while analyzing fragment {idx}: {e}", flush=True)
-                        break
-                    except Exception as e:
-                        print(f"Unexpected error while analyzing fragment {idx}: {e}", flush=True)
-                        break
+                print(f"   Analyzing fragment {idx}/{total_fragments} of file '{log_file}'...", flush=True)
+                try:
+                    response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
+                            {"role": "user", "content": fragment}
+                        ],
+                        max_tokens=1000,
+                        temperature=0.5
+                    )
+                    analysis = response.choices[0].message.content.strip()
+                    save_analysis(log_file, analysis, idx)
+                    print(f"   Fragment {idx}/{total_fragments} analysis complete.", flush=True)
+                    
+                    # Pausa exacta para cumplir 3 RPM
+                    time.sleep(20)
+                except RateLimitError:
+                    print("Rate limit exceeded. Waiting 20 seconds...", flush=True)
+                    time.sleep(20)  # Espera fija de 20 segundos en caso de RateLimitError
+                except (AuthenticationError, BadRequestError, APIError) as e:
+                    print(f"Error while analyzing fragment {idx}: {e}", flush=True)
+                    break
+                except Exception as e:
+                    print(f"Unexpected error while analyzing fragment {idx}: {e}", flush=True)
+                    break
 
 def save_analysis(log_file, analysis, fragment_idx):
     """
