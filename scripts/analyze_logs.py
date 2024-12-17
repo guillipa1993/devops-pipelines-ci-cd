@@ -3,7 +3,7 @@ import time
 import argparse
 import openai
 from openai import OpenAI
-from openai.error import AuthenticationError, APIError, BadRequestError, RateLimitError
+from openai import AuthenticationError, APIError, BadRequestError, RateLimitError
 
 # Verificar si la clave de API está configurada
 api_key = os.getenv("OPENAI_API_KEY")
