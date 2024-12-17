@@ -10,7 +10,7 @@ if not api_key:
     print("ERROR: 'OPENAI_API_KEY' is not set. Please set it as an environment variable.")
     exit(1)
 
-# Inicializar la API de OpenAI con el cliente
+# Inicializar la API de OpenAI
 client = OpenAI(api_key=api_key)
 
 def validate_logs_directory(log_dir):
@@ -27,8 +27,15 @@ def validate_logs_directory(log_dir):
     ]
     if not log_files:
         raise FileNotFoundError(f"ERROR: No valid .log files found in the directory '{log_dir}'.")
-    
     return log_files
+
+def clean_log_content(content):
+    """
+    Elimina líneas vacías y contenido redundante del log.
+    """
+    lines = content.splitlines()
+    cleaned_lines = [line for line in lines if line.strip()]  # Elimina líneas vacías
+    return "\n".join(cleaned_lines)
 
 def analyze_logs(log_files):
     """
@@ -39,10 +46,13 @@ def analyze_logs(log_files):
         print(f"\n[{file_idx}/{total_files}] Analyzing file: {log_file}", flush=True)
         with open(log_file, 'r') as f:
             log_content = f.read()
-            
-            # Dividir el log en fragmentos para enviarlos a la API
-            log_fragments = [log_content[i:i+4000] for i in range(0, len(log_content), 4000)]
+            cleaned_content = clean_log_content(log_content)
+
+            # Dividir el contenido en fragmentos de hasta 30,000 tokens
+            max_chunk_size = 30000  # Tokens por fragmento
+            log_fragments = [cleaned_content[i:i + max_chunk_size] for i in range(0, len(cleaned_content), max_chunk_size)]
             total_fragments = len(log_fragments)
+
             print(f"File '{log_file}' divided into {total_fragments} fragments for analysis.", flush=True)
             
             for idx, fragment in enumerate(log_fragments, 1):
@@ -56,13 +66,15 @@ def analyze_logs(log_files):
                                 {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
                                 {"role": "user", "content": fragment}
                             ],
-                            max_tokens=500,
+                            max_tokens=1000,  # Incremento de tokens para aprovechar el límite
                             temperature=0.5
                         )
                         analysis = response.choices[0].message.content.strip()
                         save_analysis(log_file, analysis, idx)
                         print(f"   Fragment {idx}/{total_fragments} analysis complete.", flush=True)
-                        time.sleep(5)  # Pausa mínima entre solicitudes
+
+                        # Pausa dinámica para respetar 3 RPM
+                        time.sleep(20)  # 20 segundos entre cada llamada (60/3 = 20)
                         break  # Salir del bucle si la solicitud fue exitosa
                     except RateLimitError:
                         retries += 1
@@ -83,7 +95,7 @@ def save_analysis(log_file, analysis, fragment_idx):
     analysis_dir = "./analysis-results"
     if not os.path.exists(analysis_dir):
         os.makedirs(analysis_dir)
-    
+
     analysis_file_path = os.path.join(
         analysis_dir, f"{os.path.basename(log_file)}_fragment_{fragment_idx}_analysis.txt"
     )
