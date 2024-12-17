@@ -408,9 +408,13 @@ jobs:
             echo "Analysis results directory exists. Listing contents:"
             ls -la "$ANALYSIS_DIR"
           else
-            echo "ERROR: Analysis results directory does not exist. Searching for analysis files..." >&2
-            echo "Searching for potential analysis result files in the workspace:"
-            find $GITHUB_WORKSPACE -type f -name "*analysis*.txt"
+            echo "ERROR: Analysis results directory does not exist. Searching for any .txt files in the workspace..." >&2
+            echo "Listing all directories in the workspace:"
+            ls -R $GITHUB_WORKSPACE
+            echo "Searching for any .txt files in the workspace:"
+            find $GITHUB_WORKSPACE -type f -name "*.txt"
+            echo "Searching for analysis directories in the workspace:"
+            find $GITHUB_WORKSPACE -type d -name "*analysis*"
             exit 1
           fi
       
