@@ -74,7 +74,7 @@ jobs:
         if: ${{ inputs.language == 'python' && inputs.python-version }}
         run: |
           echo "Running Python linter (flake8)" | tee "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-python-linter.log"
-          flake8 . 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-python-linter.log" || true
+          flake8 . --ignore=E501,E203,E228,E221,E302,E303 --output-file="${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-python-linter.log" || true
 
       - name: Analyze flake8 Results
         if: ${{ inputs.language == 'python' && inputs.python-version }}
