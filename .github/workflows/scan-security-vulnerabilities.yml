@@ -89,13 +89,30 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/logs"
           repo_name="${GITHUB_REPOSITORY##*/}"
           log_name="${repo_name}-${GITHUB_RUN_ID}"
-
+      
           if [ -n "${{ inputs.project-path }}" ]; then
             cd "${{ inputs.project-path }}"
             echo "Changed to project directory: ${{ inputs.project-path }}"
           fi
-
+      
           case "${{ inputs.language }}" in
+            python)
+              echo "Running Bandit scan for Python"
+              bandit -r . -o "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" -f json | tee "$GITHUB_WORKSPACE/logs/${log_name}-python-vulnerabilities.log" || true
+      
+              # Filtrar y convertir solo vulnerabilidades SEVERITY.HIGH a formato log
+              if [ -f "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" ]; then
+                echo "Filtering SEVERITY.HIGH and converting JSON to log format"
+                jq -r '.results[] | select(.severity == "HIGH") | 
+                "Filename: \(.filename)\nIssue: \(.issue_text)\nSeverity: \(.severity)\nLine: \(.line_number)\n---"' \
+                "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" > "$GITHUB_WORKSPACE/logs/${log_name}-bandit-high.log"
+      
+                echo "Bandit SEVERITY.HIGH results converted to LOG format successfully."
+              else
+                echo "ERROR: Bandit output JSON file not created!" >&2
+                exit 1
+              fi
+              ;;
             go)
               echo "Scanning Go modules for vulnerabilities"
               go list -m all | nancy sleuth > "$GITHUB_WORKSPACE/logs/${log_name}-go-vulnerabilities.log" 2>&1 || true
@@ -103,22 +120,6 @@ jobs:
             node)
               echo "Running npm audit for Node.js"
               npm audit --production > "$GITHUB_WORKSPACE/logs/${log_name}-node-vulnerabilities.log" 2>&1 || true
-              ;;
-            python)
-              echo "Running Bandit scan for Python"
-              bandit -r . -o "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" -f json | tee "$GITHUB_WORKSPACE/logs/${log_name}-python-vulnerabilities.log" || true
-
-              # Convertir el JSON a formato log
-              if [ -f "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" ]; then
-                echo "Converting JSON output to log format"
-                jq -r '.results[] | "Filename: \(.filename)\nIssue: \(.issue_text)\nSeverity: \(.severity)\nLine: \(.line_number)\n---"' \
-                  "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" > "$GITHUB_WORKSPACE/logs/${log_name}-bandit-converted.log"
-
-                echo "Bandit output JSON file converted to LOG format successfully."
-              else
-                echo "ERROR: Bandit output JSON file not created!" >&2
-                exit 1
-              fi
               ;;
             java)
               echo "Running OWASP Dependency Check for Java"
@@ -147,27 +148,27 @@ jobs:
               echo "Unsupported language: ${{ inputs.language }}" > "$GITHUB_WORKSPACE/logs/${log_name}-unsupported-language.log"
               ;;
           esac
-
+      
           echo "Running global scans for YAML, JSON, and Bash files..."
-
+      
           # YAML validation
           echo "Scanning YAML files..."
           find . -type f \( -name "*.yml" -o -name "*.yaml" \) -exec yamllint {} + > "$GITHUB_WORKSPACE/logs/${log_name}-yaml-vulnerabilities.log" 2>&1 || true
-
+      
           # JSON validation
           echo "Scanning JSON files..."
           find . -type f -name "*.json" -exec jq empty {} + > "$GITHUB_WORKSPACE/logs/${log_name}-json-validation.log" 2>&1 || true
-
+      
           # Bash scripts security check
           echo "Scanning Bash scripts..."
           find . -type f -name "*.sh" -exec shellcheck {} + > "$GITHUB_WORKSPACE/logs/${log_name}-bash-vulnerabilities.log" 2>&1 || true
-
+      
           echo "Global scans completed successfully."
-
+      
           echo "Generated logs:"
           ls -la "$GITHUB_WORKSPACE/logs/"
         continue-on-error: true
-
+        
       - name: Upload Logs to Azure Storage
         run: |
           if [ -d "$GITHUB_WORKSPACE/logs" ]; then
