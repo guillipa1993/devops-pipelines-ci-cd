@@ -2,7 +2,6 @@ import os
 import time
 import argparse
 import openai
-from openai import OpenAI, RateLimitError, AuthenticationError, APIError, BadRequestError
 
 # Verificar si la clave de API está configurada
 api_key = os.getenv("OPENAI_API_KEY")
@@ -11,7 +10,7 @@ if not api_key:
     exit(1)
 
 # Inicializar la API de OpenAI
-client = OpenAI(api_key=api_key)
+openai.api_key = api_key
 
 def validate_logs_directory(log_dir):
     """
@@ -50,16 +49,16 @@ def analyze_logs(log_files, output_dir):
             cleaned_content = clean_log_content(log_content)
 
             # Dividir el contenido en fragmentos de hasta 30,000 tokens
-            max_chunk_size = 30000  # Tokens por fragmento
+            max_chunk_size = 30000
             log_fragments = [cleaned_content[i:i + max_chunk_size] for i in range(0, len(cleaned_content), max_chunk_size)]
             total_fragments = len(log_fragments)
 
             print(f"File '{log_file}' divided into {total_fragments} fragments for analysis.", flush=True)
-            
+
             for idx, fragment in enumerate(log_fragments, 1):
                 print(f"   Analyzing fragment {idx}/{total_fragments} of file '{log_file}'...", flush=True)
                 try:
-                    response = client.chat.completions.create(
+                    response = openai.ChatCompletion.create(
                         model="gpt-4o-mini",
                         messages=[
                             {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
@@ -68,19 +67,15 @@ def analyze_logs(log_files, output_dir):
                         max_tokens=1000,
                         temperature=0.5
                     )
-                    analysis = response.choices[0].message.content.strip()
-                    save_analysis(log_file, analysis, idx, output_dir)
-                    analysis_created = True
-                    print(f"   Fragment {idx}/{total_fragments} analysis complete.", flush=True)
-                    
-                    # Pausa exacta para cumplir 3 RPM
-                    time.sleep(20)
-                except RateLimitError:
-                    print("Rate limit exceeded. Waiting 20 seconds...", flush=True)
-                    time.sleep(20)
-                except (AuthenticationError, BadRequestError, APIError) as e:
-                    print(f"Error while analyzing fragment {idx}: {e}", flush=True)
-                    break
+                    analysis = response['choices'][0]['message']['content'].strip()
+                    if analysis:
+                        save_analysis(log_file, analysis, idx, output_dir)
+                        analysis_created = True
+                        print(f"   Fragment {idx}/{total_fragments} analysis complete.", flush=True)
+                    else:
+                        print(f"   WARNING: No analysis returned for fragment {idx}.", flush=True)
+
+                    time.sleep(20)  # Pausa exacta para cumplir 3 RPM
                 except Exception as e:
                     print(f"Unexpected error while analyzing fragment {idx}: {e}", flush=True)
                     break
