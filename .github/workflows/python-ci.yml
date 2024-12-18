@@ -467,7 +467,8 @@ jobs:
   summarize_and_create_ticket:
     name: Summarize Analysis and Create GitHub Ticket
     runs-on: ubuntu-latest
-    needs: [analyze_success_logs,analyze_failed_logs]  # Asegúrate de que dependa del job previo
+    needs: [analyze_success_logs, analyze_failed_logs]
+    if: always() && (needs.analyze_success_logs.result == 'success' || needs.analyze_failed_logs.result == 'success')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
