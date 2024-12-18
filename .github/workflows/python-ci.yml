@@ -478,6 +478,13 @@ jobs:
         with:
           python-version: ${{ inputs.python-version }}  # Ajusta según las necesidades del script
       
+      - name: Set up Python and Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install openai
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
       - name: Download scripts from library repo
         run: |
           echo "Cloning the devops-pipelines-ci-cd repository to obtain scripts..."
