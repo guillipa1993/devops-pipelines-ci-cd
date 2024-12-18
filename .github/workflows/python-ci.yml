@@ -380,6 +380,13 @@ jobs:
         env:
           AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
           AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      
+      - name: Prepare Analysis Directory
+        run: |
+          ANALYSIS_DIR="$GITHUB_WORKSPACE/analysis_results"
+          echo "Creating analysis results directory at $ANALYSIS_DIR"
+          mkdir -p "$ANALYSIS_DIR"
+          echo "Directory created successfully."
 
       - name: Verify Logs Artifact
         run: |
@@ -389,7 +396,7 @@ jobs:
           fi
           echo "Logs directory exists. Listing contents:"
           ls -la $GITHUB_WORKSPACE/logs
-
+                    
       - name: Install OpenAI Python Library
         run: |
           pip install openai
@@ -403,28 +410,21 @@ jobs:
 
       - name: Verify Analysis Results
         run: |
-          ANALYSIS_DIR="./analysis-results"
-          if [ -d "$ANALYSIS_DIR" ]; then
+          if [ -d "$GITHUB_WORKSPACE/analysis_results" ]; then
             echo "Analysis results directory exists. Listing contents:"
-            ls -la "$ANALYSIS_DIR"
+            ls -la "$GITHUB_WORKSPACE/analysis_results"
           else
-            echo "ERROR: Analysis results directory does not exist. Searching for any .txt files in the workspace..." >&2
-            echo "Listing all directories in the workspace:"
-            ls -R $GITHUB_WORKSPACE
-            echo "Searching for any .txt files in the workspace:"
-            find $GITHUB_WORKSPACE -type f -name "*.txt"
-            echo "Searching for analysis directories in the workspace:"
-            find $GITHUB_WORKSPACE -type d -name "*analysis*"
+            echo "ERROR: Analysis results directory does not exist!" >&2
             exit 1
           fi
-      
+        
       - name: Combine Analysis Results into a Single File
         run: |
-          ANALYSIS_DIR="./analysis-results"
+          ANALYSIS_DIR="$GITHUB_WORKSPACE/analysis_results"
           PROJECT_NAME="${{ github.event.repository.name }}"
           RUN_ID="${{ github.run_id }}"
           OUTPUT_FILE="$GITHUB_WORKSPACE/${PROJECT_NAME}-${RUN_ID}-combined-analysis-results.tar.gz"
-
+      
           if [ -d "$ANALYSIS_DIR" ]; then
             echo "Combining analysis results into a single compressed file..."
             tar -czf "$OUTPUT_FILE" -C "$ANALYSIS_DIR" .
@@ -432,7 +432,7 @@ jobs:
           else
             echo "ERROR: Analysis results directory does not exist. Skipping combination." >&2
             exit 1
-          fi
+          fi        
   
       - name: Upload Combined Analysis Results to Azure Storage
         run: |

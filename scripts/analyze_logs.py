@@ -85,11 +85,12 @@ def analyze_logs(log_files):
 
 def save_analysis(log_file, analysis, fragment_idx):
     """
-    Guarda el análisis en un archivo en el directorio `analysis-results`.
+    Guarda el análisis en un archivo en el directorio `analysis_results` dentro de GITHUB_WORKSPACE.
     """
-    analysis_dir = "./analysis-results"
+    analysis_dir = os.path.join(os.getenv("GITHUB_WORKSPACE", "."), "analysis_results")
+
     if not os.path.exists(analysis_dir):
-        os.makedirs(analysis_dir)
+        os.makedirs(analysis_dir)  # Crea el directorio si no existe
 
     analysis_file_path = os.path.join(
         analysis_dir, f"{os.path.basename(log_file)}_fragment_{fragment_idx}_analysis.txt"
