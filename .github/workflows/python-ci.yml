@@ -404,18 +404,27 @@ jobs:
           python -c "import openai; print('OpenAI library installed successfully')"        
             
       - name: Analyze Success Logs with OpenAI
-        run: python scripts/analyze_logs.py --log-dir $GITHUB_WORKSPACE/logs
+        run: |
+          python scripts/analyze_logs.py --log-dir $GITHUB_WORKSPACE/logs
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-      - name: Verify Analysis Results
+      - name: Verify and Recover Analysis Results
         run: |
-          if [ -d "$GITHUB_WORKSPACE/analysis_results" ]; then
-            echo "Analysis results directory exists. Listing contents:"
-            ls -la "$GITHUB_WORKSPACE/analysis_results"
+          ANALYSIS_DIR="$GITHUB_WORKSPACE/analysis_results"
+          if [ ! -d "$ANALYSIS_DIR" ]; then
+            echo "ERROR: Analysis results directory does not exist. Creating now..."
+            mkdir -p "$ANALYSIS_DIR"
+          fi
+
+          if [ -z "$(ls -A $ANALYSIS_DIR)" ]; then
+            echo "Analysis directory is empty. Searching for analysis files..."
+            find $GITHUB_WORKSPACE -type f -name "*analysis*.txt" -exec mv {} "$ANALYSIS_DIR/" \;
+            echo "Recovered analysis files:"
+            ls -la "$ANALYSIS_DIR"
           else
-            echo "ERROR: Analysis results directory does not exist!" >&2
-            exit 1
+            echo "Analysis results exist. Listing contents:"
+            ls -la "$ANALYSIS_DIR"
           fi
         
       - name: Combine Analysis Results into a Single File
@@ -456,23 +465,23 @@ jobs:
       - name: Send Analysis Results via Email
         uses: dawidd6/action-send-mail@v3
         with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
+          server_address: smtp.sqli.com  # Reemplaza con el servidor SMTP de sqli.com
+          server_port: 465               # Puerto seguro (SSL). Verifícalo con tu proveedor.
+          username: ${{ secrets.SMTP_USERNAME }} # Debe ser gllido@sqli.com
+          password: ${{ secrets.SMTP_PASSWORD }} # Contraseña o token SMTP de gllido@sqli.com
           subject: "Combined Analysis Results for ${{ github.event.repository.name }} - Run ID: ${{ github.run_id }}"
-          to: "guillipa1993@gmail.com"
-          from: "CI/CD Pipeline <${{ secrets.SMTP_USERNAME }}>"
+          to: "guillipa1993@gmail.com"  # Destinatario final
+          from: "CI/CD Pipeline <gllido@sqli.com>"  # Dirección del remitente
           body: |
             Hello,
-
+      
             Please find attached the combined analysis results for the project '${{ github.event.repository.name }}'
             from Run ID '${{ github.run_id }}'.
-
+      
             Regards,
             Your CI/CD Pipeline
           attachments: |
-            $GITHUB_WORKSPACE/${{ github.event.repository.name }}-${{ github.run_id }}-combined-analysis-results.tar.gz
+            $GITHUB_WORKSPACE/${{ github.event.repository.name }}-${{ github.run_id }}-combined-analysis-results.tar.gz        
   
   # Job para limpiar el entorno
   clean-up:
