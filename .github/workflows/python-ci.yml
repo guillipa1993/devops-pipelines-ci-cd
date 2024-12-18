@@ -559,7 +559,11 @@ jobs:
         run: |
           python scripts/summarize_and_create_ticket.py \
             --log-dir "$GITHUB_WORKSPACE/analysis_results" \
-            --output-file "$GITHUB_WORKSPACE/summary/github_ticket_summary.md"
+            --output-file "$GITHUB_WORKSPACE/summary/github_ticket_summary.md" \
+            --repo "${{ github.repository }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --create-ticket
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
