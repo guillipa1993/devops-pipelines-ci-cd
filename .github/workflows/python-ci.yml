@@ -462,11 +462,111 @@ jobs:
           else
             echo "ERROR: Combined analysis file does not exist. Skipping upload." >&2
             exit 1
-          fi
+          fi       
   
+  summarize_and_create_ticket:
+    name: Summarize Analysis and Create GitHub Ticket
+    runs-on: ubuntu-latest
+    needs: [analyze_success_logs,analyze_failed_logs]  # Asegúrate de que dependa del job previo
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ inputs.python-version }}  # Ajusta según las necesidades del script
+      
+      - name: Download scripts from library repo
+        run: |
+          echo "Cloning the devops-pipelines-ci-cd repository to obtain scripts..."
+          git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+
+          mkdir -p scripts
+
+          cp devops-pipelines-ci-cd/scripts/summarize_and_create_ticket.py scripts/
+          if [ -f "scripts/summarize_and_create_ticket.py" ]; then
+            echo "SUCCESS: summarize_and_create_ticket.py copied to scripts directory."
+          else
+            echo "ERROR: Failed to copy summarize_and_create_ticket.py to scripts directory." >&2
+            exit 1
+          fi
+      
+      - name: Download and Extract Latest Analysis Logs
+        run: |
+          # Crear directorio necesario para los análisis
+          mkdir -p $GITHUB_WORKSPACE/analysis_results
+      
+          # Variables
+          REPO_NAME="${GITHUB_REPOSITORY##*/}" 
+          RUN_ID="${{ github.run_id }}"
+          LOG_NAME_PREFIX="${REPO_NAME}-${RUN_ID}-combined-analysis-results-"
+          
+          # Listar blobs que coinciden con el patrón de los archivos .tar.gz
+          az storage blob list \
+            --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+            --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+            --container-name logs \
+            --query "[?contains(name, '${LOG_NAME_PREFIX}') && ends_with(name, '.tar.gz')].{name:name}" -o tsv > blob_list.txt
+      
+          # Comprobar si hay resultados
+          if [ ! -s blob_list.txt ]; then
+            echo "No logs found matching pattern: ${LOG_NAME_PREFIX}*.tar.gz"
+            exit 1
+          fi
+      
+          # Ordenar por fecha y hora para obtener el más reciente
+          latest_blob=$(echo "$(cat blob_list.txt)" | sort | tail -n 1)
+      
+          if [ -z "$latest_blob" ]; then
+            echo "ERROR: Unable to find the latest .tar.gz file!"
+            exit 1
+          fi
+      
+          # Descargar el archivo más reciente
+          echo "Downloading latest file: $latest_blob"
+          az storage blob download \
+            --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+            --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+            --container-name logs \
+            --name "$latest_blob" \
+            --file "$GITHUB_WORKSPACE/analysis_results/$(basename $latest_blob)"
+      
+          # Verificar que el archivo fue descargado
+          downloaded_file="$GITHUB_WORKSPACE/analysis_results/$(basename $latest_blob)"
+          if [ ! -f "$downloaded_file" ]; then
+            echo "ERROR: File not downloaded: $latest_blob" >&2
+            exit 1
+          fi
+      
+          # Descomprimir el archivo .tar.gz en el directorio de análisis
+          echo "Extracting $downloaded_file to $GITHUB_WORKSPACE/analysis_results"
+          tar -xzf "$downloaded_file" -C "$GITHUB_WORKSPACE/analysis_results"
+      
+          # Comprobar que hay archivos en el directorio de análisis
+          if [ "$(ls -1 $GITHUB_WORKSPACE/analysis_results | wc -l)" -eq 0 ]; then
+            echo "ERROR: No files found in analysis_results after extraction!" >&2
+            exit 1
+          fi
+      
+          echo "Extraction complete. Files in analysis_results:"
+          ls -la $GITHUB_WORKSPACE/analysis_results
+        env:
+          AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+
+      - name: Summarize log analysis
+        run: |
+          python scripts/summarize_and_create_ticket.py \
+            --log-dir "$GITHUB_WORKSPACE/analysis_results" \
+            --output-file "$GITHUB_WORKSPACE/summary/github_ticket_summary.md"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # Job para limpiar el entorno
   clean-up:
-    needs: [analyze_failed_logs, analyze_success_logs]
+    needs: [summarize_and_create_ticket]
     if: always() && inputs.run-clean-up
     uses: ./.github/workflows/clean-up.yml
     with:
