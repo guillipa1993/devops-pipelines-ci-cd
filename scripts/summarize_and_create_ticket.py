@@ -11,14 +11,14 @@ if not api_key:
 
 openai.api_key = api_key
 
-def create_github_issue(title, body):
+def create_github_issue(title, body, build_id):
     """
     Crea un ticket en GitHub utilizando la CLI `gh`.
     """
     try:
         command = [
             "gh", "issue", "create",
-            "--title", title,
+            "--title", f"{title} - Build #{build_id}",
             "--body", body
         ]
         result = subprocess.run(command, capture_output=True, text=True, check=True)
@@ -28,7 +28,7 @@ def create_github_issue(title, body):
         print("ERROR: Failed to create GitHub issue.")
         print(e.stderr)
 
-def summarize_logs_with_openai(log_dir):
+def summarize_logs_with_openai(log_dir, build_id):
     """
     Lee y resume el contenido de los archivos de análisis utilizando la API de OpenAI.
     """
@@ -50,25 +50,45 @@ def summarize_logs_with_openai(log_dir):
 
     # Consultar a la API de OpenAI para resumir
     print("Summarizing log analysis with OpenAI...")
-    summary = ""
+    consolidated_summary = ""
     for idx, fragment in enumerate(content_fragments, 1):
         try:
             print(f"Processing fragment {idx}/{len(content_fragments)}...")
             response = openai.ChatCompletion.create(
                 model="gpt-4",
                 messages=[
-                    {"role": "system", "content": "You are an assistant summarizing log analysis results for a GitHub ticket. Provide clear and concise points."},
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an assistant summarizing log analysis results for a GitHub ticket. "
+                            "Provide a clear and concise summary with insights, recommendations, and context. "
+                            "The output should be structured, friendly, and compatible for a GitHub issue."
+                        )
+                    },
                     {"role": "user", "content": fragment}
                 ],
                 max_tokens=1500,
                 temperature=0.5
             )
-            summary += response['choices'][0]['message']['content'].strip() + "\n\n"
+            consolidated_summary += response['choices'][0]['message']['content'].strip() + "\n\n"
         except Exception as e:
             print(f"ERROR: Failed to process fragment {idx}: {e}")
             break
 
-    return summary.strip()
+    if not consolidated_summary:
+        print("ERROR: No summary generated from the logs.")
+        return None
+
+    # Formatear la respuesta final
+    formatted_summary = (
+        f"## 📊 Consolidated Log Analysis Report - Build #{build_id}\n\n"
+        f"{consolidated_summary.strip()}\n\n"
+        "---\n"
+        f"### 🔗 Context\n"
+        f"- **Build ID**: {build_id}\n"
+        f"- **Logs Directory**: `{log_dir}`\n"
+    )
+    return formatted_summary
 
 def main():
     parser = argparse.ArgumentParser(description="Summarize analysis and create GitHub issue.")
@@ -80,32 +100,25 @@ def main():
     parser.add_argument("--create-ticket", action="store_true", help="Flag to create a GitHub issue.")
     args = parser.parse_args()
 
+    # Identificador de Build
+    build_id = args.run_id
+
     # Resumir los logs usando OpenAI
-    summary = summarize_logs_with_openai(args.log_dir)
+    summary = summarize_logs_with_openai(args.log_dir, build_id)
     if not summary:
         print("ERROR: Could not generate summary. Exiting...")
         exit(1)
 
-    # Añadir contexto adicional al resumen
-    summary_with_context = (
-        f"## Consolidated Log Analysis Report\n\n{summary}\n\n"
-        f"---\n"
-        f"### Context\n"
-        f"- **Repository**: {args.repo}\n"
-        f"- **Run ID**: {args.run_id}\n"
-        f"- **Run URL**: [GitHub Actions Run]({args.run_url})"
-    )
-
     # Guardar el resumen en un archivo
-    os.makedirs(os.path.dirname(args.output-file), exist_ok=True)
+    os.makedirs(os.path.dirname(args.output_file), exist_ok=True)
     with open(args.output_file, "w") as f:
-        f.write(summary_with_context)
+        f.write(summary)
 
     print(f"Summary saved to {args.output_file}")
 
     # Crear el ticket de GitHub si se pasa el flag `--create-ticket`
     if args.create_ticket:
-        create_github_issue("Consolidated Log Analysis Report", summary_with_context)
+        create_github_issue("Consolidated Log Analysis Report", summary, build_id)
 
 if __name__ == "__main__":
     main()
