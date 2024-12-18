@@ -37,10 +37,11 @@ def clean_log_content(content):
     cleaned_lines = [line for line in lines if line.strip()]  # Elimina líneas vacías
     return "\n".join(cleaned_lines)
 
-def analyze_logs(log_files):
+def analyze_logs(log_files, output_dir):
     """
     Analiza los logs utilizando la API de OpenAI.
     """
+    analysis_created = False
     total_files = len(log_files)
     for file_idx, log_file in enumerate(log_files, start=1):
         print(f"\n[{file_idx}/{total_files}] Analyzing file: {log_file}", flush=True)
@@ -68,14 +69,15 @@ def analyze_logs(log_files):
                         temperature=0.5
                     )
                     analysis = response.choices[0].message.content.strip()
-                    save_analysis(log_file, analysis, idx)
+                    save_analysis(log_file, analysis, idx, output_dir)
+                    analysis_created = True
                     print(f"   Fragment {idx}/{total_fragments} analysis complete.", flush=True)
                     
                     # Pausa exacta para cumplir 3 RPM
                     time.sleep(20)
                 except RateLimitError:
                     print("Rate limit exceeded. Waiting 20 seconds...", flush=True)
-                    time.sleep(20)  # Espera fija de 20 segundos en caso de RateLimitError
+                    time.sleep(20)
                 except (AuthenticationError, BadRequestError, APIError) as e:
                     print(f"Error while analyzing fragment {idx}: {e}", flush=True)
                     break
@@ -83,17 +85,18 @@ def analyze_logs(log_files):
                     print(f"Unexpected error while analyzing fragment {idx}: {e}", flush=True)
                     break
 
-def save_analysis(log_file, analysis, fragment_idx):
-    """
-    Guarda el análisis en un archivo en el directorio `analysis_results` dentro de GITHUB_WORKSPACE.
-    """
-    analysis_dir = os.path.join(os.getenv("GITHUB_WORKSPACE", "."), "analysis_results")
+    if not analysis_created:
+        print("WARNING: No analysis files were created. Please check the logs for issues.", flush=True)
 
-    if not os.path.exists(analysis_dir):
-        os.makedirs(analysis_dir)  # Crea el directorio si no existe
+def save_analysis(log_file, analysis, fragment_idx, output_dir):
+    """
+    Guarda el análisis en un archivo en el directorio proporcionado.
+    """
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)  # Crea el directorio si no existe
 
     analysis_file_path = os.path.join(
-        analysis_dir, f"{os.path.basename(log_file)}_fragment_{fragment_idx}_analysis.txt"
+        output_dir, f"{os.path.basename(log_file)}_fragment_{fragment_idx}_analysis.txt"
     )
     with open(analysis_file_path, 'w') as f:
         f.write(analysis)
@@ -102,6 +105,7 @@ def save_analysis(log_file, analysis, fragment_idx):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze log files using OpenAI")
     parser.add_argument("--log-dir", type=str, required=True, help="Path to the logs directory")
+    parser.add_argument("--output-dir", type=str, required=True, help="Path to save the analysis results")
     args = parser.parse_args()
 
     try:
@@ -110,7 +114,7 @@ if __name__ == "__main__":
         print(f"Found {len(log_files)} log files in '{args.log_dir}'.", flush=True)
 
         # Analizar los logs
-        analyze_logs(log_files)
+        analyze_logs(log_files, args.output_dir)
 
         print("Log analysis completed successfully.", flush=True)
     except Exception as e:

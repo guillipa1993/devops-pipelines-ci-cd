@@ -405,10 +405,12 @@ jobs:
             
       - name: Analyze Success Logs with OpenAI
         run: |
-          python scripts/analyze_logs.py --log-dir $GITHUB_WORKSPACE/logs
+          python scripts/analyze_logs.py \
+            --log-dir "$GITHUB_WORKSPACE/logs" \
+            --output-dir "$GITHUB_WORKSPACE/analysis_results"
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
+        
       - name: Verify and Recover Analysis Results
         run: |
           ANALYSIS_DIR="$GITHUB_WORKSPACE/analysis_results"
@@ -461,27 +463,6 @@ jobs:
             echo "ERROR: Combined analysis file does not exist. Skipping upload." >&2
             exit 1
           fi
-      
-      - name: Send Analysis Results via Email
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.sqli.com  # Reemplaza con el servidor SMTP de sqli.com
-          server_port: 465               # Puerto seguro (SSL). Verifícalo con tu proveedor.
-          username: ${{ secrets.SMTP_USERNAME }} # Debe ser gllido@sqli.com
-          password: ${{ secrets.SMTP_PASSWORD }} # Contraseña o token SMTP de gllido@sqli.com
-          subject: "Combined Analysis Results for ${{ github.event.repository.name }} - Run ID: ${{ github.run_id }}"
-          to: "guillipa1993@gmail.com"  # Destinatario final
-          from: "CI/CD Pipeline <gllido@sqli.com>"  # Dirección del remitente
-          body: |
-            Hello,
-      
-            Please find attached the combined analysis results for the project '${{ github.event.repository.name }}'
-            from Run ID '${{ github.run_id }}'.
-      
-            Regards,
-            Your CI/CD Pipeline
-          attachments: |
-            $GITHUB_WORKSPACE/${{ github.event.repository.name }}-${{ github.run_id }}-combined-analysis-results.tar.gz        
   
   # Job para limpiar el entorno
   clean-up:
