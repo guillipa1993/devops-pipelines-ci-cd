@@ -64,7 +64,7 @@ def analyze_logs(log_files, output_dir):
                             {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
                             {"role": "user", "content": fragment}
                         ],
-                        max_tokens=1000,
+                        max_tokens=1500,
                         temperature=0.5
                     )
                     analysis = response['choices'][0]['message']['content'].strip()
