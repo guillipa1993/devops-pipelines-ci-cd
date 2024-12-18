@@ -1,7 +1,8 @@
+import openai
 import os
 import subprocess
 import argparse
-import openai
+import subprocess
 
 # Configurar clave API de OpenAI
 api_key = os.getenv("OPENAI_API_KEY")
@@ -57,14 +58,11 @@ def summarize_logs_with_openai(log_dir, build_id):
             response = openai.ChatCompletion.create(
                 model="gpt-4",
                 messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an assistant summarizing log analysis results for a GitHub ticket. "
-                            "Provide a clear and concise summary with insights, recommendations, and context. "
-                            "The output should be structured, friendly, and compatible for a GitHub issue."
-                        )
-                    },
+                    {"role": "system", "content": (
+                        "You are an assistant summarizing log analysis results for a GitHub ticket. "
+                        "Provide a clear and concise summary with insights, recommendations, and context. "
+                        "The output should be structured, friendly, and compatible for a GitHub issue."
+                    )},
                     {"role": "user", "content": fragment}
                 ],
                 max_tokens=1500,
