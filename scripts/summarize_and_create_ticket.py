@@ -2,14 +2,16 @@ import openai
 import os
 import subprocess
 import argparse
+from openai import OpenAI
 
-# Configurar clave API de OpenAI
+# Verificar si la clave de API está configurada
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     print("ERROR: 'OPENAI_API_KEY' is not set. Please set it as an environment variable.")
     exit(1)
 
-openai.api_key = api_key
+# Inicializar la API de OpenAI
+client = OpenAI(api_key=api_key)
 
 def create_github_issue(title, body, build_id):
     """
@@ -56,7 +58,7 @@ def summarize_logs_with_openai(log_dir, build_id):
 
     # Dividir contenido si es demasiado grande
     print("DEBUG: Splitting content into fragments for OpenAI API...")
-    max_chunk_size = 12000
+    max_chunk_size = 30000
     content_fragments = [all_content[i:i + max_chunk_size] for i in range(0, len(all_content), max_chunk_size)]
 
     print(f"DEBUG: Total fragments to process: {len(content_fragments)}")
@@ -64,7 +66,7 @@ def summarize_logs_with_openai(log_dir, build_id):
     for idx, fragment in enumerate(content_fragments, 1):
         try:
             print(f"DEBUG: Processing fragment {idx}/{len(content_fragments)} with OpenAI API...")
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": (
@@ -73,7 +75,9 @@ def summarize_logs_with_openai(log_dir, build_id):
                         "The output should be structured, friendly, and compatible for a GitHub issue."
                     )},
                     {"role": "user", "content": fragment}
-                ]
+                ],
+                        max_tokens=2000,
+                        temperature=0.5
             )
             print(f"DEBUG: OpenAI response received for fragment {idx}")
             consolidated_summary += response.choices[0].message['content'].strip() + "\n\n"
