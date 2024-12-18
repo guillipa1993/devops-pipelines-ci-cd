@@ -56,7 +56,7 @@ def summarize_logs_with_openai(log_dir, build_id):
         try:
             print(f"Processing fragment {idx}/{len(content_fragments)}...")
             response = openai.ChatCompletion.create(
-                model="gpt-4",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": (
                         "You are an assistant summarizing log analysis results for a GitHub ticket. "
