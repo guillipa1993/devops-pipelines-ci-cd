@@ -73,13 +73,11 @@ def summarize_logs_with_openai(log_dir, build_id):
                         "The output should be structured, friendly, and compatible for a GitHub issue."
                     )},
                     {"role": "user", "content": fragment}
-                ],
-                max_tokens=1500,
-                temperature=0.5
+                ]
             )
             print(f"DEBUG: OpenAI response received for fragment {idx}")
-            consolidated_summary += response.choices[0].message.content.strip() + "\n\n"
-        except openai.error.OpenAIError as e:
+            consolidated_summary += response.choices[0].message['content'].strip() + "\n\n"
+        except openai.OpenAIError as e:
             print(f"ERROR: OpenAI API error while processing fragment {idx}: {e}")
             break
         except Exception as e:
