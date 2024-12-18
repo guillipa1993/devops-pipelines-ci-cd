@@ -2,7 +2,6 @@ import openai
 import os
 import subprocess
 import argparse
-import subprocess
 
 # Configurar clave API de OpenAI
 api_key = os.getenv("OPENAI_API_KEY")
@@ -39,7 +38,7 @@ def summarize_logs_with_openai(log_dir, build_id):
         if filename.endswith(".txt"):
             file_path = os.path.join(log_dir, filename)
             with open(file_path, "r") as f:
-                all_content += f"### {filename}\n{f.read()}\n\n"
+                all_content += f"### 📄 {filename}\n{f.read()}\n\n"
 
     if not all_content:
         print("ERROR: No valid analysis files found in the directory.")
@@ -68,7 +67,7 @@ def summarize_logs_with_openai(log_dir, build_id):
                 max_tokens=1500,
                 temperature=0.5
             )
-            consolidated_summary += response['choices'][0]['message']['content'].strip() + "\n\n"
+            consolidated_summary += response.choices[0].message.content.strip() + "\n\n"
         except Exception as e:
             print(f"ERROR: Failed to process fragment {idx}: {e}")
             break
@@ -77,14 +76,18 @@ def summarize_logs_with_openai(log_dir, build_id):
         print("ERROR: No summary generated from the logs.")
         return None
 
-    # Formatear la respuesta final
+    # Formatear la respuesta final con más iconos
     formatted_summary = (
         f"## 📊 Consolidated Log Analysis Report - Build #{build_id}\n\n"
         f"{consolidated_summary.strip()}\n\n"
         "---\n"
         f"### 🔗 Context\n"
-        f"- **Build ID**: {build_id}\n"
-        f"- **Logs Directory**: `{log_dir}`\n"
+        f"- **Build ID**: {build_id} 🛠️\n"
+        f"- **Logs Directory**: `{log_dir}` 📂\n\n"
+        f"### 🚀 Recommendations\n"
+        f"- Please address the identified issues promptly. 🕒\n"
+        f"- Ensure all fixes are tested thoroughly. ✅\n\n"
+        f"### ❤️ Thanks for contributing to the project's quality!"
     )
     return formatted_summary
 
@@ -112,7 +115,7 @@ def main():
     with open(args.output_file, "w") as f:
         f.write(summary)
 
-    print(f"Summary saved to {args.output_file}")
+    print(f"Summary saved to {args.output_file} 🎉")
 
     # Crear el ticket de GitHub si se pasa el flag `--create-ticket`
     if args.create_ticket:
