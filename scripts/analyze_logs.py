@@ -1,7 +1,7 @@
 import os
 import time
 import argparse
-import openai
+from openai import OpenAI
 
 # Verificar si la clave de API está configurada
 api_key = os.getenv("OPENAI_API_KEY")
@@ -10,7 +10,7 @@ if not api_key:
     exit(1)
 
 # Inicializar la API de OpenAI
-openai.api_key = api_key
+client = OpenAI(api_key=api_key)
 
 def validate_logs_directory(log_dir):
     """
@@ -48,8 +48,8 @@ def analyze_logs(log_files, output_dir):
             log_content = f.read()
             cleaned_content = clean_log_content(log_content)
 
-            # Dividir el contenido en fragmentos de hasta 30,000 tokens
-            max_chunk_size = 30000
+            # Dividir el contenido en fragmentos de hasta 15,000 caracteres (tokens aproximados)
+            max_chunk_size = 15000
             log_fragments = [cleaned_content[i:i + max_chunk_size] for i in range(0, len(cleaned_content), max_chunk_size)]
             total_fragments = len(log_fragments)
 
@@ -58,7 +58,7 @@ def analyze_logs(log_files, output_dir):
             for idx, fragment in enumerate(log_fragments, 1):
                 print(f"   Analyzing fragment {idx}/{total_fragments} of file '{log_file}'...", flush=True)
                 try:
-                    response = openai.ChatCompletion.create(
+                    response = client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[
                             {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
@@ -67,7 +67,7 @@ def analyze_logs(log_files, output_dir):
                         max_tokens=1500,
                         temperature=0.5
                     )
-                    analysis = response['choices'][0]['message']['content'].strip()
+                    analysis = response.choices[0].message.content.strip()
                     if analysis:
                         save_analysis(log_file, analysis, idx, output_dir)
                         analysis_created = True
