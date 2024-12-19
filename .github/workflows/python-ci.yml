@@ -77,17 +77,16 @@ on:
         description: "Variables de entorno para configurar en el pipeline (formato: 'VAR1=value1, VAR2=value2')"
         required: false
         type: string
-      error-detected:
-        description: "Variable para detectar errores en una build."
-        required: false
-        type: string
 
 jobs:
   ci_pipeline:
     runs-on: ubuntu-24.04
     outputs:
-      error-detected: ${{ steps.analyze.outputs.error-detected || 'false' }}
+      error-detected: ${{ steps.analyze.outputs.error-detected || 'success' }}
     steps:
+      - name: Initialize error-detected
+        run: echo "error-detected=success" >> $GITHUB_ENV
+
       - name: Debug OS Version
         run: lsb_release -a || cat /etc/os-release
         continue-on-error: true
@@ -325,7 +324,7 @@ jobs:
         run: |
           echo "Error-detected from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
           echo "Nueva variable input error-detected : ${{ inputs.error-detected }}"
-
+      
       - name: Verify and analyze logs for errors
         id: analyze
         if: always()
@@ -333,30 +332,28 @@ jobs:
           echo "Analyzing logs for errors..."
           repo_name=$(basename "${{ github.repository }}")
           log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
-          
+
           if [ -f "$log_file" ]; then
             if grep -qi "error" "$log_file"; then
               echo "Errors found in logs."
-              echo "error-detected=failure" >> ${{ inputs.error-detected }}
-              echo "error-detected=failure" >> ${{ inputs.error-detected }}
+              echo "error-detected=failure" >> $GITHUB_ENV
+              echo "error-detected=failure" >> $GITHUB_OUTPUT
             else
               echo "No errors found."
-              echo "error-detected=success" >> ${{ inputs.error-detected }}
-              echo "error-detected=success" >> ${{ inputs.error-detected }}
+              echo "error-detected=success" >> $GITHUB_ENV
+              echo "error-detected=success" >> $GITHUB_OUTPUT
             fi
           else
             echo "ERROR: Build log file not found!" >&2
-            echo "error-detected=success" >> ${{ inputs.error-detected }}
-            echo "error-detected=success" >> ${{ inputs.error-detected }}
+            echo "error-detected=failure" >> $GITHUB_ENV
+            echo "error-detected=failure" >> $GITHUB_OUTPUT
           fi
 
-      - name: Debug error-detected output
-        if: always()
+      - name: Debug error-detected
         run: |
-          echo "Debugging error-detected variable:"
-          echo "error-detected from ENV: ${{ inputs.error-detected }}}"
-          echo "error-detected from OUTPUT: ${{ steps.analyze.outputs.error-detected || 'not set' }}"
-
+          echo "error-detected (from ENV): ${{ env.error-detected }}"
+          echo "error-detected (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
+  
       - name: Debug final error-detected
         if: always()
         run: |
@@ -412,7 +409,7 @@ jobs:
       AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     with:
-      log-type: ${{ inputs.error-detected }}
+      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
       project-name: ${{ github.event.repository.name }}
       run-id: ${{ github.run_id }}
 
