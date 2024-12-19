@@ -70,9 +70,17 @@ def summarize_logs_with_openai(log_dir, build_id):
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": (
-                        "You are an assistant summarizing log analysis results for a GitHub ticket. "
-                        "Provide a clear and concise summary with insights, recommendations, and context. "
-                        "The output should be structured, friendly, and compatible for a GitHub issue."
+                        "You are an assistant summarizing log analysis results for a GitHub ticket."
+                        "Analyze the provided logs and generate a detailed, structured summary."
+                        "Ensure the output includes:"
+                        "1. A clear and concise overview of the key findings from the logs."
+                        "2. Insights into the possible root causes of the identified issues."
+                        "3. Specific recommendations for addressing each issue, with actionable steps."
+                        "4. Examples of potential solutions or configurations to resolve the problems, if applicable."
+                        "5. A friendly and professional tone, suitable for a GitHub issue."
+                        "6. A well-organized structure that includes sections for findings, root causes, recommendations, and next steps."
+                        "7. Highlight any critical or blocking issues that require immediate attention."
+                        "Ensure the output is easy to read, visually appealing, and encourages collaboration by thanking contributors and emphasizing the importance of resolving these issues for the project's success."
                     )},
                     {"role": "user", "content": fragment}
                 ],
