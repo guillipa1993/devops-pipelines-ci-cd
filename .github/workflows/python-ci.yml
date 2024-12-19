@@ -82,7 +82,7 @@ jobs:
   ci_pipeline:
     runs-on: ubuntu-24.04
     outputs:
-      error-detected: ${{ steps.analyze.outputs.error-detected }}
+      error-detected: ${{ steps.analyze.outputs.error-detected || 'false' }}
     steps:
       - name: Debug OS Version
         run: lsb_release -a || cat /etc/os-release
@@ -336,13 +336,13 @@ jobs:
         run: |
           echo "Debugging error-detected variable:"
           echo "error-detected from ENV: ${{ env.error-detected }}"
-          echo "error-detected from OUTPUT: ${{ steps.analyze.outputs.error-detected }}"
-      
-      - name: Debug error-detected in analyze_failed_logs
+          echo "error-detected from OUTPUT: ${{ steps.analyze.outputs.error-detected || 'not set' }}"
+
+      - name: Debug final error-detected
         if: always()
         run: |
-          echo "error-detected: ${{ needs.ci_pipeline.outputs.error-detected }}"
-        
+          echo "Final error-detected value (from ENV): ${{ env.error-detected || 'not set' }}"
+          echo "Final error-detected value (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
         
   # Job separado para formatear código y recopilar logs
   check-code-format:
