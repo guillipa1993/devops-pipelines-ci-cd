@@ -87,7 +87,7 @@ jobs:
       - name: Debug OS Version
         run: lsb_release -a || cat /etc/os-release
         continue-on-error: true
-      
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -98,7 +98,6 @@ jobs:
 
       - name: Set Azure Environment Variables
         run: |
-          echo "Setting Azure environment variables..."
           echo "AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" >> $GITHUB_ENV
           echo "AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" >> $GITHUB_ENV
       
@@ -138,7 +137,6 @@ jobs:
         
       - name: Install dependencies and Save Logs
         run: |
-          echo "Installing dependencies with increased timeout and fallback to PyPI"
           mkdir -p "${GITHUB_WORKSPACE}/logs"
       
           # Variables dinámicas
@@ -384,7 +382,7 @@ jobs:
   analyze_success_logs:
     name: Analyze Success Logs
     needs: [ci_pipeline, check-code-format, code-analysis, python-lint]
-    if: ${{ needs.ci_pipeline.result == 'success' }}
+    if: ${{ needs.ci_pipeline.outputs.error-detected == 'false' }}
     uses: ./.github/workflows/analyze-logs.yml
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
