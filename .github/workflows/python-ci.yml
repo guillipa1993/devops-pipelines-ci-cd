@@ -309,6 +309,7 @@ jobs:
       
       - name: Verify and analyze logs for errors
         id: analyze
+        if: always()
         run: |
           echo "Analyzing logs for 'ERROR:' keyword..."
           LOGS_FOUND=$(grep -rl "ERROR:" $GITHUB_WORKSPACE/logs || true)
