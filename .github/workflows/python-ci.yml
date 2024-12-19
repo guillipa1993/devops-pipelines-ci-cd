@@ -316,6 +316,7 @@ jobs:
             echo "pipeline-status=failure" >> $GITHUB_OUTPUT
           else
             echo "pipeline-status=success" >> $GITHUB_OUTPUT
+          fi
 
   # Job separado para formatear código y recopilar logs
   check-code-format:
