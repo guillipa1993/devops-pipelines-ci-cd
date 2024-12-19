@@ -319,21 +319,24 @@ jobs:
             if grep -qi "error" "$log_file"; then
               echo "Errors found in logs."
               echo "error-detected=true" >> $GITHUB_ENV
-              echo "::set-output name=error-detected::true"
+              echo "error-detected=true" >> $GITHUB_OUTPUT
             else
               echo "No errors found."
               echo "error-detected=false" >> $GITHUB_ENV
-              echo "::set-output name=error-detected::false"
+              echo "error-detected=false" >> $GITHUB_OUTPUT
             fi
           else
             echo "ERROR: Build log file not found!" >&2
             echo "error-detected=false" >> $GITHUB_ENV
-            echo "::set-output name=error-detected::false"
+            echo "error-detected=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Debug error-detected output
         if: always()
-        run: echo "error-detected=${{ steps.analyze.outputs.error-detected }}"
+        run: |
+          echo "Debugging error-detected variable:"
+          echo "error-detected from ENV: ${{ env.error-detected }}"
+          echo "error-detected from OUTPUT: ${{ steps.analyze.outputs.error-detected }}"
         
   # Job separado para formatear código y recopilar logs
   check-code-format:
