@@ -393,9 +393,9 @@ jobs:
       - name: Analyze Failed Logs with OpenAI
         run: |
           python scripts/analyze_logs.py \
-          --log-dir "$GITHUB_WORKSPACE/logs" \
-          --output-dir "$GITHUB_WORKSPACE/analysis_results" \
-          --log-type "failure"
+            --log-dir "$GITHUB_WORKSPACE/logs" \
+            --output-dir "$GITHUB_WORKSPACE/analysis_results" \
+            --log-type "failure"
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
@@ -531,7 +531,7 @@ jobs:
         run: |
           python scripts/analyze_logs.py \
             --log-dir "$GITHUB_WORKSPACE/logs" \
-            --output-dir "$GITHUB_WORKSPACE/analysis_results"
+            --output-dir "$GITHUB_WORKSPACE/analysis_results" \
             --log-type "success"
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
