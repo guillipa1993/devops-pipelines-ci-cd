@@ -337,6 +337,11 @@ jobs:
           echo "Debugging error-detected variable:"
           echo "error-detected from ENV: ${{ env.error-detected }}"
           echo "error-detected from OUTPUT: ${{ steps.analyze.outputs.error-detected }}"
+      
+      - name: Debug error-detected in analyze_failed_logs
+        run: |
+          echo "error-detected: ${{ needs.ci_pipeline.outputs.error-detected }}"
+        
         
   # Job separado para formatear código y recopilar logs
   check-code-format:
