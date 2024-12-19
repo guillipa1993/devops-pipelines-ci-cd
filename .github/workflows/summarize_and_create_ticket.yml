@@ -1,0 +1,120 @@
+name: Summarize and Create Ticket
+
+on:
+  workflow_call:
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME:
+        description: "Azure Storage Account Name"
+        required: true
+      AZURE_STORAGE_ACCOUNT_KEY:
+        description: "Azure Storage Account Key"
+        required: true
+      OPENAI_API_KEY:
+        description: "OpenAI API Key"
+        required: true
+      GITHUB_TOKEN:
+        description: "GitHub Token for ticket creation"
+        required: true
+    inputs:
+      project-name:
+        description: "The name of the GitHub repository"
+        required: true
+        type: string
+      run-id:
+        description: "The ID of the current GitHub run"
+        required: true
+        type: string
+      report-language:
+        description: "Language for the summary report (e.g., English, Spanish)"
+        required: false
+        type: string
+
+jobs:
+  summarize_and_create_ticket:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install openai
+          pip install --upgrade openai
+          python -c "import openai; print('OpenAI library installed successfully')"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Download scripts from library repo
+        run: |
+          echo "Cloning the devops-pipelines-ci-cd repository to obtain scripts..."
+          git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+          mkdir -p scripts
+          cp devops-pipelines-ci-cd/scripts/summarize_and_create_ticket.py scripts/
+          if [ -f "scripts/summarize_and_create_ticket.py" ]; then
+            echo "SUCCESS: summarize_and_create_ticket.py copied to scripts directory."
+          else
+            echo "ERROR: Failed to copy summarize_and_create_ticket.py to scripts directory." >&2
+            exit 1
+          fi
+
+      - name: Download and Extract Latest Analysis Logs
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/analysis_results
+          REPO_NAME="${{ inputs.project-name }}"
+          RUN_ID="${{ inputs.run-id }}"
+          LOG_NAME_PREFIX="${REPO_NAME}-${RUN_ID}-combined-analysis-results-"
+          az storage blob list \
+            --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+            --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+            --container-name logs \
+            --query "[?contains(name, '${LOG_NAME_PREFIX}') && ends_with(name, '.tar.gz')].{name:name}" -o tsv > blob_list.txt
+          if [ ! -s blob_list.txt ]; then
+            echo "No logs found matching pattern: ${LOG_NAME_PREFIX}*.tar.gz"
+            exit 1
+          fi
+          latest_blob=$(cat blob_list.txt | sort | tail -n 1)
+          if [ -z "$latest_blob" ]; then
+            echo "ERROR: Unable to find the latest .tar.gz file!"
+            exit 1
+          fi
+          echo "Downloading latest file: $latest_blob"
+          az storage blob download \
+            --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+            --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+            --container-name logs \
+            --name "$latest_blob" \
+            --file "$GITHUB_WORKSPACE/analysis_results/$(basename $latest_blob)"
+          downloaded_file="$GITHUB_WORKSPACE/analysis_results/$(basename $latest_blob)"
+          if [ ! -f "$downloaded_file" ]; then
+            echo "ERROR: File not downloaded: $latest_blob" >&2
+            exit 1
+          fi
+          echo "Extracting $downloaded_file to $GITHUB_WORKSPACE/analysis_results"
+          tar -xzf "$downloaded_file" -C "$GITHUB_WORKSPACE/analysis_results"
+          if [ "$(ls -1 $GITHUB_WORKSPACE/analysis_results | wc -l)" -eq 0 ]; then
+            echo "ERROR: No files found in analysis_results after extraction!" >&2
+            exit 1
+          fi
+          echo "Extraction complete. Files in analysis_results:"
+          ls -la $GITHUB_WORKSPACE/analysis_results
+        env:
+          AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+
+      - name: Summarize log analysis
+        run: |
+          python scripts/summarize_and_create_ticket.py \
+            --log-dir "$GITHUB_WORKSPACE/analysis_results" \
+            --output-file "$GITHUB_WORKSPACE/summary/github_ticket_summary.md" \
+            --repo "${{ inputs.project-name }}" \
+            --run-id "${{ inputs.run-id }}" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ inputs.run-id }}" \
+            --create-ticket \
+            --report-language "${{ inputs.report-language }}"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

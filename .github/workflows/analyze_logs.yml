@@ -1,0 +1,157 @@
+name: Analyze Failed Logs
+
+on:
+  workflow_call:
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME:
+        description: "Azure Storage Account Name"
+        required: true
+      AZURE_STORAGE_ACCOUNT_KEY:
+        description: "Azure Storage Account Key"
+        required: true
+      OPENAI_API_KEY:
+        description: "OpenAI API Key"
+        required: true
+    inputs:
+      project-name:
+        description: "The name of the GitHub repository"
+        required: true
+        type: string
+      run-id:
+        description: "The ID of the current GitHub run"
+        required: true
+        type: string
+      log-type:
+        description: "Type of logs to analyze (e.g., failure, success)"
+        required: true
+        type: string
+
+jobs:
+  analyze_failed_logs:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download scripts from library repo
+        run: |
+          echo "Cloning the devops-pipelines-ci-cd repository to obtain scripts..."
+          git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+          mkdir -p scripts
+          cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
+          if [ -f "scripts/analyze_logs.py" ]; then
+            echo "SUCCESS: analyze_logs.py copied to scripts directory."
+          else
+            echo "ERROR: Failed to copy analyze_logs.py to scripts directory." >&2
+            exit 1
+          fi
+
+      - name: Download All Logs Matching Pattern from Azure Storage
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/logs
+          REPO_NAME="${{ inputs.project-name }}"
+          RUN_ID="${{ inputs.run-id }}"
+          LOG_NAME_PREFIX="${REPO_NAME}-${RUN_ID}-"
+          az storage blob list \
+            --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+            --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+            --container-name logs \
+            --query "[].{name:name}" -o tsv | grep "^${LOG_NAME_PREFIX}" > blob_list.txt
+          if [ ! -s blob_list.txt ]; then
+            echo "No logs found matching pattern: ${LOG_NAME_PREFIX}*.log"
+            exit 1
+          fi
+          while IFS= read -r blob_name; do
+            az storage blob download \
+              --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+              --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+              --container-name logs \
+              --name "$blob_name" \
+              --file "$GITHUB_WORKSPACE/logs/$(basename $blob_name)"
+          done < blob_list.txt
+          if [ "$(ls -1 $GITHUB_WORKSPACE/logs | wc -l)" -eq 0 ]; then
+            echo "ERROR: No log files were downloaded!" >&2
+            exit 1
+          fi
+          ls -la $GITHUB_WORKSPACE/logs
+        env:
+          AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+
+      - name: Prepare Analysis Directory
+        run: |
+          ANALYSIS_DIR="$GITHUB_WORKSPACE/analysis_results"
+          echo "Creating analysis results directory at $ANALYSIS_DIR"
+          mkdir -p "$ANALYSIS_DIR"
+          echo "Directory created successfully."
+
+      - name: Verify Logs Artifact
+        run: |
+          if [ ! -d "$GITHUB_WORKSPACE/logs" ]; then
+            echo "ERROR: Logs directory does not exist after downloading artifact!" >&2
+            exit 1
+          fi
+          echo "Logs directory exists. Listing contents:"
+          ls -la $GITHUB_WORKSPACE/logs
+
+      - name: Install OpenAI Python Library
+        run: |
+          pip install openai
+          pip install --upgrade openai
+          python -c "import openai; print('OpenAI library installed successfully')"
+
+      - name: Analyze Logs with OpenAI
+        run: |
+          python scripts/analyze_logs.py \
+            --log-dir "$GITHUB_WORKSPACE/logs" \
+            --output-dir "$GITHUB_WORKSPACE/analysis_results" \
+            --log-type "${{ inputs.log-type }}"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Verify and Recover Analysis Results
+        run: |
+          ANALYSIS_DIR="$GITHUB_WORKSPACE/analysis_results"
+          if [ ! -d "$ANALYSIS_DIR" ]; then
+            echo "ERROR: Analysis results directory does not exist. Creating now..."
+            mkdir -p "$ANALYSIS_DIR"
+          fi
+          if [ -z "$(ls -A $ANALYSIS_DIR)" ]; then
+            echo "Analysis directory is empty. Searching for analysis files..."
+            find $GITHUB_WORKSPACE -type f -name "*analysis*.txt" -exec mv {} "$ANALYSIS_DIR/" \;
+            echo "Recovered analysis files:"
+            ls -la "$ANALYSIS_DIR"
+          else
+            echo "Analysis results exist. Listing contents:"
+            ls -la "$ANALYSIS_DIR"
+          fi
+
+      - name: Combine Analysis Results into a Single File
+        run: |
+          ANALYSIS_DIR="$GITHUB_WORKSPACE/analysis_results"
+          PROJECT_NAME="${{ inputs.project-name }}"
+          RUN_ID="${{ inputs.run-id }}"
+          OUTPUT_FILE="$GITHUB_WORKSPACE/${PROJECT_NAME}-${RUN_ID}-combined-analysis-results.tar.gz"
+          if [ -d "$ANALYSIS_DIR" ]; then
+            echo "Combining analysis results into a single compressed file..."
+            tar -czf "$OUTPUT_FILE" -C "$ANALYSIS_DIR" .
+            echo "Combined file created at $OUTPUT_FILE"
+          else
+            echo "ERROR: Analysis results directory does not exist. Skipping combination." >&2
+            exit 1
+          fi
+
+      - name: Upload Combined Analysis Results to Azure Storage
+        run: |
+          PROJECT_NAME="${{ inputs.project-name }}"
+          RUN_ID="${{ inputs.run-id }}"
+          OUTPUT_FILE="$GITHUB_WORKSPACE/${PROJECT_NAME}-${RUN_ID}-combined-analysis-results.tar.gz"
+          if [ -f "$OUTPUT_FILE" ]; then
+            echo "Uploading $OUTPUT_FILE to Azure Storage..."
+            az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+                                    --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+                                    --container-name logs \
+                                    --file "$OUTPUT_FILE" \
+                                    --name "${PROJECT_NAME}-${RUN_ID}-combined-analysis-results-$(date +%Y-%m-%d_%H-%M-%S).tar.gz" \
+                                    --overwrite
+          else
+            echo "ERROR: Combined analysis file does not exist. Skipping upload." >&2
+            exit 1
+          fi
