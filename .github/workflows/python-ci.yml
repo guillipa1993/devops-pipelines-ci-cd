@@ -307,7 +307,12 @@ jobs:
             echo "ERROR: Logs directory does not exist. Skipping upload." >&2
             exit 1
           fi
-        
+      
+      - name: Debug Pipeline Status
+        if: always()
+        run: |
+          echo "Pipeline Status: ${{ steps.set-status.outputs.pipeline-status }}"
+
       - name: Set CI Pipeline Result
         if: always()
         id: set-status
