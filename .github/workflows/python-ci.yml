@@ -359,7 +359,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     with:
       log-type: "failure"
-      repo-name: ${{ github.event.repository.name }}
+      project-name: ${{ github.event.repository.name }}
       run-id: ${{ github.run_id }}
 
   # Job para analizar logs exitosos
@@ -374,7 +374,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     with:
       log-type: "success"
-      repo-name: ${{ github.event.repository.name }}
+      project-name: ${{ github.event.repository.name }}
       run-id: ${{ github.run_id }}
 
   summarize_and_create_ticket:
