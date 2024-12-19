@@ -36,7 +36,7 @@ def clean_log_content(content):
     cleaned_lines = [line for line in lines if line.strip()]  # Elimina líneas vacías
     return "\n".join(cleaned_lines)
 
-def analyze_logs(log_files, output_dir):
+def analyze_logs(log_files, output_dir, log_type):
     """
     Analiza los logs utilizando la API de OpenAI.
     """
@@ -58,10 +58,27 @@ def analyze_logs(log_files, output_dir):
             for idx, fragment in enumerate(log_fragments, 1):
                 print(f"   Analyzing fragment {idx}/{total_fragments} of file '{log_file}'...", flush=True)
                 try:
+                    # Ajustar mensaje según tipo de log
+                    role_content = (
+                        f"You are an expert log analysis assistant. The provided log type is '{log_type}'. "
+                        "Your primary goal is to deliver detailed insights, actionable recommendations, and structured responses based on the log type:"
+                        "For failure logs:"
+                        "1. Identify and explain the root causes of the failure with as much detail as possible, including specific events or patterns."
+                        "2. Provide clear, actionable suggestions to fix the identified issues, specifying affected files, line numbers, or configuration points where possible."
+                        "3. Suggest preventive measures to avoid similar failures in the future, such as configuration changes, updated dependencies, or alternative approaches."
+                        "4. Highlight any urgent or critical problems that require immediate attention, and suggest their priority for resolution."
+                        "For success logs:"
+                        "1. Verify that the process completed successfully, and confirm there are no hidden issues or warnings that could lead to potential problems."
+                        "2. Suggest optimizations for the current workflow or code, including performance enhancements or simplifications."
+                        "3. Recommend improvements to the current implementation to ensure long-term stability and maintainability."
+                        "4. Highlight opportunities for scalability, efficiency, or enhanced security, if applicable."
+                        "Ensure the output is detailed, professional, and structured, with sections for findings, recommendations, and next steps. "
+                        "Tailor the tone and language to foster collaboration and support development teams in maintaining a high-quality and reliable system."
+                    )
                     response = client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[
-                            {"role": "system", "content": "You are a log analysis assistant. Provide insights and recommendations based on the following log fragment."},
+                            {"role": "system", "content": role_content},
                             {"role": "user", "content": fragment}
                         ],
                         max_tokens=1500,
@@ -69,7 +86,7 @@ def analyze_logs(log_files, output_dir):
                     )
                     analysis = response.choices[0].message.content.strip()
                     if analysis:
-                        save_analysis(log_file, analysis, idx, output_dir)
+                        save_analysis(log_file, analysis, idx, output_dir, log_type)
                         analysis_created = True
                         print(f"   Fragment {idx}/{total_fragments} analysis complete.", flush=True)
                     else:
@@ -83,7 +100,7 @@ def analyze_logs(log_files, output_dir):
     if not analysis_created:
         print("WARNING: No analysis files were created. Please check the logs for issues.", flush=True)
 
-def save_analysis(log_file, analysis, fragment_idx, output_dir):
+def save_analysis(log_file, analysis, fragment_idx, output_dir, log_type):
     """
     Guarda el análisis en un archivo en el directorio proporcionado.
     """
@@ -91,7 +108,7 @@ def save_analysis(log_file, analysis, fragment_idx, output_dir):
         os.makedirs(output_dir)  # Crea el directorio si no existe
 
     analysis_file_path = os.path.join(
-        output_dir, f"{os.path.basename(log_file)}_fragment_{fragment_idx}_analysis.txt"
+        output_dir, f"{os.path.basename(log_file)}_{log_type}_fragment_{fragment_idx}_analysis.txt"
     )
     with open(analysis_file_path, 'w') as f:
         f.write(analysis)
@@ -101,6 +118,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze log files using OpenAI")
     parser.add_argument("--log-dir", type=str, required=True, help="Path to the logs directory")
     parser.add_argument("--output-dir", type=str, required=True, help="Path to save the analysis results")
+    parser.add_argument("--log-type", type=str, required=True, choices=["success", "failure"], help="Specify the type of logs to analyze: 'success' or 'failure'")
     args = parser.parse_args()
 
     try:
@@ -109,7 +127,7 @@ if __name__ == "__main__":
         print(f"Found {len(log_files)} log files in '{args.log_dir}'.", flush=True)
 
         # Analizar los logs
-        analyze_logs(log_files, args.output_dir)
+        analyze_logs(log_files, args.output_dir, args.log_type)
 
         print("Log analysis completed successfully.", flush=True)
     except Exception as e:

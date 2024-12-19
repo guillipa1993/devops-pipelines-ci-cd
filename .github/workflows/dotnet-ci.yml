@@ -2,6 +2,16 @@ name: "ASP.NET Core CI/CD Pipeline"
 
 on:
   workflow_call:
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME:
+        description: 'Azure Storage Account Name'
+        required: true
+      AZURE_STORAGE_ACCOUNT_KEY:
+        description: 'Azure Storage Account Key'
+        required: true
+      OPENAI_API_KEY:
+        description: 'OpenAI API Key'
+        required: true
     inputs:
       dotnet-version:
         description: 'La versión de .NET para usar en este pipeline'
@@ -16,11 +26,15 @@ on:
         required: true
         type: string
       build-configuration:
-        description: 'La configuración de build (Debug o Release)'
+        description: 'Configuración de build (Debug o Release)'
         required: true
         type: string
       additional-install-commands:
         description: 'Comandos adicionales para instalar dependencias antes de construir'
+        required: false
+        type: string
+      report-language:
+        description: 'Idioma en el que se generará el informe (por ejemplo: English, Spanish, French, German, Italian). Por defecto, se utiliza inglés si no se especifica.'
         required: false
         type: string
       run-tests:
@@ -59,31 +73,74 @@ on:
 jobs:
   # Job principal para construir el proyecto
   ci_pipeline:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v2
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
 
-      - name: Install additional dependencies
-        if: ${{ inputs.additional-install-commands }}
-        run: ${{ inputs.additional-install-commands }}
-
-      - name: Install dependencies
-        run: dotnet restore ${{ inputs.project-path }}
+      - name: Set Azure Environment Variables
+        run: |
+          echo "Setting Azure environment variables..."
+          echo "AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" >> $GITHUB_ENV
+          echo "AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" >> $GITHUB_ENV
+      
+      - name: Set OpenAI API Key
+        run: |
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
+      
+      - name: Verify Secrets
+        run: |
+          echo "Azure Account Name: ${AZURE_STORAGE_ACCOUNT_NAME}"
+          echo "Azure Account Key: ${AZURE_STORAGE_ACCOUNT_KEY}"
+          echo "OpenAI API Key: ${OPENAI_API_KEY}"
 
       - name: Set Environment Variables
         if: ${{ inputs.environment-variables }}
         run: |
+          echo "Setting environment variables"
           IFS=',' read -ra VARS <<< "${{ inputs.environment-variables }}"
           for VAR in "${VARS[@]}"; do
             echo "Setting $VAR"
             echo "$VAR" >> $GITHUB_ENV
           done
+      
+      - name: Install additional dependencies
+        if: ${{ inputs.additional-install-commands }}
+        run: |
+          echo "Running additional install commands"
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          repo_name=$(basename "${{ github.repository }}")
+          ${{ inputs.additional-install-commands }} 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-additional_install.log"
+          if [ ! -f "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-additional_install.log" ]; then
+            echo "ERROR : Log file for additional dependencies installation was not created!" >&2
+            exit 1
+          else
+            echo "SUCCESS : Log file for additional dependencies installation was created!" >&2
+          fi
+
+      - name: Install dependencies and Save Logs
+        run: |
+          echo "Installing dependencies with increased timeout and fallback to PyPI"
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+
+          # Variables dinámicas
+          repo_name=$(basename "${GITHUB_REPOSITORY}")
+          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-dependencies.log"
+      
+          dotnet restore ${{ inputs.project-path }} 2>&1 | tee "$log_file"
+
+          # Verificación de creación del log
+          if [ ! -f "$log_file" ]; then
+            echo "ERROR: Log file $log_file was not created!" >&2
+            exit 1
+          else
+            echo "SUCCESS: Log file $log_file was created!" >&2
+          fi
 
       - name: Build
         run: |
@@ -92,12 +149,99 @@ jobs:
           else
             dotnet build ${{ inputs.project-path }}
           fi
+      
+      - name: Move build artifacts to workspace
+        run: |
+          echo "GITHUB_WORKSPACE is: ${GITHUB_WORKSPACE}"
+          echo "Searching for build artifacts..."
+          ARTIFACT_FILES=$(find "${GITHUB_WORKSPACE}/bin/Release/" -type f -name "*.dll" -o -name "*.nupkg")
+          if [ -n "$ARTIFACT_FILES" ]; then
+            echo "Build artifacts found:"
+            echo "$ARTIFACT_FILES"
+            mkdir -p "${GITHUB_WORKSPACE}/dist"
+            for FILE in $ARTIFACT_FILES; do
+              cp "$FILE" "${GITHUB_WORKSPACE}/dist/"
+            done
+            if [ "$(ls -A ${GITHUB_WORKSPACE}/dist)" ]; then
+              echo "SUCCESS: Build artifacts moved to dist directory."
+            else
+              echo "ERROR: Failed to move build artifacts." >&2
+              exit 1
+            fi
+          else
+            echo "ERROR: No build artifacts found!"
+            exit 1
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-${{ github.run_id }}
+          path: ${{ github.workspace }}/dist/**
+          if-no-files-found: ignore
+        
+      - name: Debug Logs Directory
+        run: |
+          echo "Current working directory: $(pwd)"
+          echo "Listing contents of the current directory:"
+          ls -la
+          echo "Listing contents of the GITHUB_WORKSPACE directory:"
+          ls -la $GITHUB_WORKSPACE
+          echo "Checking if the logs directory exists in the workspace:"
+          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
+            echo "Logs directory exists in the workspace."
+            ls -la $GITHUB_WORKSPACE/logs
+          else
+            echo "ERROR: Logs directory does not exist in the workspace!"
+          fi   
+
+      # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
+      - name: Debug Storage Account Name
+        run: |
+          echo "Checking if AZURE_STORAGE_ACCOUNT_NAME is set..."
+          if [ -z "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" ]; then
+            echo "ERROR: AZURE_STORAGE_ACCOUNT_NAME is not set." >&2
+            exit 1
+          else
+            echo "Account Name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}"
+          fi
+      
+      - name: Verify Logs Directory
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/logs" ] && [ "$(ls -A $GITHUB_WORKSPACE/logs)" ]; then
+            echo "Logs directory exists and contains files:"
+            ls -la $GITHUB_WORKSPACE/logs
+          else
+            echo "ERROR: Logs directory is empty or does not exist!" >&2
+            exit 1
+          fi
+
+      # Paso para subir los logs al contenedor de Azure Storage
+      - name: Upload Logs to Azure Storage
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
+            for log in $GITHUB_WORKSPACE/logs/*.log; do
+              echo "Uploading $log to Azure Storage..."
+              az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+                                    --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+                                    --container-name logs \
+                                    --file "$log" \
+                                    --name "$(basename $log)" \
+                                    --overwrite
+            done
+          else
+            echo "ERROR: Logs directory does not exist. Skipping upload." >&2
+            exit 1
+          fi
 
   # Job separado para formatear código
   check-code-format:
     needs: ci_pipeline
     if: ${{ inputs.run-check-code-format }}
     uses: ./.github/workflows/check-code-format.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
     with:
       language: ${{ inputs.language }}
       dotnet-version: ${{ inputs.dotnet-version }}
@@ -107,16 +251,9 @@ jobs:
     needs: ci_pipeline
     if: ${{ inputs.run-code-analysis }}
     uses: ./.github/workflows/scan-security-vulnerabilities.yml
-    with:
-      language: ${{ inputs.language }}
-      dotnet-version: ${{ inputs.dotnet-version }} 
-      project-path: ${{ inputs.project-path }}
-
-  # Job separado para generar artefacto de build
-  build-artifact:
-    needs: ci_pipeline
-    if: ${{ inputs.run-build-artifact }}
-    uses: ./.github/workflows/build-artifact.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
     with:
       language: ${{ inputs.language }}
       dotnet-version: ${{ inputs.dotnet-version }} 
@@ -127,12 +264,402 @@ jobs:
     needs: ci_pipeline
     if: ${{ inputs.run-lint }}
     uses: ./.github/workflows/lint.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
     with:
       language: ${{ inputs.language }}
 
+  # Job para subir y analizar los logs de builds fallidas
+  analyze_failed_logs:
+    needs: [ci_pipeline, check-code-format, code-analysis, dotnet-lint]
+    runs-on: ubuntu-24.04
+    if: ${{ needs.ci_pipeline.result == 'failure' || needs.check-code-format.result == 'failure' || needs.code-analysis.result == 'failure' || needs.dotnet-lint.result == 'failure' }}
+    steps:
+      - name: Download scripts from library repo
+        run: |
+          echo "Cloning the devops-pipelines-ci-cd repository to obtain scripts..."
+          git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+
+          mkdir -p scripts
+
+          cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
+          if [ -f "scripts/analyze_logs.py" ]; then
+            echo "SUCCESS: analyze_logs.py copied to scripts directory."
+          else
+            echo "ERROR: Failed to copy analyze_logs.py to scripts directory." >&2
+            exit 1
+          fi
+
+      - name: Download All Logs Matching Pattern from Azure Storage
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/logs
+          REPO_NAME="${GITHUB_REPOSITORY##*/}" 
+          RUN_ID="${{ github.run_id }}"
+          LOG_NAME_PREFIX="${REPO_NAME}-${RUN_ID}-"
+          az storage blob list \
+            --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+            --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+            --container-name logs \
+            --query "[].{name:name}" -o tsv | grep "^${LOG_NAME_PREFIX}" > blob_list.txt
+          if [ ! -s blob_list.txt ]; then
+            echo "No logs found matching pattern: ${LOG_NAME_PREFIX}*.log"
+            exit 1
+          fi
+          while IFS= read -r blob_name; do
+            az storage blob download \
+              --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+              --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+              --container-name logs \
+              --name "$blob_name" \
+              --file "$GITHUB_WORKSPACE/logs/$(basename $blob_name)"
+          done < blob_list.txt
+          if [ "$(ls -1 $GITHUB_WORKSPACE/logs | wc -l)" -eq 0 ]; then
+            echo "ERROR: No log files were downloaded!" >&2
+            exit 1
+          fi
+          ls -la $GITHUB_WORKSPACE/logs
+        env:
+          AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      
+      - name: Prepare Analysis Directory
+        run: |
+          ANALYSIS_DIR="$GITHUB_WORKSPACE/analysis_results"
+          echo "Creating analysis results directory at $ANALYSIS_DIR"
+          mkdir -p "$ANALYSIS_DIR"
+          echo "Directory created successfully."
+
+      - name: Verify Logs Artifact
+        run: |
+          if [ ! -d "$GITHUB_WORKSPACE/logs" ]; then
+            echo "ERROR: Logs directory does not exist after downloading artifact!" >&2
+            exit 1
+          fi
+          echo "Logs directory exists. Listing contents:"
+          ls -la $GITHUB_WORKSPACE/logs
+                    
+      - name: Install OpenAI Python Library
+        run: |
+          pip install openai
+          pip install --upgrade openai
+          python -c "import openai; print('OpenAI library installed successfully')"        
+    
+      - name: Analyze Failed Logs with OpenAI
+        run: |
+          python scripts/analyze_logs.py \
+          --log-dir "$GITHUB_WORKSPACE/logs" \
+          --output-dir "$GITHUB_WORKSPACE/analysis_results" \
+          --log-type "failure"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Verify and Recover Analysis Results
+        run: |
+          ANALYSIS_DIR="$GITHUB_WORKSPACE/analysis_results"
+          if [ ! -d "$ANALYSIS_DIR" ]; then
+            echo "ERROR: Analysis results directory does not exist. Creating now..."
+            mkdir -p "$ANALYSIS_DIR"
+          fi
+
+          if [ -z "$(ls -A $ANALYSIS_DIR)" ]; then
+            echo "Analysis directory is empty. Searching for analysis files..."
+            find $GITHUB_WORKSPACE -type f -name "*analysis*.txt" -exec mv {} "$ANALYSIS_DIR/" \;
+            echo "Recovered analysis files:"
+            ls -la "$ANALYSIS_DIR"
+          else
+            echo "Analysis results exist. Listing contents:"
+            ls -la "$ANALYSIS_DIR"
+          fi
+
+      - name: Combine Analysis Results into a Single File
+        run: |
+          ANALYSIS_DIR="$GITHUB_WORKSPACE/analysis_results"
+          PROJECT_NAME="${{ github.event.repository.name }}"
+          RUN_ID="${{ github.run_id }}"
+          OUTPUT_FILE="$GITHUB_WORKSPACE/${PROJECT_NAME}-${RUN_ID}-combined-analysis-results.tar.gz"
+      
+          if [ -d "$ANALYSIS_DIR" ]; then
+            echo "Combining analysis results into a single compressed file..."
+            tar -czf "$OUTPUT_FILE" -C "$ANALYSIS_DIR" .
+            echo "Combined file created at $OUTPUT_FILE"
+          else
+            echo "ERROR: Analysis results directory does not exist. Skipping combination." >&2
+            exit 1
+          fi        
+    
+      - name: Upload Combined Analysis Results to Azure Storage
+        run: |
+          PROJECT_NAME="${{ github.event.repository.name }}"
+          RUN_ID="${{ github.run_id }}"
+          OUTPUT_FILE="$GITHUB_WORKSPACE/${PROJECT_NAME}-${RUN_ID}-combined-analysis-results.tar.gz"
+
+          if [ -f "$OUTPUT_FILE" ]; then
+            echo "Uploading $OUTPUT_FILE to Azure Storage..."
+            az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+                                  --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+                                  --container-name logs \
+                                  --file "$OUTPUT_FILE" \
+                                  --name "${PROJECT_NAME}-${RUN_ID}-combined-analysis-results-$(date +%Y-%m-%d_%H-%M-%S).tar.gz" \
+                                  --overwrite
+          else
+            echo "ERROR: Combined analysis file does not exist. Skipping upload." >&2
+            exit 1
+          fi       
+
+# Job para analizar logs exitosos
+analyze_success_logs:
+  needs: [ci_pipeline, check-code-format, code-analysis, dotnet-lint]
+  runs-on: ubuntu-24.04
+  if: success()
+  steps:
+    - name: Download scripts from library repo
+      run: |
+        echo "Cloning the devops-pipelines-ci-cd repository to obtain scripts..."
+        git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+
+        mkdir -p scripts
+
+        cp devops-pipelines-ci-cd/scripts/analyze_logs.py scripts/
+        if [ -f "scripts/analyze_logs.py" ]; then
+          echo "SUCCESS: analyze_logs.py copied to scripts directory."
+        else
+          echo "ERROR: Failed to copy analyze_logs.py to scripts directory." >&2
+          exit 1
+        fi
+
+    - name: Download All Logs Matching Pattern from Azure Storage
+      run: |
+        mkdir -p $GITHUB_WORKSPACE/logs
+        REPO_NAME="${GITHUB_REPOSITORY##*/}" 
+        RUN_ID="${{ github.run_id }}"
+        LOG_NAME_PREFIX="${REPO_NAME}-${RUN_ID}-"
+        az storage blob list \
+          --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+          --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+          --container-name logs \
+          --query "[].{name:name}" -o tsv | grep "^${LOG_NAME_PREFIX}" > blob_list.txt
+        if [ ! -s blob_list.txt ]; then
+          echo "No logs found matching pattern: ${LOG_NAME_PREFIX}*.log"
+          exit 1
+        fi
+        while IFS= read -r blob_name; do
+          az storage blob download \
+            --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+            --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+            --container-name logs \
+            --name "$blob_name" \
+            --file "$GITHUB_WORKSPACE/logs/$(basename $blob_name)"
+        done < blob_list.txt
+        if [ "$(ls -1 $GITHUB_WORKSPACE/logs | wc -l)" -eq 0 ]; then
+          echo "ERROR: No log files were downloaded!" >&2
+          exit 1
+        fi
+        ls -la $GITHUB_WORKSPACE/logs
+      env:
+        AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+        AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+    
+    - name: Prepare Analysis Directory
+      run: |
+        ANALYSIS_DIR="$GITHUB_WORKSPACE/analysis_results"
+        echo "Creating analysis results directory at $ANALYSIS_DIR"
+        mkdir -p "$ANALYSIS_DIR"
+        echo "Directory created successfully."
+
+    - name: Verify Logs Artifact
+      run: |
+        if [ ! -d "$GITHUB_WORKSPACE/logs" ]; then
+          echo "ERROR: Logs directory does not exist after downloading artifact!" >&2
+          exit 1
+        fi
+        echo "Logs directory exists. Listing contents:"
+        ls -la $GITHUB_WORKSPACE/logs
+                  
+    - name: Install OpenAI Python Library
+      run: |
+        pip install openai
+        pip install --upgrade openai
+        python -c "import openai; print('OpenAI library installed successfully')"        
+          
+    - name: Analyze Success Logs with OpenAI
+      run: |
+        python scripts/analyze_logs.py \
+          --log-dir "$GITHUB_WORKSPACE/logs" \
+          --output-dir "$GITHUB_WORKSPACE/analysis_results" \
+          --log-type "success"
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      
+    - name: Verify and Recover Analysis Results
+      run: |
+        ANALYSIS_DIR="$GITHUB_WORKSPACE/analysis_results"
+        if [ ! -d "$ANALYSIS_DIR" ]; then
+          echo "ERROR: Analysis results directory does not exist. Creating now..."
+          mkdir -p "$ANALYSIS_DIR"
+        fi
+
+        if [ -z "$(ls -A $ANALYSIS_DIR)" ]; then
+          echo "Analysis directory is empty. Searching for analysis files..."
+          find $GITHUB_WORKSPACE -type f -name "*analysis*.txt" -exec mv {} "$ANALYSIS_DIR/" \;
+          echo "Recovered analysis files:"
+          ls -la "$ANALYSIS_DIR"
+        else
+          echo "Analysis results exist. Listing contents:"
+          ls -la "$ANALYSIS_DIR"
+        fi
+      
+    - name: Combine Analysis Results into a Single File
+      run: |
+        ANALYSIS_DIR="$GITHUB_WORKSPACE/analysis_results"
+        PROJECT_NAME="${{ github.event.repository.name }}"
+        RUN_ID="${{ github.run_id }}"
+        OUTPUT_FILE="$GITHUB_WORKSPACE/${PROJECT_NAME}-${RUN_ID}-combined-analysis-results.tar.gz"
+    
+        if [ -d "$ANALYSIS_DIR" ]; then
+          echo "Combining analysis results into a single compressed file..."
+          tar -czf "$OUTPUT_FILE" -C "$ANALYSIS_DIR" .
+          echo "Combined file created at $OUTPUT_FILE"
+        else
+          echo "ERROR: Analysis results directory does not exist. Skipping combination." >&2
+          exit 1
+        fi        
+
+    - name: Upload Combined Analysis Results to Azure Storage
+      run: |
+        PROJECT_NAME="${{ github.event.repository.name }}"
+        RUN_ID="${{ github.run_id }}"
+        OUTPUT_FILE="$GITHUB_WORKSPACE/${PROJECT_NAME}-${RUN_ID}-combined-analysis-results.tar.gz"
+
+        if [ -f "$OUTPUT_FILE" ]; then
+          echo "Uploading $OUTPUT_FILE to Azure Storage..."
+          az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+                                --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+                                --container-name logs \
+                                --file "$OUTPUT_FILE" \
+                                --name "${PROJECT_NAME}-${RUN_ID}-combined-analysis-results-$(date +%Y-%m-%d_%H-%M-%S).tar.gz" \
+                                --overwrite
+        else
+          echo "ERROR: Combined analysis file does not exist. Skipping upload." >&2
+          exit 1
+        fi    
+
+summarize_and_create_ticket:
+    name: Summarize Analysis and Create GitHub Ticket
+    runs-on: ubuntu-24.04
+    needs: [analyze_success_logs, analyze_failed_logs]
+    if: always() && (needs.analyze_success_logs.result == 'success' || needs.analyze_failed_logs.result == 'success')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+          
+      - name: Set up Python and Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install openai
+          pip install --upgrade openai
+          python -c "import openai; print('OpenAI library installed successfully')"        
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Download scripts from library repo
+        run: |
+          echo "Cloning the devops-pipelines-ci-cd repository to obtain scripts..."
+          git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+
+          mkdir -p scripts
+
+          cp devops-pipelines-ci-cd/scripts/summarize_and_create_ticket.py scripts/
+          if [ -f "scripts/summarize_and_create_ticket.py" ]; then
+            echo "SUCCESS: summarize_and_create_ticket.py copied to scripts directory."
+          else
+            echo "ERROR: Failed to copy summarize_and_create_ticket.py to scripts directory." >&2
+            exit 1
+          fi
+      
+      - name: Download and Extract Latest Analysis Logs
+        run: |
+          # Crear directorio necesario para los análisis
+          mkdir -p $GITHUB_WORKSPACE/analysis_results
+      
+          # Variables
+          REPO_NAME="${GITHUB_REPOSITORY##*/}" 
+          RUN_ID="${{ github.run_id }}"
+          LOG_NAME_PREFIX="${REPO_NAME}-${RUN_ID}-combined-analysis-results-"
+          
+          # Listar blobs que coinciden con el patrón de los archivos .tar.gz
+          az storage blob list \
+            --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+            --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+            --container-name logs \
+            --query "[?contains(name, '${LOG_NAME_PREFIX}') && ends_with(name, '.tar.gz')].{name:name}" -o tsv > blob_list.txt
+      
+          # Comprobar si hay resultados
+          if [ ! -s blob_list.txt ]; then
+            echo "No logs found matching pattern: ${LOG_NAME_PREFIX}*.tar.gz"
+            exit 1
+          fi
+      
+          # Ordenar por fecha y hora para obtener el más reciente
+          latest_blob=$(echo "$(cat blob_list.txt)" | sort | tail -n 1)
+      
+          if [ -z "$latest_blob" ]; then
+            echo "ERROR: Unable to find the latest .tar.gz file!"
+            exit 1
+          fi
+      
+          # Descargar el archivo más reciente
+          echo "Downloading latest file: $latest_blob"
+          az storage blob download \
+            --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+            --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+            --container-name logs \
+            --name "$latest_blob" \
+            --file "$GITHUB_WORKSPACE/analysis_results/$(basename $latest_blob)"
+      
+          # Verificar que el archivo fue descargado
+          downloaded_file="$GITHUB_WORKSPACE/analysis_results/$(basename $latest_blob)"
+          if [ ! -f "$downloaded_file" ]; then
+            echo "ERROR: File not downloaded: $latest_blob" >&2
+            exit 1
+          fi
+      
+          # Descomprimir el archivo .tar.gz en el directorio de análisis
+          echo "Extracting $downloaded_file to $GITHUB_WORKSPACE/analysis_results"
+          tar -xzf "$downloaded_file" -C "$GITHUB_WORKSPACE/analysis_results"
+      
+          # Comprobar que hay archivos en el directorio de análisis
+          if [ "$(ls -1 $GITHUB_WORKSPACE/analysis_results | wc -l)" -eq 0 ]; then
+            echo "ERROR: No files found in analysis_results after extraction!" >&2
+            exit 1
+          fi
+      
+          echo "Extraction complete. Files in analysis_results:"
+          ls -la $GITHUB_WORKSPACE/analysis_results
+        env:
+          AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+
+      - name: Summarize log analysis
+        run: |
+          python scripts/summarize_and_create_ticket.py \
+            --log-dir "$GITHUB_WORKSPACE/analysis_results" \
+            --output-file "$GITHUB_WORKSPACE/summary/github_ticket_summary.md" \
+            --repo "${{ github.repository }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --create-ticket \
+            --report-language "${{ inputs.report-language }}"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
   # Job separado para la limpieza
   clean-up:
-    needs: [check-code-format, code-analysis, build-artifact, dotnet-lint]
+    needs: [check-code-format, code-analysis, dotnet-lint]
     if: ${{ inputs.run-clean-up }}
     uses: ./.github/workflows/clean-up.yml
     with:

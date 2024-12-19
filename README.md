@@ -4,6 +4,11 @@
 
 Este repositorio contiene una colección de pipelines reutilizables para automatizar procesos de **Integración Continua (CI)** y **Despliegue Continuo (CD)**, optimizados con **Inteligencia Artificial (IA)**. El proyecto tiene como objetivo mejorar la eficiencia y seguridad en el desarrollo y despliegue de software, proporcionando una plataforma que los desarrolladores puedan usar para validar, construir y desplegar sus proyectos de manera rápida y segura. Además, la integración de IA permite analizar las builds, identificar fallos y sugerir mejoras.
 
+**Novedades recientes**:
+- **Soporte para generación de informes en múltiples idiomas**: Ahora puedes especificar el idioma en el que deseas generar el informe de análisis (por ejemplo, inglés, español, alemán, francés, italiano).
+- **Identificación de archivos y líneas afectadas en los errores detectados**: Facilita la corrección de problemas al proporcionar información precisa sobre la ubicación de los fallos en el código.
+- **Sugerencias de actualización y refactorización**: Basadas en las mejores prácticas para mejorar la robustez y la mantenibilidad del proyecto.
+
 Ahora incluye soporte para **observabilidad y monitoreo** con Grafana Loki, facilitando el análisis de logs y la depuración en tiempo real.
 
 ## Funcionalidades
@@ -12,6 +17,7 @@ Ahora incluye soporte para **observabilidad y monitoreo** con Grafana Loki, faci
 - **Automatización de CI/CD**: Validación, construcción y despliegue automatizados para proyectos con diferentes tecnologías (Node.js, Java, Python, etc.).
 - **Seguridad**: Integración de herramientas de análisis de código y control de calidad.
 - **Optimización con IA**: Análisis de los resultados de las builds para mejorar la eficiencia, identificar errores recurrentes y sugerir optimizaciones.
+- **Soporte multilingüe**: Genera informes en inglés, español, alemán, francés, italiano, entre otros.
 - **Observabilidad con Grafana Loki**: Centralización y análisis de logs generados por los pipelines y las aplicaciones.
 
 ## Requisitos
@@ -61,7 +67,13 @@ git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
    ```
 
 2. **Configuración específica del proyecto**:
-   - Puedes pasar parámetros como la versión de la tecnología utilizada (por ejemplo, `node-version`, `java-version`), entre otros.
+   - Puedes pasar parámetros como la versión de la tecnología utilizada (por ejemplo, `node-version`, `java-version`) o el idioma para los informes (`report-language`).
+
+   Ejemplo con idioma configurado:
+   ```yaml
+   with:
+     report-language: 'Spanish'
+   ```
 
 ### Configuración de monitoreo con Grafana Loki
 
@@ -92,6 +104,7 @@ La Inteligencia Artificial integrada en estos pipelines analiza los registros (l
 
 - **Identificar problemas automáticamente** y prevenir fallos futuros.
 - **Recomendar optimizaciones** en las builds basadas en el análisis de los datos históricos.
+- **Proveer información precisa sobre errores**, incluyendo archivos y líneas afectadas.
 
 ## Cómo contribuir
 
@@ -106,11 +119,3 @@ Si deseas contribuir a este proyecto, sigue estos pasos:
 ## Licencia
 
 Este proyecto está bajo la licencia MIT. Para más detalles, consulta el archivo [LICENSE](LICENSE).
-
-### Explicación del contenido:
-- **Descripción general**: Explica los objetivos del repositorio y sus características principales, incluyendo observabilidad con Grafana Loki.
-- **Funcionalidades**: Detalla lo que ofrece el repositorio, como los pipelines reutilizables, integración de IA y monitoreo.
-- **Requisitos**: Lista las herramientas necesarias, como Docker, Docker Compose y GitHub Actions.
-- **Instrucciones de uso**: Cómo clonar el repositorio, configurar los pipelines y habilitar el monitoreo.
-- **Integración de IA**: Describe cómo se analiza y optimiza el proceso de CI/CD mediante IA.
-- **Guía para contribuir**: Explica los pasos para colaborar con el proyecto.
