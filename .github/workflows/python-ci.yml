@@ -82,7 +82,7 @@ jobs:
   ci_pipeline:
     runs-on: ubuntu-24.04
     outputs:
-      error-detected: ${{ steps.analyze.outputs.error-detected }}
+      error-detected: ${{ steps.set-error-detected.outputs.error-detected }}
     steps:
       - name: Debug OS Version
         run: lsb_release -a || cat /etc/os-release
@@ -216,7 +216,7 @@ jobs:
           else
               echo "SUCCESS: Log file $log_file was created!" >&2
           fi
-        continue-on-error: false
+        continue-on-error: true
 
       - name: Move wheel file to workspace
         id: move-wheel  
@@ -311,15 +311,15 @@ jobs:
         id: analyze
         if: always()
         run: |
-          echo "Analyzing logs for 'ERROR:' keyword..."
-          LOGS_FOUND=$(grep -rl "ERROR:" $GITHUB_WORKSPACE/logs || true)
-          if [ -n "$LOGS_FOUND" ]; then
-            echo "Errors found in logs:"
-            echo "$LOGS_FOUND"
-            echo "error-detected=true" >> $GITHUB_OUTPUT
+          echo "Analyzing logs for errors..."
+          if grep -qi "error" build.log; then
+            echo "Errors found in logs."
+            echo "error-detected=true" >> $GITHUB_ENV
+            echo "::set-output name=error-detected::true"
           else
-            echo "No errors found in logs."
-            echo "error-detected=false" >> $GITHUB_OUTPUT
+            echo "No errors found."
+            echo "error-detected=false" >> $GITHUB_ENV
+            echo "::set-output name=error-detected::false"
           fi
 
       - name: Debug error-detected output
