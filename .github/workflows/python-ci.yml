@@ -532,6 +532,7 @@ jobs:
           python scripts/analyze_logs.py \
             --log-dir "$GITHUB_WORKSPACE/logs" \
             --output-dir "$GITHUB_WORKSPACE/analysis_results"
+            --log-type "success"
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         
