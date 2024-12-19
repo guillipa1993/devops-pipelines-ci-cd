@@ -308,6 +308,7 @@ jobs:
 
   # Job separado para formatear código y recopilar logs
   check-code-format:
+    name: Check Code Format
     needs: ci_pipeline
     if: ${{ inputs.run-check-code-format }}
     uses: ./.github/workflows/check-code-format.yml
@@ -321,6 +322,7 @@ jobs:
 
   # Job separado para análisis de código y recopilar logs
   code-analysis:
+    name: Scan Security Vulnerabilities
     needs: ci_pipeline
     if: ${{ inputs.run-code-analysis }}
     uses: ./.github/workflows/scan-security-vulnerabilities.yml
@@ -334,6 +336,7 @@ jobs:
 
   # Job separado para ejecutar Lint y recopilar logs
   python-lint:
+    name: Python Linter
     needs: ci_pipeline
     if: ${{ inputs.run-lint }}
     uses: ./.github/workflows/lint.yml
@@ -346,6 +349,7 @@ jobs:
 
   # Job para subir y analizar los logs de builds fallidas  
   analyze_failed_logs:
+    name: Analyze Failed Logs
     needs: [ci_pipeline, check-code-format, code-analysis, python-lint]
     if: ${{ needs.ci_pipeline.result == 'failure' || needs.check-code-format.result == 'failure' || needs.code-analysis.result == 'failure' || needs.dotnet-lint.result == 'failure' }}
     uses: ./.github/workflows/analyze-logs.yml
@@ -360,6 +364,7 @@ jobs:
 
   # Job para analizar logs exitosos
   analyze_success_logs:
+    name: Analyze Success Logs
     needs: [ci_pipeline, check-code-format, code-analysis, python-lint]
     if: success()
     uses: ./.github/workflows/analyze-logs.yml
