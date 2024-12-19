@@ -27,7 +27,7 @@ on:
         type: string
 
 jobs:
-  analyze_failed_logs:
+  analyze_logs:
     runs-on: ubuntu-24.04
     steps:
       - name: Download scripts from library repo
