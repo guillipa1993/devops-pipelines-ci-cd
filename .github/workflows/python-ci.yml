@@ -4,86 +4,83 @@ on:
   workflow_call:
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME:
-        description: 'Azure Storage Account Name'
+        description: "Azure Storage Account Name"
         required: true
       AZURE_STORAGE_ACCOUNT_KEY:
-        description: 'Azure Storage Account Key'
+        description: "Azure Storage Account Key"
         required: true
       OPENAI_API_KEY:
-        description: 'OpenAI API Key'
+        description: "OpenAI API Key"
         required: true
     inputs:
       python-version:
-        description: 'La versión de Python para usar en este pipeline'
+        description: "La versión de Python para usar en este pipeline"
         required: true
         type: string
       language:
-        description: 'El lenguaje de programación para usar en este pipeline'
+        description: "El lenguaje de programación para usar en este pipeline"
         required: true
         type: string
       project-path:
-        description: 'La ruta del proyecto donde se encuentra el código Python'
+        description: "La ruta del proyecto donde se encuentra el código Python"
         required: true
         type: string
       requirements-path:
-        description: 'La ruta del proyecto donde se encuentran los requisitos del proyecto Python'
+        description: "La ruta del proyecto donde se encuentran los requisitos del proyecto Python"
         required: false
         type: string
       build-configuration:
-        description: 'Configuración de build (Debug o Release)'
+        description: "Configuración de build (Debug o Release)"
         required: true
         type: string
       additional-install-commands:
-        description: 'Comandos adicionales para instalar dependencias antes de construir'
+        description: "Comandos adicionales para instalar dependencias antes de construir"
         required: false
         type: string
       build-command:
-        description: 'Comando personalizado para construir el proyecto'
+        description: "Comando personalizado para construir el proyecto"
         required: false
         type: string
       report-language:
-        description: 'Idioma en el que se generará el informe (por ejemplo: English, Spanish, French, German, Italian). Por defecto, se utiliza inglés si no se especifica.'
+        description: "Idioma en el que se generará el informe (por ejemplo: English, Spanish, etc.)"
         required: false
         type: string
       run-tests:
-        description: 'Ejecutar las pruebas del proyecto'
+        description: "Ejecutar las pruebas del proyecto"
         required: true
         type: boolean
       run-check-code-format:
-        description: 'Ejecutar la verificación del formato del código'
+        description: "Ejecutar la verificación del formato del código"
         required: true
         type: boolean
       run-code-analysis:
-        description: 'Ejecutar el análisis de código'
+        description: "Ejecutar el análisis de código"
         required: true
         type: boolean
       run-build-artifact:
-        description: 'Generar el artefacto de build'
+        description: "Generar el artefacto de build"
         required: true
         type: boolean
       run-upload-coverage:
-        description: 'Subir el reporte de cobertura'
+        description: "Subir el reporte de cobertura"
         required: true
         type: boolean
       run-lint:
-        description: 'Ejecutar Lint'
+        description: "Ejecutar Lint"
         required: true
         type: boolean
       run-clean-up:
-        description: 'Ejecutar limpieza después de la ejecución'
+        description: "Ejecutar limpieza después de la ejecución"
         required: true
         type: boolean
       environment-variables:
-        description: 'Variables de entorno para configurar en el pipeline (formato: "VAR1=value1, VAR2=value2")'
+        description: "Variables de entorno para configurar en el pipeline (formato: 'VAR1=value1, VAR2=value2')"
         required: false
         type: string
 
 jobs:
-  # Job principal para construir el proyecto Python y recopilar logs
   ci_pipeline:
     runs-on: ubuntu-24.04
-    outputs:
-      pipeline-status: ${{ steps.set-status.outputs.pipeline-status }}
     steps:
       - name: Debug OS Version
         run: lsb_release -a || cat /etc/os-release
@@ -176,6 +173,7 @@ jobs:
           done
 
       - name: Build
+        id: build
         run: |
           echo "Building project"
           repo_name=$(basename "${{ github.repository }}")
@@ -369,7 +367,7 @@ jobs:
   analyze_failed_logs:
     name: Analyze Failed Logs
     needs: [ci_pipeline]
-    if: ${{ needs.ci_pipeline.outputs.pipeline-status == 'failure' }}
+    if: ${{ needs.ci_pipeline.result == 'failure' }}
     uses: ./.github/workflows/analyze-logs.yml
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
@@ -380,11 +378,10 @@ jobs:
       project-name: ${{ github.event.repository.name }}
       run-id: ${{ github.run_id }}
 
-  # Job para analizar logs exitosos
   analyze_success_logs:
     name: Analyze Success Logs
     needs: [ci_pipeline, check-code-format, code-analysis, python-lint]
-    if: success()
+    if: ${{ needs.ci_pipeline.result == 'success' }}
     uses: ./.github/workflows/analyze-logs.yml
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
@@ -407,10 +404,10 @@ jobs:
     with:
       project-name: ${{ github.event.repository.name }}
       run-id: ${{ github.run_id }}
-      report-language: ${{inputs.report-language}}
+      report-language: ${{ inputs.report-language }}
 
-  # Job para limpiar el entorno
   clean-up:
+    name: Clean Up
     needs: [summarize_and_create_ticket]
     if: always() && inputs.run-clean-up
     uses: ./.github/workflows/clean-up.yml
