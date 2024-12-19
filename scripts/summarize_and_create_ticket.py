@@ -80,7 +80,7 @@ def summarize_logs_with_openai(log_dir, build_id):
                         temperature=0.5
             )
             print(f"DEBUG: OpenAI response received for fragment {idx}")
-            consolidated_summary += response.choices[0].message['content'].strip() + "\n\n"
+            consolidated_summary += response.choices[0].message.content.strip() + "\n\n"          
         except openai.OpenAIError as e:
             print(f"ERROR: OpenAI API error while processing fragment {idx}: {e}")
             break
