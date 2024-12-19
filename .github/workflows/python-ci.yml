@@ -77,10 +77,9 @@ on:
         description: "Variables de entorno para configurar en el pipeline (formato: 'VAR1=value1, VAR2=value2')"
         required: false
         type: string
-    env:
       error-detected:
         description: "Variable para detectar errores en una build."
-        required: true
+        required: false
         type: string
 
 jobs:
@@ -324,7 +323,8 @@ jobs:
       - name: Debug analyze_failed_logs input
         if: always()
         run: |
-          echo "Error-detected from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"       
+          echo "Error-detected from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
+          echo "Nueva variable input error-detected : ${{ inputs.error-detected }}"
 
       - name: Verify and analyze logs for errors
         id: analyze
@@ -337,30 +337,30 @@ jobs:
           if [ -f "$log_file" ]; then
             if grep -qi "error" "$log_file"; then
               echo "Errors found in logs."
-              echo "error-detected=failure" >> $GITHUB_ENV
-              echo "error-detected=failure" >> $GITHUB_OUTPUT
+              echo "error-detected=failure" >> ${{ inputs.error-detected }}
+              echo "error-detected=failure" >> ${{ inputs.error-detected }}
             else
               echo "No errors found."
-              echo "error-detected=success" >> $GITHUB_ENV
-              echo "error-detected=success" >> $GITHUB_OUTPUT
+              echo "error-detected=success" >> ${{ inputs.error-detected }}
+              echo "error-detected=success" >> ${{ inputs.error-detected }}
             fi
           else
             echo "ERROR: Build log file not found!" >&2
-            echo "error-detected=success" >> $GITHUB_ENV
-            echo "error-detected=success" >> $GITHUB_OUTPUT
+            echo "error-detected=success" >> ${{ inputs.error-detected }}
+            echo "error-detected=success" >> ${{ inputs.error-detected }}
           fi
 
       - name: Debug error-detected output
         if: always()
         run: |
           echo "Debugging error-detected variable:"
-          echo "error-detected from ENV: ${{ env.error-detected }}"
+          echo "error-detected from ENV: ${{ inputs.error-detected }}}"
           echo "error-detected from OUTPUT: ${{ steps.analyze.outputs.error-detected || 'not set' }}"
 
       - name: Debug final error-detected
         if: always()
         run: |
-          echo "Final error-detected value (from ENV): ${{ env.error-detected || 'not set' }}"
+          echo "Final error-detected value (from ENV): ${{ inputs.error-detected }} || 'not set' }}"
           echo "Final error-detected value (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
         
   # Job separado para formatear código y recopilar logs
@@ -412,7 +412,7 @@ jobs:
       AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     with:
-      log-type: ${{ env.error-detected }}
+      log-type: ${{ inputs.error-detected }}
       project-name: ${{ github.event.repository.name }}
       run-id: ${{ github.run_id }}
 
