@@ -82,7 +82,7 @@ jobs:
   ci_pipeline:
     runs-on: ubuntu-24.04
     outputs:
-      error-detected: ${{ env.error-detected }}
+      error-detected: ${{ steps.analyze.outputs.error-detected }} 
     steps:
       - name: Debug OS Version
         run: lsb_release -a || cat /etc/os-release
@@ -330,7 +330,7 @@ jobs:
 
       - name: Debug error-detected output
         if: always()
-        run: echo "error-detected=${{ env.error-detected }}"
+        run: echo "error-detected=${{ steps.analyze.outputs.error-detected }}"
         
   # Job separado para formatear código y recopilar logs
   check-code-format:
