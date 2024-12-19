@@ -339,6 +339,7 @@ jobs:
           echo "error-detected from OUTPUT: ${{ steps.analyze.outputs.error-detected }}"
       
       - name: Debug error-detected in analyze_failed_logs
+        if: always()
         run: |
           echo "error-detected: ${{ needs.ci_pipeline.outputs.error-detected }}"
         
