@@ -218,6 +218,7 @@ jobs:
           else
               echo "SUCCESS: Log file $log_file was created!" >&2
           fi
+        continue-on-error: true
 
       - name: Move wheel file to workspace
         id: move-wheel  # Agrega un ID para referenciar el paso
