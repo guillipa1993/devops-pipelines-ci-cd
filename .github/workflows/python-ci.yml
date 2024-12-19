@@ -77,6 +77,11 @@ on:
         description: "Variables de entorno para configurar en el pipeline (formato: 'VAR1=value1, VAR2=value2')"
         required: false
         type: string
+    env:
+      error-detected:
+        description: "Variable para detectar errores en una build."
+        required: true
+        type: string
 
 jobs:
   ci_pipeline:
@@ -332,17 +337,17 @@ jobs:
           if [ -f "$log_file" ]; then
             if grep -qi "error" "$log_file"; then
               echo "Errors found in logs."
-              echo "error-detected=true" >> $GITHUB_ENV
-              echo "error-detected=true" >> $GITHUB_OUTPUT
+              echo "error-detected=failure" >> $GITHUB_ENV
+              echo "error-detected=failure" >> $GITHUB_OUTPUT
             else
               echo "No errors found."
-              echo "error-detected=false" >> $GITHUB_ENV
-              echo "error-detected=false" >> $GITHUB_OUTPUT
+              echo "error-detected=success" >> $GITHUB_ENV
+              echo "error-detected=success" >> $GITHUB_OUTPUT
             fi
           else
             echo "ERROR: Build log file not found!" >&2
-            echo "error-detected=false" >> $GITHUB_ENV
-            echo "error-detected=false" >> $GITHUB_OUTPUT
+            echo "error-detected=success" >> $GITHUB_ENV
+            echo "error-detected=success" >> $GITHUB_OUTPUT
           fi
 
       - name: Debug error-detected output
@@ -362,7 +367,7 @@ jobs:
   check-code-format:
     name: Check Code Format
     needs: ci_pipeline
-    if: ${{ inputs.run-check-code-format }} && ${{ needs.ci_pipeline.outputs.error-detected == 'false' }}
+    if: ${{ inputs.run-check-code-format }}
     uses: ./.github/workflows/check-code-format.yml
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
@@ -375,7 +380,7 @@ jobs:
   code-analysis:
     name: Code Analysis
     needs: ci_pipeline
-    if: ${{ inputs.run-code-analysis }} && ${{ needs.ci_pipeline.outputs.error-detected == 'false' }}
+    if: ${{ inputs.run-code-analysis }}
     uses: ./.github/workflows/scan-security-vulnerabilities.yml
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
@@ -388,7 +393,7 @@ jobs:
   python-lint:
     name: Python Linter
     needs: ci_pipeline
-    if: ${{ inputs.run-lint }} && ${{ needs.ci_pipeline.outputs.error-detected == 'false' }}
+    if: ${{ inputs.run-lint }}
     uses: ./.github/workflows/lint.yml
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
@@ -397,38 +402,24 @@ jobs:
       language: ${{ inputs.language }}
       python-version: ${{ inputs.python-version }}
 
-  analyze_failed_logs:
-    name: Analyze Failed Logs
-    needs: ci_pipeline
-    if: ${{ needs.ci_pipeline.outputs.error-detected == 'true' }}
-    uses: ./.github/workflows/analyze-logs.yml
-    secrets:
-      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
-      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-    with:
-      log-type: "failure"
-      project-name: ${{ github.event.repository.name }}
-      run-id: ${{ github.run_id }}
-
-  analyze_success_logs:
+  analyze_logs:
     name: Analyze Success Logs
     needs: [ci_pipeline, check-code-format, code-analysis, python-lint]
-    if: ${{ needs.ci_pipeline.outputs.error-detected == 'false' }}
+    if: always()
     uses: ./.github/workflows/analyze-logs.yml
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
       AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     with:
-      log-type: "success"
+      log-type: ${{ env.error-detected }}
       project-name: ${{ github.event.repository.name }}
       run-id: ${{ github.run_id }}
 
   summarize_and_create_ticket:
     name: Summarize and Create Ticket
-    needs: [analyze_failed_logs, analyze_success_logs]
-    if: always() && (needs.analyze_failed_logs.result == 'success' || needs.analyze_success_logs.result == 'success')
+    needs: [analyze_logs]
+    if: always()
     uses: ./.github/workflows/summarize-and-create-ticket.yml
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
