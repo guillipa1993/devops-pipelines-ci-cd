@@ -177,26 +177,48 @@ jobs:
         run: |
           echo "Building project"
           repo_name=$(basename "${{ github.repository }}")
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+
           if [ -n "${{ inputs.build-command }}" ]; then
-            echo "Using custom build command"
-            ${{ inputs.build-command }} 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+              echo "Using custom build command"
+              ${{ inputs.build-command }} 2>&1 | tee "$log_file"
+              if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                  echo "ERROR: Custom build command failed!" >&2
+                  exit 1
+              fi
           elif [ -f "${{ inputs.project-path }}/setup.py" ]; then
-            python ${{ inputs.project-path }}/setup.py build 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
-          elif [ -f "${{ inputs.project-path }}/Makefile" ]; then
-            make -C ${{ inputs.project-path }} dev 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+              python ${{ inputs.project-path }}/setup.py build 2>&1 | tee "$log_file"
+              if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                  echo "ERROR: Setup.py build failed!" >&2
+                  exit 1
+              fi
           elif [ -f "${{ inputs.project-path }}/pyproject.toml" ]; then
-            pip install . 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+              pip install . 2>&1 | tee "$log_file"
+              if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                  echo "ERROR: pip install failed!" >&2
+                  exit 1
+              fi
           else
-            echo "No build configuration found. Skipping build step." 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+              echo "No build configuration found. Skipping build step." 2>&1 | tee "$log_file"
           fi
-          if [ ! -f "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log" ]; then
-            echo "ERROR : Log file for build was not created!" >&2
-            exit 1
+
+          # Verificar errores en los logs
+          if grep -q "ERROR" "$log_file"; then
+              echo "ERROR: Found 'ERROR' in build logs!" >&2
+              exit 1
+          fi
+
+          # Confirmar la creación del log
+          if [ ! -f "$log_file" ]; then
+              echo "ERROR: Log file $log_file was not created!" >&2
+              exit 1
           else
-            echo "SUCCESS : Log file for build was created!" >&2
+              echo "SUCCESS: Log file $log_file was created!" >&2
           fi
 
       - name: Move wheel file to workspace
+        id: move-wheel  # Agrega un ID para referenciar el paso
         run: |
           echo "GITHUB_WORKSPACE is: ${GITHUB_WORKSPACE}"
           echo "Searching for wheel files..."
@@ -207,23 +229,27 @@ jobs:
             mv "$WHEEL_FILE" "${GITHUB_WORKSPACE}/dist/"
             if [ -f "${GITHUB_WORKSPACE}/dist/$(basename $WHEEL_FILE)" ]; then
               echo "SUCCESS: Wheel file moved to dist directory."
+              echo "file-exists=true" >> $GITHUB_OUTPUT
             else
               echo "ERROR: Failed to move the wheel file." >&2
+              echo "file-exists=false" >> $GITHUB_OUTPUT
               exit 1
             fi
           else
-            echo "ERROR: No wheel file found!"
-            exit 1
+            echo "WARNING: No wheel file found. Skipping artifact upload." >&2
+            echo "file-exists=false" >> $GITHUB_OUTPUT
           fi
-
+        
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
+        if: steps.move-wheel.outputs.file-exists == 'true'  # Condición basada en la salida
         with:
           name: ${{ github.event.repository.name }}-${{ github.run_id }}
           path: ${{ github.workspace }}/dist/*.whl
           if-no-files-found: ignore
 
       - name: Debug Logs Directory
+        if: always()
         run: |
           echo "Current working directory: $(pwd)"
           echo "Listing contents of the current directory:"
@@ -240,6 +266,7 @@ jobs:
      
       # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
       - name: Debug Storage Account Name
+        if: always()
         run: |
           echo "Checking if AZURE_STORAGE_ACCOUNT_NAME is set..."
           if [ -z "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" ]; then
@@ -250,6 +277,7 @@ jobs:
           fi
 
       - name: Verify Logs Directory
+        if: always()
         run: |
           if [ -d "$GITHUB_WORKSPACE/logs" ] && [ "$(ls -A $GITHUB_WORKSPACE/logs)" ]; then
             echo "Logs directory exists and contains files:"
@@ -261,6 +289,7 @@ jobs:
       
       # Paso para subir los logs al contenedor de Azure Storage
       - name: Upload Logs to Azure Storage
+        if: always()
         run: |
           if [ -d "$GITHUB_WORKSPACE/logs" ]; then
             for log in $GITHUB_WORKSPACE/logs/*.log; do
@@ -319,7 +348,7 @@ jobs:
   analyze_failed_logs:
     needs: [ci_pipeline, check-code-format, code-analysis, python-lint]
     runs-on: ubuntu-24.04
-    if: ${{ needs.ci_pipeline.result == 'failure' || needs.check-code-format.result == 'failure' || needs.code-analysis.result == 'failure' || needs.python-lint.result == 'failure' }}
+    if: always() && (needs.ci_pipeline.result == 'failure' || needs.check-code-format.result == 'failure' || needs.code-analysis.result == 'failure' || needs.python-lint.result == 'failure')
     steps:
       - name: Download scripts from library repo
         run: |
