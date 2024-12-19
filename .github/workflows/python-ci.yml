@@ -316,6 +316,11 @@ jobs:
         run: |
           echo "Output from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
 
+      - name: Debug analyze_failed_logs input
+        if: always()
+        run: |
+          echo "Error-detected from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"       
+
       - name: Verify and analyze logs for errors
         id: analyze
         if: always()
