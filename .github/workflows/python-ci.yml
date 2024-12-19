@@ -309,18 +309,20 @@ jobs:
       
       - name: Verify and analyze logs for errors
         id: analyze
-        if: always()
         run: |
           echo "Analyzing logs for 'ERROR:' keyword..."
           LOGS_FOUND=$(grep -rl "ERROR:" $GITHUB_WORKSPACE/logs || true)
           if [ -n "$LOGS_FOUND" ]; then
             echo "Errors found in logs:"
             echo "$LOGS_FOUND"
-            echo "error-detected=true" >> $GITHUB_OUTPUT
-            exit 1  # Configura el job como 'failure'
+            echo "error-detected=true" >> $GITHUB_ENV
+            echo "logs-found=${LOGS_FOUND}" >> $GITHUB_OUTPUT
+            # Marca el paso como fallo
+            exit 1
           else
             echo "No errors found in logs."
-            echo "error-detected=false" >> $GITHUB_OUTPUT
+            echo "error-detected=false" >> $GITHUB_ENV
+            echo "logs-found=" >> $GITHUB_OUTPUT
           fi
 
   # Job separado para formatear código y recopilar logs
