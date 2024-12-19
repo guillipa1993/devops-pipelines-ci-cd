@@ -307,6 +307,15 @@ jobs:
             exit 1
           fi
       
+      - name: Initialize error-detected
+        if: always()
+        run: echo "error-detected=false" >> $GITHUB_ENV
+      
+      - name: Debug needs output
+        if: always()
+        run: |
+          echo "Output from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
+
       - name: Verify and analyze logs for errors
         id: analyze
         if: always()
