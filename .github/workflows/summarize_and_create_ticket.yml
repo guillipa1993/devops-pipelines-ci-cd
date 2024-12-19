@@ -12,7 +12,7 @@ on:
       OPENAI_API_KEY:
         description: "OpenAI API Key"
         required: true
-     inputs:
+    inputs:
       project-name:
         description: "The name of the GitHub repository"
         required: true
