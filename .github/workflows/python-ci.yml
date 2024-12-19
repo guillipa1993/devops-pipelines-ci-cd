@@ -350,8 +350,8 @@ jobs:
   # Job para subir y analizar los logs de builds fallidas  
   analyze_failed_logs:
     name: Analyze Failed Logs
-    needs: [ci_pipeline, check-code-format, code-analysis, python-lint]
-    if: ${{ needs.ci_pipeline.result == 'failure' || needs.check-code-format.result == 'failure' || needs.code-analysis.result == 'failure' || needs.python-lint.result == 'failure' }}
+    needs: [ci_pipeline]
+    if: ${{ needs.ci_pipeline.result == 'failure' }}
     uses: ./.github/workflows/analyze-logs.yml
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
