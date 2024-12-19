@@ -31,7 +31,7 @@ def create_github_issue(title, body, build_id):
         print("ERROR: Failed to create GitHub issue.")
         print("DEBUG: Command output:", e.stderr)
 
-def summarize_logs_with_openai(log_dir, build_id):
+def summarize_logs_with_openai(log_dir, build_id, language):
     """
     Lee y resume el contenido de los archivos de análisis utilizando la API de OpenAI.
     """
@@ -80,7 +80,12 @@ def summarize_logs_with_openai(log_dir, build_id):
                         "5. A friendly and professional tone, suitable for a GitHub issue."
                         "6. A well-organized structure that includes sections for findings, root causes, recommendations, and next steps."
                         "7. Highlight any critical or blocking issues that require immediate attention."
-                        "Ensure the output is easy to read, visually appealing, and encourages collaboration by thanking contributors and emphasizing the importance of resolving these issues for the project's success."
+                        "8. Specify the affected files and line numbers where applicable, making it easy for developers to locate the issues."
+                        "9. Provide suggestions for updating tools, libraries, or code versions to improve robustness and maintainability."
+                        "10. Where appropriate, propose potential refactorings or optimizations to enhance code quality or system performance."
+                        "11. Emphasize the importance of resolving these issues for the project's success and maintaining overall code quality."
+                        "Ensure the output is easy to read, visually appealing, and encourages collaboration by thanking contributors and highlighting the shared goal of improving the project."
+                        f"Generate the report in {language}." if language else "Generate the report in English."
                     )},
                     {"role": "user", "content": fragment}
                 ],
@@ -123,13 +128,14 @@ def main():
     parser.add_argument("--run-id", type=str, required=True, help="GitHub Actions run ID.")
     parser.add_argument("--run-url", type=str, required=True, help="URL to the GitHub Actions run.")
     parser.add_argument("--create-ticket", action="store_true", help="Flag to create a GitHub issue.")
+    parser.add_argument("--report-language", type=str, required=False, help="Specify the language for the summary report (e.g., German, Spanish, French). Defaults to English if not provided.")
     args = parser.parse_args()
 
     print(f"DEBUG: Starting log summarization for Build ID: {args.run_id}")
 
     build_id = args.run_id
 
-    summary = summarize_logs_with_openai(args.log_dir, build_id)
+    summary = summarize_logs_with_openai(args.log_dir, build_id, args.report_language)
     if not summary:
         print("ERROR: Could not generate summary. Exiting...")
         exit(1)

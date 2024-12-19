@@ -41,6 +41,10 @@ on:
         description: 'Comando personalizado para construir el proyecto'
         required: false
         type: string
+      report-language:
+        description: 'Idioma en el que se generará el informe (por ejemplo: English, Spanish, French, German, Italian). Por defecto, se utiliza inglés si no se especifica.'
+        required: false
+        type: string
       run-tests:
         description: 'Ejecutar las pruebas del proyecto'
         required: true
@@ -573,7 +577,8 @@ jobs:
             --repo "${{ github.repository }}" \
             --run-id "${{ github.run_id }}" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --create-ticket
+            --create-ticket \
+            --report-language "${{ inputs.report-language }}"
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
