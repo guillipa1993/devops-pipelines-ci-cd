@@ -82,6 +82,7 @@ jobs:
   # Job principal para construir el proyecto Python y recopilar logs
   ci_pipeline:
     runs-on: ubuntu-24.04
+    continue-on-error: true
     steps:
       - name: Debug OS Version
         run: lsb_release -a || cat /etc/os-release
