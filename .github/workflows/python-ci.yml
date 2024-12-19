@@ -324,6 +324,10 @@ jobs:
             echo "error-detected=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Debug error-detected output
+        if: always()
+        run: echo "error-detected=${{ steps.analyze.outputs.error-detected }}"
+        
   # Job separado para formatear código y recopilar logs
   check-code-format:
     name: Check Code Format
