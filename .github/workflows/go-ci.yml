@@ -374,3 +374,33 @@ jobs:
     with:
       language: ${{ inputs.language }}
       go-version: ${{ inputs.go-version }}
+
+  analyze_logs:
+    name: Analyze Success Logs
+    needs: [ci_pipeline, check-code-format, code-analysis, go-lint]
+    if: always()
+    uses: ./.github/workflows/analyze-logs.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    with:
+      project-name: ${{ github.event.repository.name }}
+      run-id: ${{ github.run_id }}
+      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
+            
+  summarize_and_create_ticket:
+    name: Summarize and Create Ticket
+    needs: [ci_pipeline,analyze_logs]
+    if: always()
+    uses: ./.github/workflows/summarize-and-create-ticket.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    with:
+      project-name: ${{ github.event.repository.name }}
+      run-id: ${{ github.run_id }}
+      report-language: ${{ inputs.report-language }}
+      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
+      repo: ${{ github.repository }}
