@@ -3,6 +3,7 @@ import os
 import subprocess
 import argparse
 from openai import OpenAI
+from datetime import datetime
 
 # Verificar si la clave de API está configurada
 api_key = os.getenv("OPENAI_API_KEY")
@@ -41,6 +42,7 @@ def summarize_logs_with_openai(log_dir, build_id, language):
         return None
 
     all_content = ""
+    error_count = 0  # Inicializa el contador de errores
     print(f"DEBUG: Reading log files in directory: {log_dir}")
     for filename in os.listdir(log_dir):
         if filename.endswith(".txt"):
@@ -48,7 +50,12 @@ def summarize_logs_with_openai(log_dir, build_id, language):
             print(f"DEBUG: Reading file: {file_path}")
             try:
                 with open(file_path, "r") as f:
-                    all_content += f"### 📄 {filename}\n{f.read()}\n\n"
+                    file_content = f.read()
+                    all_content += f"### 📄 {filename}\n{file_content}\n\n"
+
+                    # Contar errores (ajusta el patrón según tu caso)
+                    error_count += file_content.lower().count("error")  # Ejemplo: busca la palabra "error"
+
             except Exception as e:
                 print(f"ERROR: Failed to read file {file_path}: {e}")
 
@@ -122,17 +129,50 @@ def summarize_logs_with_openai(log_dir, build_id, language):
 
     print("DEBUG: Formatting the consolidated summary...")
     formatted_summary = (
-        f"## 📊 Consolidated Log Analysis Report - Build #{build_id}\n\n"
-        f"{consolidated_summary.strip()}\n\n"
-        "---\n"
-        f"### 🔗 Context\n"
-        f"- **Build ID**: {build_id} 🛠️\n"
-        f"- **Logs Directory**: `{log_dir}` 📂\n\n"
-        f"### 🚀 Recommendations\n"
-        f"- Please address the identified issues promptly. 🕒\n"
-        f"- Ensure all fixes are tested thoroughly. ✅\n\n"
-        f"### ❤️ Thanks for contributing to the project's quality!"
-    )
+        f"# 📊 Consolidated Log Analysis Report - Build #{build_id}\n\n"
+        f"---\n"
+        f"## 🔍 Context and Key Details\n\n"
+        f"- **🔧 Build ID**: `{build_id}`\n"
+        f"- **📂 Logs Directory**: `{log_dir}`\n"
+        f"- **📅 Analysis Date**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 🕒\n\n"
+        f"### 📘 Overview\n"
+        f"This report provides a detailed analysis of the build logs, highlights successes, identifies critical issues, and outlines actionable recommendations to improve the system's performance and reliability.\n\n"
+        f"---\n"
+        f"## 🚀 Key Findings and Highlights\n\n"
+        f"### ✅ Successes\n"
+        f"- Several components executed flawlessly, maintaining core functionality without errors. 🌟\n"
+        f"- Configurations such as [Insert example if available] proved to be highly reliable.\n"
+        f"- These successes provide a strong foundation for replicating efficient setups. 🛡️\n\n"
+        f"### ❌ Issues Detected\n"
+        f"- **{error_count} Critical Errors Identified** requiring immediate resolution. ❗\n"
+        f"- **Affected Components:** [List affected areas/files if available].\n"
+        f"- **Potential Impact:** If unresolved, these issues may cause system instability, degraded performance, or data inconsistencies. ⚡\n\n"
+        f"### 📈 Optimization Opportunities\n"
+        f"- Identified opportunities for enhancing runtime efficiency and resource utilization. 💡\n"
+        f"- Example: Consider implementing caching for [specific module] to reduce load times. 🚀\n\n"
+        f"---\n"
+        f"## 🛠️ Recommendations and Next Steps\n\n"
+        f"1. **🔧 Fix Identified Issues:**\n"
+        f"   - Pinpoint and address errors flagged in the logs to ensure stability.\n"
+        f"   - Example Fix: [Insert specific fix/tool suggestion]. 🛠️\n"
+        f"   - Collaborate with the QA team for cross-functional insights.\n\n"
+        f"2. **🔍 Conduct Thorough Testing:**\n"
+        f"   - Validate fixes across diverse environments, including edge cases. ✅\n"
+        f"   - Employ both automated regression tests and manual validation. 🧪\n\n"
+        f"3. **✨ Optimize Performance:**\n"
+        f"   - Refactor bottlenecks identified during the analysis. 🚀\n"
+        f"   - Explore parallel processing or batch operations for [specific task]. 📈\n\n"
+        f"4. **📄 Update Documentation:**\n"
+        f"   - Capture all changes, including configurations and resolved issues, in project documentation. 📝\n"
+        f"   - Ensure alignment with team members through clear, accessible updates. 🔒\n\n"
+        f"5. **📊 Enhance Monitoring:**\n"
+        f"   - Integrate tools such as [monitoring tool] for early detection of anomalies. 🔍\n"
+        f"   - Establish alerts for recurring issues to enable proactive responses. ⚡\n\n"
+        f"---\n"
+        f"## ❤️ Acknowledgments\n\n"
+        f"🎉 Thank you for your dedication and efforts in maintaining the quality of this project! Your contributions are invaluable to building a resilient and high-performing platform. 🌟 Together, we can achieve continuous improvement and reliability. 🚀\n\n"
+        f"---\n"
+        )
     return formatted_summary
 
 def main():
