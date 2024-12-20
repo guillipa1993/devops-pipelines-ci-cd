@@ -2,49 +2,79 @@ name: "Java CI/CD Pipeline"
 
 on:
   workflow_call:
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME:
+        description: "Azure Storage Account Name"
+        required: true
+      AZURE_STORAGE_ACCOUNT_KEY:
+        description: "Azure Storage Account Key"
+        required: true
+      OPENAI_API_KEY:
+        description: "OpenAI API Key"
+        required: true
     inputs:
       java-version:
-        description: 'La versión de Java para usar en este pipeline'
+        description: "La versión de Java para usar en este pipeline"
         required: true
         type: string
       language:
-        description: 'El lenguaje de programación para usar en este pipeline'
+        description: "El lenguaje de programación para usar en este pipeline"
         required: true
         type: string
       project-path:
-        description: 'La ruta del proyecto donde se encuentra el código Java'
+        description: "La ruta del proyecto donde se encuentra el código Java"
         required: true
         type: string
+      requirements-path:
+        description: "La ruta del proyecto donde se encuentran los requisitos del proyecto Python"
+        required: false
+        type: string
+      build-configuration:
+        description: "Configuración de build (Debug o Release)"
+        required: true
+        type: string
+      additional-install-commands:
+        description: "Comandos adicionales para instalar dependencias antes de construir"
+        required: false
+        type: string
+      build-command:
+        description: "Comando personalizado para construir el proyecto"
+        required: false
+        type: string
+      report-language:
+        description: "Idioma en el que se generará el informe (por ejemplo: English, Spanish, etc.)"
+        required: false
+        type: string
       run-tests:
-        description: 'Ejecutar las pruebas del proyecto'
+        description: "Ejecutar las pruebas del proyecto"
         required: true
         type: boolean
       run-check-code-format:
-        description: 'Ejecutar la verificación del formato del código'
+        description: "Ejecutar la verificación del formato del código"
         required: true
         type: boolean
       run-code-analysis:
-        description: 'Ejecutar el análisis de código'
+        description: "Ejecutar el análisis de código"
         required: true
         type: boolean
       run-build-artifact:
-        description: 'Generar el artefacto de build'
+        description: "Generar el artefacto de build"
         required: true
         type: boolean
       run-upload-coverage:
-        description: 'Subir el reporte de cobertura'
+        description: "Subir el reporte de cobertura"
         required: true
         type: boolean
       run-lint:
-        description: 'Ejecutar Lint'
+        description: "Ejecutar Lint"
         required: true
         type: boolean
       run-clean-up:
-        description: 'Ejecutar limpieza después de la ejecución'
+        description: "Ejecutar limpieza después de la ejecución"
         required: true
         type: boolean
       environment-variables:
-        description: 'Variables de entorno para configurar en el pipeline (formato: "VAR1=value1, VAR2=value2")'
+        description: "Variables de entorno para configurar en el pipeline (formato: 'VAR1=value1, VAR2=value2')"
         required: false
         type: string
       debug-mode:
@@ -54,133 +84,341 @@ on:
 
 jobs:
   ci_pipeline:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    outputs:
+      error-detected: ${{ steps.analyze.outputs.error-detected || 'success' }}
     steps:
+      - name: Initialize error-detected
+        run: echo "error-detected=success" >> $GITHUB_ENV
+
+      - name: Debug OS Version
+        run: lsb_release -a || cat /etc/os-release
+        continue-on-error: true
+
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up JDK
         uses: actions/setup-java@v1
         with:
           java-version: ${{ inputs.java-version }}
 
+      - name: Set Azure Environment Variables
+        run: |
+          echo "AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" >> $GITHUB_ENV
+          echo "AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" >> $GITHUB_ENV
+
+      - name: Set OpenAI API Key
+        run: |
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
+
+      - name: Verify Secrets
+        run: |
+          echo "Azure Account Name: ${AZURE_STORAGE_ACCOUNT_NAME}"
+          echo "Azure Account Key: ${AZURE_STORAGE_ACCOUNT_KEY}"
+          echo "OpenAI API Key: ${OPENAI_API_KEY}"
+
       - name: Set Environment Variables
         if: ${{ inputs.environment-variables }}
         run: |
+          echo "Setting environment variables"
           IFS=',' read -ra VARS <<< "${{ inputs.environment-variables }}"
           for VAR in "${VARS[@]}"; do
             echo "Setting $VAR"
             echo "$VAR" >> $GITHUB_ENV
           done
 
-      - name: Build with Gradle
+      - name: Install additional dependencies
+        if: ${{ inputs.additional-install-commands }}
         run: |
+          echo "Running additional install commands"
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          repo_name=$(basename "${{ github.repository }}")
+          ${{ inputs.additional-install-commands }} 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-additional_install.log"
+          if [ ! -f "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-additional_install.log" ]; then
+            echo "ERROR : Log file for additional dependencies installation was not created!" >&2
+            exit 1
+          else
+            echo "SUCCESS : Log file for additional dependencies installation was created!" >&2
+          fi
+        
+      - name: Install dependencies and Save Logs
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+      
+          # Variables dinámicas
+          repo_name=$(basename "${GITHUB_REPOSITORY}")
+          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-dependencies.log"
+      
+          # Instalación de dependencias
+          if [ -f "${{ inputs.project-path }}/build.gradle" ]; then
+            echo "Installing dependencies using Gradle"
+            ./gradlew -p "${{ inputs.project-path }}" dependencies 2>&1 | tee "$log_file"
+          elif [ -f "${{ inputs.project-path }}/pom.xml" ]; then
+            echo "Installing dependencies using Maven"
+            mvn -f "${{ inputs.project-path }}/pom.xml" dependency:resolve 2>&1 | tee "$log_file"
+          else
+            echo "No build.gradle or pom.xml file found. Skipping dependency installation." 2>&1 | tee "$log_file"
+          fi
+      
+          # Verificación de creación del log
+          if [ ! -f "$log_file" ]; then
+            echo "ERROR: Log file $log_file was not created!" >&2
+            exit 1
+          else
+            echo "SUCCESS: Log file $log_file was created!" >&2
+          fi
+
+      - name: Build with Gradle and Save Logs
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          repo_name=$(basename "${GITHUB_REPOSITORY}")
+          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+          
           if [ -n "${{ inputs.project-path }}" ]; then
             if [ "${{ inputs.debug-mode }}" = "true" ]; then
-            echo "Estoy en 1"  
-            ./gradlew -p "${{ inputs.project-path }}" build --stacktrace --info --warning-mode all
-            elif  [ "${{ inputs.run-tests }}" = "false" ]; then
-              echo "Estoy en 2"  
-              ./gradlew -p "${{ inputs.project-path }}" build -x test
+              echo "Running Gradle build in debug mode (with stacktrace and verbose logs)"
+              ./gradlew -p "${{ inputs.project-path }}" build --stacktrace --info --warning-mode all 2>&1 | tee "$log_file"
+            elif [ "${{ inputs.run-tests }}" = "false" ]; then
+              echo "Running Gradle build (skipping tests)"
+              ./gradlew -p "${{ inputs.project-path }}" build -x test 2>&1 | tee "$log_file"
             else
-              echo "Estoy en 3"  
-              ./gradlew -p "${{ inputs.project-path }}" build
+              echo "Running standard Gradle build"
+              ./gradlew -p "${{ inputs.project-path }}" build 2>&1 | tee "$log_file"
             fi
           else
             if [ "${{ inputs.debug-mode }}" = "true" ]; then
-              echo "Estoy en 4"  
-              ./gradlew build --stacktrace --info --warning-mode all
-            elif  [ "${{ inputs.run-tests }}" = "false" ]; then
-              echo "Estoy en 5"  
-              ./gradlew build -x test
+              echo "Running Gradle build in debug mode (with stacktrace and verbose logs)"
+              ./gradlew build --stacktrace --info --warning-mode all 2>&1 | tee "$log_file"
+            elif [ "${{ inputs.run-tests }}" = "false" ]; then
+              echo "Running Gradle build (skipping tests)"
+              ./gradlew build -x test 2>&1 | tee "$log_file"
             else
-              echo "Estoy en 6"  
-              ./gradlew build
+              echo "Running standard Gradle build"
+              ./gradlew build 2>&1 | tee "$log_file"
             fi
           fi
+          
+          # Verificar la existencia del archivo de logs
+          if [ ! -f "$log_file" ]; then
+            echo "ERROR: Log file $log_file was not created!" >&2
+            exit 1
+          else
+            echo "SUCCESS: Build log file $log_file was created!" >&2
+          fi
 
-  # Job separado para formateo de código
+      - name: Move JAR file to workspace
+        id: move-jar  
+        run: |
+          echo "GITHUB_WORKSPACE is: ${GITHUB_WORKSPACE}"
+          echo "Searching for JAR files in the build/libs directory..."
+          JAR_FILE=$(find "${GITHUB_WORKSPACE}/build/libs/" -type f -name "*.jar")
+          if [ -n "$JAR_FILE" ]; then
+            echo "JAR file found: $JAR_FILE"
+            mkdir -p "${GITHUB_WORKSPACE}/dist"
+            mv "$JAR_FILE" "${GITHUB_WORKSPACE}/dist/"
+            if [ -f "${GITHUB_WORKSPACE}/dist/$(basename $JAR_FILE)" ]; then
+              echo "SUCCESS: JAR file moved to dist directory."
+              echo "file-exists=true" >> $GITHUB_OUTPUT
+            else
+              echo "ERROR: Failed to move the JAR file." >&2
+              echo "file-exists=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          else
+            echo "WARNING: No JAR file found in build/libs directory. Skipping artifact upload." >&2
+            echo "file-exists=false" >> $GITHUB_OUTPUT
+          fi
+  
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        if: steps.move-jar.outputs.file-exists == 'true' 
+        with:
+          name: ${{ github.event.repository.name }}-${{ github.run_id }}
+          path: ${{ github.workspace }}/dist/*.jar
+          if-no-files-found: ignore
+
+      - name: Debug Logs Directory
+        if: always()
+        run: |
+          echo "Current working directory: $(pwd)"
+          echo "Listing contents of the current directory:"
+          ls -la
+          echo "Listing contents of the GITHUB_WORKSPACE directory:"
+          ls -la $GITHUB_WORKSPACE
+          echo "Checking if the logs directory exists in the workspace:"
+          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
+            echo "Logs directory exists in the workspace."
+            ls -la $GITHUB_WORKSPACE/logs
+          else
+            echo "ERROR: Logs directory does not exist in the workspace!"
+          fi      
+     
+      # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
+      - name: Debug Storage Account Name
+        if: always()
+        run: |
+          echo "Checking if AZURE_STORAGE_ACCOUNT_NAME is set..."
+          if [ -z "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" ]; then
+            echo "ERROR: AZURE_STORAGE_ACCOUNT_NAME is not set." >&2
+            exit 1
+          else
+            echo "Account Name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}"
+          fi
+
+      - name: Verify Logs Directory
+        if: always()
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/logs" ] && [ "$(ls -A $GITHUB_WORKSPACE/logs)" ]; then
+            echo "Logs directory exists and contains files:"
+            ls -la $GITHUB_WORKSPACE/logs
+          else
+            echo "ERROR: Logs directory is empty or does not exist!" >&2
+            exit 1
+          fi
+      
+      # Paso para subir los logs al contenedor de Azure Storage
+      - name: Upload Logs to Azure Storage
+        if: always()
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
+            for log in $GITHUB_WORKSPACE/logs/*.log; do
+              echo "Uploading $log to Azure Storage..."
+              az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+                                    --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+                                    --container-name logs \
+                                    --file "$log" \
+                                    --name "$(basename $log)" \
+                                    --overwrite
+            done
+          else
+            echo "ERROR: Logs directory does not exist. Skipping upload." >&2
+            exit 1
+          fi
+      
+      - name: Initialize error-detected
+        if: always()
+        run: echo "error-detected=false" >> $GITHUB_ENV
+      
+      - name: Debug needs output
+        if: always()
+        run: |
+          echo "Output from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
+
+      - name: Debug analyze_failed_logs input
+        if: always()
+        run: |
+          echo "Error-detected from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
+          echo "Nueva variable input error-detected : ${{ inputs.error-detected }}"
+      
+      - name: Verify and analyze logs for errors
+        id: analyze
+        if: always()
+        run: |
+          echo "Analyzing logs for errors..."
+          repo_name=$(basename "${{ github.repository }}")
+          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+
+          if [ -f "$log_file" ]; then
+            if grep -qi "error" "$log_file"; then
+              echo "Errors found in logs."
+              echo "error-detected=failure" >> $GITHUB_ENV
+              echo "error-detected=failure" >> $GITHUB_OUTPUT
+            else
+              echo "No errors found."
+              echo "error-detected=success" >> $GITHUB_ENV
+              echo "error-detected=success" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "ERROR: Build log file not found!" >&2
+            echo "error-detected=failure" >> $GITHUB_ENV
+            echo "error-detected=failure" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Debug error-detected
+        run: |
+          echo "error-detected (from ENV): ${{ env.error-detected }}"
+          echo "error-detected (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
+  
+      - name: Debug final error-detected
+        if: always()
+        run: |
+          echo "Final error-detected value (from ENV): ${{ inputs.error-detected }} || 'not set' }}"
+          echo "Final error-detected value (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
+
   check-code-format:
+    name: Check Code Format
     needs: ci_pipeline
     if: ${{ inputs.run-check-code-format }}
     uses: ./.github/workflows/check-code-format.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
     with:
       language: ${{ inputs.language }}
-      java-version: ${{ inputs.java-version }}
+      java-version: ${{ inputs.java-version }}  
 
-  # Job separado para análisis de código
   code-analysis:
+    name: Code Analysis
     needs: ci_pipeline
     if: ${{ inputs.run-code-analysis }}
     uses: ./.github/workflows/scan-security-vulnerabilities.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
     with:
       language: ${{ inputs.language }}
       java-version: ${{ inputs.java-version }}
-      project-path: ${{ inputs.project-path }}
+      project-path: ${{ inputs.project-path }}  
 
-  # Job separado para generar artefacto de build
-  build-artifact:
-    needs: ci_pipeline
-    if: ${{ inputs.run-build-artifact }}
-    uses: ./.github/workflows/build-artifact.yml
-    with:
-      language: ${{ inputs.language }}
-      java-version: ${{ inputs.java-version }}
-      project-path: ${{ inputs.project-path }}
-
-  # Job separado para ejecutar Lint
   java-lint:
+    name: Java Linter
     needs: ci_pipeline
     if: ${{ inputs.run-lint }}
     uses: ./.github/workflows/lint.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
     with:
       language: ${{ inputs.language }}
       java-version: ${{ inputs.java-version }}
 
+  analyze_logs:
+    name: Analyze Success Logs
+    needs: [ci_pipeline, check-code-format, code-analysis, java-lint]
+    if: always()
+    uses: ./.github/workflows/analyze-logs.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    with:
+      project-name: ${{ github.event.repository.name }}
+      run-id: ${{ github.run_id }}
+      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
+
   # Job para ejecutar las pruebas
-  run-tests:
-    needs: ci_pipeline
-    if: ${{ inputs.run-tests }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Set up JDK
-        uses: actions/setup-java@v1
-        with:
-          java-version: ${{ inputs.java-version }}
-      
-      - name: Build Java artifact
-        run: |
-          if [ -n "${{ inputs.project-path }}" ]; then
-            cd "${{ inputs.project-path }}"
-          fi
-          echo "Building Java artifact"
-          if [ -f "./mvnw" ]; then
-            ./mvnw package
-          elif [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-            ./gradlew build
-          else
-            echo "No build tool found (Maven or Gradle). Skipping Java build step."
-          fi
-
-      - name: Run tests
-        run: |
-          if [ -n "${{ inputs.project-path }}" ] && [ -f "${{ inputs.project-path }}/build.gradle" ]; then
-            echo "Running tests in specified project path: ${{ inputs.project-path }}"
-            ./gradlew -p "${{ inputs.project-path }}" test
-          else
-            echo "No valid project path specified or build.gradle not found. Running tests in the root directory."
-            ./gradlew test
-          fi
-
-  # Job separado para la limpieza
+  summarize_and_create_ticket:
+    name: Summarize and Create Ticket
+    needs: [ci_pipeline,analyze_logs]
+    if: always()
+    uses: ./.github/workflows/summarize-and-create-ticket.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    with:
+      project-name: ${{ github.event.repository.name }}
+      run-id: ${{ github.run_id }}
+      report-language: ${{ inputs.report-language }}
+      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
+      repo: ${{ github.repository }}
+  
   clean-up:
-    needs: [check-code-format, code-analysis, build-artifact, java-lint, run-tests]
-    if: ${{ inputs.run-clean-up }}
+    name: Clean Up
+    needs: [summarize_and_create_ticket]
+    if: always() && ${{ inputs.run-clean-up }}
     uses: ./.github/workflows/clean-up.yml
     with:
       language: ${{ inputs.language }}
-      java-version: ${{ inputs.java-version }}
+      python-version: ${{ inputs.java-version }}    
