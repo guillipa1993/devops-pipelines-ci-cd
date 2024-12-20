@@ -74,7 +74,16 @@ jobs:
   # Job principal para construir el proyecto
   ci_pipeline:
     runs-on: ubuntu-24.04
+    outputs:
+      error-detected: ${{ steps.analyze.outputs.error-detected || 'success' }}
     steps:
+      - name: Initialize error-detected
+        run: echo "error-detected=success" >> $GITHUB_ENV
+
+      - name: Debug OS Version
+        run: lsb_release -a || cat /etc/os-release
+        continue-on-error: true
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -175,6 +184,7 @@ jobs:
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
+        if: steps.move-wheel.outputs.file-exists == 'true'  # Condición basada en la salida
         with:
           name: ${{ github.event.repository.name }}-${{ github.run_id }}
           path: ${{ github.workspace }}/dist/**
@@ -193,10 +203,11 @@ jobs:
             ls -la $GITHUB_WORKSPACE/logs
           else
             echo "ERROR: Logs directory does not exist in the workspace!"
-          fi   
-
+          fi      
+     
       # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
       - name: Debug Storage Account Name
+        if: always()
         run: |
           echo "Checking if AZURE_STORAGE_ACCOUNT_NAME is set..."
           if [ -z "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" ]; then
@@ -207,6 +218,7 @@ jobs:
           fi
       
       - name: Verify Logs Directory
+        if: always()
         run: |
           if [ -d "$GITHUB_WORKSPACE/logs" ] && [ "$(ls -A $GITHUB_WORKSPACE/logs)" ]; then
             echo "Logs directory exists and contains files:"
@@ -218,6 +230,7 @@ jobs:
 
       # Paso para subir los logs al contenedor de Azure Storage
       - name: Upload Logs to Azure Storage
+        if: always()
         run: |
           if [ -d "$GITHUB_WORKSPACE/logs" ]; then
             for log in $GITHUB_WORKSPACE/logs/*.log; do
@@ -234,8 +247,50 @@ jobs:
             exit 1
           fi
 
-  # Job separado para formatear código
+      - name: Debug analyze_failed_logs input
+        if: always()
+        run: |
+          echo "Error-detected from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
+          echo "Nueva variable input error-detected : ${{ inputs.error-detected }}"
+      
+      - name: Verify and analyze logs for errors
+        id: analyze
+        if: always()
+        run: |
+          echo "Analyzing logs for errors..."
+          repo_name=$(basename "${{ github.repository }}")
+          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+
+          if [ -f "$log_file" ]; then
+            if grep -qi "error" "$log_file"; then
+              echo "Errors found in logs."
+              echo "error-detected=failure" >> $GITHUB_ENV
+              echo "error-detected=failure" >> $GITHUB_OUTPUT
+            else
+              echo "No errors found."
+              echo "error-detected=success" >> $GITHUB_ENV
+              echo "error-detected=success" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "ERROR: Build log file not found!" >&2
+            echo "error-detected=failure" >> $GITHUB_ENV
+            echo "error-detected=failure" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Debug error-detected
+        run: |
+          echo "error-detected (from ENV): ${{ env.error-detected }}"
+          echo "error-detected (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
+  
+      - name: Debug final error-detected
+        if: always()
+        run: |
+          echo "Final error-detected value (from ENV): ${{ inputs.error-detected }} || 'not set' }}"
+          echo "Final error-detected value (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
+        
+  # Job separado para formatear código y recopilar logs
   check-code-format:
+    name: Check Code Format
     needs: ci_pipeline
     if: ${{ inputs.run-check-code-format }}
     uses: ./.github/workflows/check-code-format.yml
@@ -248,6 +303,7 @@ jobs:
 
   # Job separado para análisis de código
   code-analysis:
+    name: Code Analysis
     needs: ci_pipeline
     if: ${{ inputs.run-code-analysis }}
     uses: ./.github/workflows/scan-security-vulnerabilities.yml
@@ -270,39 +326,24 @@ jobs:
     with:
       language: ${{ inputs.language }}
 
-  # Job para subir y analizar los logs de builds fallidas  
-  analyze_failed_logs:
+  analyze_logs:
     needs: [ci_pipeline, check-code-format, code-analysis, dotnet-lint]
-    if: ${{ needs.ci_pipeline.result == 'failure' || needs.check-code-format.result == 'failure' || needs.code-analysis.result == 'failure' || needs.dotnet-lint.result == 'failure' }}
+    if: always()
     uses: ./.github/workflows/analyze-logs.yml
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
       AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     with:
-      log-type: "failure"
       repo-name: ${{ github.repository }}
       run-id: ${{ github.run_id }}
-
-  # Job para analizar logs exitosos
-  analyze_success_logs:
-    needs: [ci_pipeline, check-code-format, code-analysis, dotnet-lint]
-    if: success()
-    uses: ./.github/workflows/analyze-logs.yml
-    secrets:
-      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
-      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-    with:
-      log-type: "success"
-      repo-name: ${{ github.repository }}
-      run-id: ${{ github.run_id }}
+      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
 
   summarize_and_create_ticket:
-    name: Summarize Analysis and Create GitHub Ticket
-    needs: [analyze_success_logs, analyze_failed_logs]
-    if: always() && (needs.analyze_success_logs.result == 'success' || needs.analyze_failed_logs.result == 'success')
-    uses: ./.github/workflows/summarize_and_create_ticket.yml
+    name: Summarize and Create Ticket
+    needs: [ci_pipeline,analyze_logs]
+    if: always()
+    uses: ./.github/workflows/summarize-and-create-ticket.yml
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
       AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
@@ -310,10 +351,13 @@ jobs:
     with:
       project-name: ${{ github.event.repository.name }}
       run-id: ${{ github.run_id }}
-      report-language: ${{inputs.report-language}}
+      report-language: ${{ inputs.report-language }}
+      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
+      repo: ${{ github.repository }}
 
   # Job separado para la limpieza
   clean-up:
+    name: Clean Up
     needs: [summarize_and_create_ticket]
     if: always() && ${{ inputs.run-clean-up }}
     uses: ./.github/workflows/clean-up.yml
