@@ -29,6 +29,10 @@ on:
         description: "Type of logs to analyze (e.g., failure, success)"
         required: true
         type: string
+      repo:
+        description: "The name of the GitHub repository and owner"
+        required: true
+        type: string
 
 jobs:
   summarize_and_create_ticket:
@@ -116,6 +120,7 @@ jobs:
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ inputs.run-id }}" \
             --log-type "${{ inputs.log-type }}" \
             --report-language "${{ inputs.report-language }}" \
+            --repo-and-owner "${{ inputs.repo }}" \
             --create-ticket \
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

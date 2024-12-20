@@ -125,6 +125,7 @@ def main():
     parser.add_argument("--run-url", type=str, required=False, help="URL to the GitHub Actions run.")
     parser.add_argument("--log-type", type=str, required=True, choices=["success", "failure"], help="Specify the type of logs to analyze.")
     parser.add_argument("--report-language", type=str, required=False, help="Specify the language for the summary report.")
+    parser.add_argument("--repo-and-owner", type=str, required=True, help="GitHub repository owner/repo)")
     parser.add_argument("--create-ticket", action="store_true", help="Flag to create a GitHub issue.")
     args = parser.parse_args()
 
@@ -135,7 +136,7 @@ def main():
 
     if args.create_ticket:
         title = f"{'🔴 Failure' if args.log_type == 'failure' else '🟢 Success'} Report - Project: {args.repo} - Build ID: {args.run_id} - {'Errors Found' if args.log_type == 'failure' else 'All Passed'}"
-        create_github_issue(title, summary, args.repo)
+        create_github_issue(title, summary, args.repo_and_owner)
 
 if __name__ == "__main__":
     main()

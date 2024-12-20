@@ -427,6 +427,7 @@ jobs:
       run-id: ${{ github.run_id }}
       report-language: ${{ inputs.report-language }}
       log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
+      repo: ${{ github.repository }}
 
   clean-up:
     name: Clean Up
