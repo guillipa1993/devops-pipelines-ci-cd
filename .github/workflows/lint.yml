@@ -43,12 +43,43 @@ jobs:
           mkdir -p "${GITHUB_WORKSPACE}/logs"
           echo "Logs directory created: ${GITHUB_WORKSPACE}/logs"
 
-      # Ejecutar el linter de Go
-      - name: Run Go Linter
+      # Ejecutar el linter de Go y otras verificaciones
+      - name: Run Go Linter and Static Checks
         if: ${{ inputs.language == 'go' && inputs.go-version }}
         run: |
-          echo "Running Go formatter" | tee "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-go-linter.log"
-          gofmt -l . 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-go-linter.log"
+          echo "Running Go Linter and Static Checks" | tee "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-go-linter.log"
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          log_file="${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-go-linter.log"
+
+          # Formateo con gofmt
+          echo "Running gofmt..." | tee -a "$log_file"
+          gofmt -l . 2>&1 | tee -a "$log_file"
+
+          # Análisis estático con go vet
+          echo "Running go vet..." | tee -a "$log_file"
+          go vet ./... 2>&1 | tee -a "$log_file"
+
+          # Análisis de estilo con golint
+          echo "Running golint..." | tee -a "$log_file"
+          if ! command -v golint &> /dev/null; then
+            echo "Installing golint..." | tee -a "$log_file"
+            go install golang.org/x/lint/golint@latest
+          fi
+          golint ./... 2>&1 | tee -a "$log_file"
+
+          # Verificaciones avanzadas con staticcheck
+          echo "Running staticcheck..." | tee -a "$log_file"
+          if ! command -v staticcheck &> /dev/null; then
+            echo "Installing staticcheck..." | tee -a "$log_file"
+            go install honnef.co/go/tools/cmd/staticcheck@latest
+          fi
+          staticcheck ./... 2>&1 | tee -a "$log_file"
+
+          # Verificar si hubo errores en el log
+          if grep -q "ERROR" "$log_file"; then
+            echo "Errors detected during Go linting and static checks." >&2
+            exit 1
+          fi    
 
       # Ejecutar el linter de Node.js
       - name: Run Node.js Linter

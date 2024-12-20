@@ -168,7 +168,7 @@ jobs:
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
-        if: steps.move-wheel.outputs.file-exists == 'true'  # Condición basada en la salida
+        if: steps.move-wheel.outputs.file-exists == 'true'
         with:
           name: ${{ github.event.repository.name }}-${{ github.run_id }}
           path: ${{ github.workspace }}/dist/**
