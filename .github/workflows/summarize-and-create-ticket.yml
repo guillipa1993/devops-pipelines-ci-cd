@@ -25,6 +25,10 @@ on:
         description: "Language for the summary report (e.g., English, Spanish)"
         required: false
         type: string
+      log-type:
+        description: "Type of logs to analyze (e.g., failure, success)"
+        required: true
+        type: string
 
 jobs:
   summarize_and_create_ticket:
@@ -110,8 +114,9 @@ jobs:
             --repo "${{ inputs.project-name }}" \
             --run-id "${{ inputs.run-id }}" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ inputs.run-id }}" \
+            --log-type "${{ inputs.log-type }}" \
+            --report-language "${{ inputs.report-language }}" \
             --create-ticket \
-            --report-language "${{ inputs.report-language }}"
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
