@@ -36,21 +36,66 @@ def clean_log_content(content):
     cleaned_lines = [line for line in lines if line.strip()]  # Elimina líneas vacías
     return "\n".join(cleaned_lines)
 
+def extract_relevant_lines(content, keyword="error", context_lines=10):
+    """
+    Extrae líneas que contienen un keyword específico y las líneas circundantes.
+    """
+    lines = content.splitlines()
+    relevant_lines = []
+    for idx, line in enumerate(lines):
+        if keyword.lower() in line.lower():
+            start = max(0, idx - context_lines)
+            end = min(len(lines), idx + context_lines + 1)
+            relevant_lines.extend(lines[start:end])
+    return "\n".join(relevant_lines)
+
+def generate_prompt(log_type):
+    """
+    Genera el prompt según el tipo de log.
+    """
+    if log_type == "failure":
+        return (
+            "You are an expert log analysis assistant. The provided log type is 'failure'. "
+            "Your primary goal is to identify, explain, and resolve issues found in the logs. "
+            "Ensure the analysis includes: "
+            "1. Root Cause Analysis: Pinpoint the specific reasons for the failure, supported by detailed patterns, events, or anomalies in the logs. Use 🔍 🛠️ for emphasis. "
+            "2. Actionable Fixes: Provide clear, step-by-step recommendations to resolve each issue. Include exact file names, line numbers, and code examples where applicable. 💡 🔧 "
+            "3. Preventive Measures: Suggest changes to configurations, dependencies, or workflows to avoid similar failures in the future. Include specific tools or updates to implement. ⚡ 🔒 "
+            "4. Critical Issue Highlighting: Clearly identify any urgent or blocking issues that need immediate resolution. Use emoticons like 💣 🔥 📛 to indicate severity and urgency. "
+            "5. Impact Analysis: Briefly explain the potential consequences of not addressing the failure, such as degraded performance, security risks, or system downtime. 🚫 ⚠️ "
+        )
+    else:
+        return (
+            "You are an expert log analysis assistant. The provided log type is 'success'. "
+            "Your primary goal is to confirm the success of the process and provide insights to sustain or improve its quality. "
+            "Ensure the analysis includes: "
+            "1. Confirmation of Success: Clearly state that the process completed successfully with no critical issues or warnings. Highlight key components that contributed to the success. ✅ 🌟 "
+            "2. Opportunities for Optimization: Suggest areas where performance can be improved or steps can be simplified without compromising the success. Examples include faster workflows, better resource utilization, or enhanced configurations. 🚀 💡 "
+            "3. Scalability Recommendations: Identify how this success can be extended to support larger workloads, more users, or additional use cases. 📈 🛡️ "
+            "4. Sustainability Suggestions: Propose measures to maintain this level of success, such as regular monitoring, best practices, or updated tools and dependencies. 🌿 ✨ "
+            "5. Positive Feedback: Acknowledge the team's efforts and highlight outstanding practices or results achieved. 🎉 🙌 "
+        )
+
 def analyze_logs(log_files, output_dir, log_type):
     """
     Analiza los logs utilizando la API de OpenAI.
     """
     analysis_created = False
     total_files = len(log_files)
+
     for file_idx, log_file in enumerate(log_files, start=1):
         print(f"\n[{file_idx}/{total_files}] Analyzing file: {log_file}", flush=True)
         with open(log_file, 'r') as f:
             log_content = f.read()
-            cleaned_content = clean_log_content(log_content)
+            relevant_content = (
+                extract_relevant_lines(log_content, keyword="error")
+                if log_type == "failure"
+                else clean_log_content(log_content)
+            )
 
             # Dividir el contenido en fragmentos de hasta 15,000 caracteres (tokens aproximados)
             max_chunk_size = 30000
-            log_fragments = [cleaned_content[i:i + max_chunk_size] for i in range(0, len(cleaned_content), max_chunk_size)]
+            log_fragments = [relevant_content[i:i + max_chunk_size] for i in range(0, len(relevant_content), max_chunk_size)]
             total_fragments = len(log_fragments)
 
             print(f"File '{log_file}' divided into {total_fragments} fragments for analysis.", flush=True)
@@ -58,52 +103,7 @@ def analyze_logs(log_files, output_dir, log_type):
             for idx, fragment in enumerate(log_fragments, 1):
                 print(f"   Analyzing fragment {idx}/{total_fragments} of file '{log_file}'...", flush=True)
                 try:
-                    # Ajustar mensaje según tipo de log
-                    role_content = (
-                        f"You are an expert log analysis assistant. The provided log type is '{log_type}'."
-                        "Your primary goal is to deliver detailed insights, actionable recommendations, and structured responses based on the log type:"
-                        "For failure logs:"
-                        "1. Identify and explain the root causes of the failure with as much detail as possible, including specific events or patterns."
-                        "2. Provide clear, actionable suggestions to fix the identified issues, specifying affected files, line numbers, or configuration points where possible."
-                        "3. Suggest preventive measures to avoid similar failures in the future, such as configuration changes, updated dependencies, or alternative approaches."
-                        "4. Highlight any urgent or critical problems that require immediate attention, and suggest their priority for resolution."
-                        "5. Use the following emoticons where applicable to emphasize severity and urgency:"
-                        "   🔥 (Fire: critical or urgent issue),"
-                        "   ❌ (Cross: failed operation),"
-                        "   🛠️ (Tools: requires attention or repair),"
-                        "   📛 (Warning sign: significant error),"
-                        "   🚫 (Prohibited: action blocked or not allowed),"
-                        "   ⚡ (Lightning bolt: rapid error or unexpected interruption),"
-                        "   ❗ (Exclamation: highlight an important issue),"
-                        "   🧨 (Dynamite: potentially explosive problem),"
-                        "   💣 (Bomb: critical failure),"
-                        "   🔧❌ (Broken tool: something in the configuration failed),"
-                        "   🕳️ (Hole: possible breach or hidden issue),"
-                        "   🧱 (Brick: system blocked or broken),"
-                        "   🔍❌ (Magnifying glass with cross: identified failure)." 
-                        "For success logs:"
-                        "1. Verify that the process completed successfully, and confirm there are no hidden issues or warnings that could lead to potential problems."
-                        "2. Suggest optimizations for the current workflow or code, including performance enhancements or simplifications."
-                        "3. Recommend improvements to the current implementation to ensure long-term stability and maintainability."
-                        "4. Highlight opportunities for scalability, efficiency, or enhanced security, if applicable."
-                        "5. Use the following emoticons to celebrate and emphasize the success of the logs:"
-                        "   ✅ (Checkmark: operation completed successfully),"
-                        "   🎉 (Confetti: positive outcome),"
-                        "   🏆 (Trophy: achievement unlocked),"
-                        "   🚀 (Rocket: success and optimization),"
-                        "   🌟 (Star: excellence in execution),"
-                        "   💡 (Light bulb: ideas or opportunities for improvement),"
-                        "   🔒 (Closed lock: security guaranteed),"
-                        "   💪 (Strong arm: robust execution),"
-                        "   🌈 (Rainbow: clean and optimistic result),"
-                        "   ✨ (Sparkles: highlighted good practice or implementation),"
-                        "   📈 (Ascending chart: improved performance),"
-                        "   🛡️ (Shield: system protected),"
-                        "   🌿 (Leaf: clean and sustainable result)." 
-                        "Ensure the output is detailed, professional, and structured, with sections for findings, recommendations, and next steps."
-                        "Tailor the tone and language to foster collaboration and support development teams in maintaining a high-quality and reliable system."
-                        "Indicate at the beginning of each analysis if this log is in a 'success' state to set the proper context."
-                    )
+                    role_content = generate_prompt(log_type)
                     response = client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[
@@ -121,7 +121,7 @@ def analyze_logs(log_files, output_dir, log_type):
                     else:
                         print(f"   WARNING: No analysis returned for fragment {idx}.", flush=True)
 
-                    time.sleep(20)  # Pausa exacta para cumplir 3 RPM
+                    time.sleep(10)  # Ajustar tiempo de espera dinámico si es necesario
                 except Exception as e:
                     print(f"Unexpected error while analyzing fragment {idx}: {e}", flush=True)
                     break
