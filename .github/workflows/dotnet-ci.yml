@@ -335,7 +335,7 @@ jobs:
       AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     with:
-      repo-name: ${{ github.repository }}
+      project-name: ${{ github.repository }}
       run-id: ${{ github.run_id }}
       log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
 
