@@ -203,21 +203,27 @@ jobs:
         id: move-jar  
         run: |
           echo "GITHUB_WORKSPACE is: ${GITHUB_WORKSPACE}"
-          echo "Searching for JAR files in the build/libs directory..."
-          JAR_FILE=$(find "${GITHUB_WORKSPACE}/build/libs/" -type f -name "*.jar")
-          if [ -n "$JAR_FILE" ]; then
-            echo "JAR file found: $JAR_FILE"
-            mkdir -p "${GITHUB_WORKSPACE}/dist"
-            mv "$JAR_FILE" "${GITHUB_WORKSPACE}/dist/"
-            if [ -f "${GITHUB_WORKSPACE}/dist/$(basename $JAR_FILE)" ]; then
-              echo "SUCCESS: JAR file moved to dist directory."
-              echo "file-exists=true" >> $GITHUB_OUTPUT
+          echo "Checking if build/libs directory exists..."
+          if [ -d "${GITHUB_WORKSPACE}/build/libs" ]; then
+            echo "Searching for JAR files in the build/libs directory..."
+            JAR_FILE=$(find "${GITHUB_WORKSPACE}/build/libs/" -type f -name "*.jar")
+            if [ -n "$JAR_FILE" ]; then
+              echo "JAR file found: $JAR_FILE"
+              mkdir -p "${GITHUB_WORKSPACE}/dist"
+              mv "$JAR_FILE" "${GITHUB_WORKSPACE}/dist/"
+              if [ -f "${GITHUB_WORKSPACE}/dist/$(basename $JAR_FILE)" ]; then
+                echo "SUCCESS: JAR file moved to dist directory."
+                echo "file-exists=true" >> $GITHUB_OUTPUT
+              else
+                echo "ERROR: Failed to move the JAR file." >&2
+                echo "file-exists=false" >> $GITHUB_OUTPUT
+              fi
             else
-              echo "ERROR: Failed to move the JAR file." >&2
+              echo "WARNING: No JAR file found in build/libs directory. Skipping artifact upload." >&2
               echo "file-exists=false" >> $GITHUB_OUTPUT
             fi
           else
-            echo "WARNING: No JAR file found in build/libs directory. Skipping artifact upload." >&2
+            echo "WARNING: build/libs directory does not exist. Skipping artifact upload." >&2
             echo "file-exists=false" >> $GITHUB_OUTPUT
           fi
           exit 0
