@@ -35,10 +35,6 @@ on:
         description: 'Ejecutar Lint'
         required: true
         type: boolean
-      run-clean-up:
-        description: 'Ejecutar limpieza después de la ejecución'
-        required: true
-        type: boolean
       environment-variables:
         description: 'Variables de entorno para configurar en el pipeline (formato: "VAR1=value1, VAR2=value2")'
         required: false
@@ -110,15 +106,6 @@ jobs:
     needs: ci_pipeline
     if: ${{ inputs.run-lint }}
     uses: ./.github/workflows/lint.yml
-    with:
-      language: ${{ inputs.language }}
-      go-version: ${{ inputs.go-version }}
-
-  # Job separado para la limpieza
-  clean-up:
-    needs: [check-code-format, code-analysis, build-artifact, go-lint]
-    if: ${{ inputs.run-clean-up }}
-    uses: ./.github/workflows/clean-up.yml
     with:
       language: ${{ inputs.language }}
       go-version: ${{ inputs.go-version }}

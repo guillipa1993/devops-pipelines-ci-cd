@@ -57,10 +57,6 @@ on:
         description: "Ejecutar Lint"
         required: true
         type: boolean
-      run-clean-up:
-        description: "Ejecutar limpieza después de la ejecución"
-        required: true
-        type: boolean
       environment-variables:
         description: "Variables de entorno para configurar en el pipeline (formato: 'VAR1=value1, VAR2=value2')"
         required: false
@@ -416,12 +412,3 @@ jobs:
       report-language: ${{ inputs.report-language }}
       log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
       repo: ${{ github.repository }}
-
-  clean-up:
-    name: Clean Up
-    needs: [summarize_and_create_ticket]
-    if: always() && ${{ inputs.run-clean-up }}
-    uses: ./.github/workflows/clean-up.yml
-    with:
-      language: ${{ inputs.language }}
-      python-version: ${{ inputs.python-version }}
