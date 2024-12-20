@@ -57,14 +57,6 @@ on:
         description: "Ejecutar el análisis de código"
         required: true
         type: boolean
-      run-build-artifact:
-        description: "Generar el artefacto de build"
-        required: true
-        type: boolean
-      run-upload-coverage:
-        description: "Subir el reporte de cobertura"
-        required: true
-        type: boolean
       run-lint:
         description: "Ejecutar Lint"
         required: true

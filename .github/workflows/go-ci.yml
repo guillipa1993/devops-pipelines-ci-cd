@@ -23,24 +23,12 @@ on:
         description: 'Comandos adicionales para instalar dependencias antes de construir'
         required: false
         type: string
-      run-tests:
-        description: 'Ejecutar las pruebas del proyecto'
-        required: true
-        type: boolean
       run-check-code-format:
         description: 'Ejecutar la verificación del formato del código'
         required: true
         type: boolean
       run-code-analysis:
         description: 'Ejecutar el análisis de código'
-        required: true
-        type: boolean
-      run-build-artifact:
-        description: 'Generar el artefacto de build'
-        required: true
-        type: boolean
-      run-upload-coverage:
-        description: 'Subir el reporte de cobertura'
         required: true
         type: boolean
       run-lint:
