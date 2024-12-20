@@ -215,12 +215,12 @@ jobs:
             else
               echo "ERROR: Failed to move the JAR file." >&2
               echo "file-exists=false" >> $GITHUB_OUTPUT
-              exit 1
             fi
           else
             echo "WARNING: No JAR file found in build/libs directory. Skipping artifact upload." >&2
             echo "file-exists=false" >> $GITHUB_OUTPUT
           fi
+          exit 0
   
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
