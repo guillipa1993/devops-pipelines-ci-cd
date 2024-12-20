@@ -122,6 +122,7 @@ def main():
     parser.add_argument("--output-file", type=str, required=True, help="Path to save the summary output.")
     parser.add_argument("--repo", type=str, required=True, help="GitHub repository (e.g., owner/repo).")
     parser.add_argument("--run-id", type=str, required=True, help="GitHub Actions run ID.")
+    parser.add_argument("--run-url", type=str, required=False, help="URL to the GitHub Actions run.")
     parser.add_argument("--log-type", type=str, required=True, choices=["success", "failure"], help="Specify the type of logs to analyze.")
     parser.add_argument("--report-language", type=str, required=False, help="Specify the language for the summary report.")
     parser.add_argument("--create-ticket", action="store_true", help="Flag to create a GitHub issue.")
