@@ -409,9 +409,9 @@ jobs:
       AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     with:
-      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
       project-name: ${{ github.event.repository.name }}
       run-id: ${{ github.run_id }}
+      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
 
   summarize_and_create_ticket:
     name: Summarize and Create Ticket
@@ -426,6 +426,7 @@ jobs:
       project-name: ${{ github.event.repository.name }}
       run-id: ${{ github.run_id }}
       report-language: ${{ inputs.report-language }}
+      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
 
   clean-up:
     name: Clean Up
