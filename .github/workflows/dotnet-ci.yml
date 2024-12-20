@@ -136,12 +136,43 @@ jobs:
           fi
 
       - name: Build
+        id: build
         run: |
-          if [ "${{ inputs.build-configuration }}" != "" ]; then
-            dotnet build ${{ inputs.project-path }} --configuration ${{ inputs.build-configuration }}
+          echo "Building project"
+          repo_name=$(basename "${{ github.repository }}")
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+      
+          if [ -d "${{ inputs.project-path }}" ]; then
+              if [ "${{ inputs.build-configuration }}" != "" ]; then
+                  echo "Building with configuration: ${{ inputs.build-configuration }}"
+                  dotnet build ${{ inputs.project-path }} --configuration ${{ inputs.build-configuration }} 2>&1 | tee "$log_file"
+              else
+                  echo "Building with default configuration"
+                  dotnet build ${{ inputs.project-path }} 2>&1 | tee "$log_file"
+              fi
+              if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                  echo "ERROR: .NET build failed!" >&2
+                  exit 1
+              fi
           else
-            dotnet build ${{ inputs.project-path }}
+              echo "No valid project path or build command found. Skipping build step." 2>&1 | tee "$log_file"
+              exit 1
           fi
+      
+          # Verificar errores en los logs
+          if grep -qi "ERROR" "$log_file"; then
+              echo "ERROR: Found 'ERROR' in build logs!" >&2
+              exit 1
+          fi
+      
+          # Confirmar la creación del log
+          if [ ! -f "$log_file" ]; then
+              echo "ERROR: Log file $log_file was not created!" >&2
+              exit 1
+          else
+              echo "SUCCESS: Log file $log_file was created!" >&2
+          fi        
       
       - name: Move build artifacts to workspace
         run: |
