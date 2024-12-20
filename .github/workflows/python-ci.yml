@@ -432,7 +432,7 @@ jobs:
   clean-up:
     name: Clean Up
     needs: [summarize_and_create_ticket]
-    if: always() && inputs.run-clean-up
+    if: always() && ${{ inputs.run-clean-up }}
     uses: ./.github/workflows/clean-up.yml
     with:
       language: ${{ inputs.language }}
