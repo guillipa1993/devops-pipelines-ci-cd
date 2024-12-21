@@ -144,42 +144,42 @@ jobs:
         run: |
           echo "Starting the build process for all .NET projects"
           mkdir -p "${GITHUB_WORKSPACE}/logs"
-
+      
           # Variables dinámicas
           repo_name=$(basename "${GITHUB_REPOSITORY}")
           consolidated_log="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-consolidated-build.log"
           touch "$consolidated_log"
-
+      
           # Buscar todos los archivos .csproj dentro del project-path
           find "${{ inputs.project-path }}" -type f -name "*.csproj" | while read -r project_file; do
             project_name=$(basename "$project_file")
-            project_log="${GITHUB_WORKSPACE}/logs/${project_name}-${{ github.run_id }}.log"
+            project_log="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-${project_name}.log"
             
             echo "Building project: $project_name"
             echo "Log file: $project_log"
-
+      
             # Construir el proyecto
             dotnet build "$project_file" --configuration "${{ inputs.build-configuration }}" 2>&1 | tee "$project_log"
             build_status=${PIPESTATUS[0]}
-
+      
             # Consolidar el log
             echo "======== Log for $project_name ========" >> "$consolidated_log"
             cat "$project_log" >> "$consolidated_log"
             echo "" >> "$consolidated_log"
-
+      
             # Verificar errores en el build actual
             if [ $build_status -ne 0 ]; then
               echo "ERROR: Build failed for project $project_name. See logs for details."
             fi
           done
-
+      
           # Verificar si hay errores en el log consolidado
           if grep -qiE "(ERROR|Build FAILED)" "$consolidated_log"; then
               echo "ERROR: Build logs contain errors. Check the consolidated log for details."
               exit 1
           else
               echo "SUCCESS: All projects built successfully!"
-          fi
+          fi       
       
       - name: Move build artifacts to workspace
         run: |
