@@ -146,7 +146,7 @@ jobs:
           mkdir -p "${GITHUB_WORKSPACE}/logs"
       
           # Variables dinámicas
-          repo_name=$(basename "${GITHUB_REPOSITORY}")
+          repo_name="$${{ github.repository }}"  # Asegúrate de que inputs.project-name sea modular-todo-app
           consolidated_log="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-consolidated-build.log"
           touch "$consolidated_log"
       
@@ -179,7 +179,7 @@ jobs:
               exit 1
           else
               echo "SUCCESS: All projects built successfully!"
-          fi       
+          fi        
       
       - name: Move build artifacts to workspace
         run: |
