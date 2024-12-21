@@ -349,6 +349,7 @@ jobs:
       language: ${{ inputs.language }}
 
   analyze_logs:
+    name: Analyze Success Logs
     needs: [ci_pipeline, check-code-format, code-analysis, dotnet-lint]
     if: always()
     uses: ./.github/workflows/analyze-logs.yml
@@ -357,7 +358,7 @@ jobs:
       AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     with:
-      project-name: ${{ github.repository }}
+      project-name: ${{ github.event.repository.name }}
       run-id: ${{ github.run_id }}
       log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
 
