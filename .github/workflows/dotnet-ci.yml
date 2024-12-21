@@ -152,7 +152,7 @@ jobs:
       
           # Buscar todos los archivos .csproj dentro del project-path
           find "${{ inputs.project-path }}" -type f -name "*.csproj" | while read -r project_file; do
-            project_name=$(basename "$project_file")
+            project_name=$(basename "$project_file" .csproj)
             project_log="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-${project_name}.log"
             
             echo "Building project: $project_name"
