@@ -139,47 +139,47 @@ jobs:
             echo "SUCCESS: Log file $log_file was created!" >&2
           fi
 
-      - name: Build .NET Projects
+      - name: Build All .NET Projects
         id: build
         run: |
-          echo "Starting the build process for all .csproj files in the directory"
+          echo "Starting the build process for all .NET projects"
           mkdir -p "${GITHUB_WORKSPACE}/logs"
-      
+
           # Variables dinámicas
           repo_name=$(basename "${GITHUB_REPOSITORY}")
-          global_log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
-      
-          # Encontrar todos los archivos .csproj en el directorio especificado
-          project_files=$(find "${{ inputs.project-path }}" -type f -name "*.csproj")
-          if [ -z "$project_files" ]; then
-              echo "ERROR: No .csproj files found in the specified directory: ${{ inputs.project-path }}" | tee -a "$global_log_file" >&2
-              exit 1
-          fi
+          consolidated_log="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-consolidated-build.log"
+          touch "$consolidated_log"
 
-          # Iterar sobre cada archivo .csproj y construirlo
-          for project in $project_files; do
-              echo "Building project: $project" | tee -a "$global_log_file"
-              project_log_file="${GITHUB_WORKSPACE}/logs/$(basename "$project")-${{ github.run_id }}-build.log"
-              
-              # Construir el proyecto
-              if [ -n "${{ inputs.build-configuration }}" ]; then
-                  echo "Using build configuration: ${{ inputs.build-configuration }}" | tee -a "$project_log_file"
-                  dotnet build "$project" --configuration "${{ inputs.build-configuration }}" 2>&1 | tee -a "$project_log_file"
-              else
-                  echo "Using default build configuration" | tee -a "$project_log_file"
-                  dotnet build "$project" 2>&1 | tee -a "$project_log_file"
-              fi
+          # Buscar todos los archivos .csproj dentro del project-path
+          find "${{ inputs.project-path }}" -type f -name "*.csproj" | while read -r project_file; do
+            project_name=$(basename "$project_file")
+            project_log="${GITHUB_WORKSPACE}/logs/${project_name}-${{ github.run_id }}.log"
+            
+            echo "Building project: $project_name"
+            echo "Log file: $project_log"
 
-              # Verificar el estado del build
-              build_status=${PIPESTATUS[0]}
-              if [ $build_status -ne 0 ]; then
-                  echo "ERROR: Build failed for project: $project" | tee -a "$global_log_file" >&2
-                  exit 1
-              fi
+            # Construir el proyecto
+            dotnet build "$project_file" --configuration "${{ inputs.build-configuration }}" 2>&1 | tee "$project_log"
+            build_status=${PIPESTATUS[0]}
+
+            # Consolidar el log
+            echo "======== Log for $project_name ========" >> "$consolidated_log"
+            cat "$project_log" >> "$consolidated_log"
+            echo "" >> "$consolidated_log"
+
+            # Verificar errores en el build actual
+            if [ $build_status -ne 0 ]; then
+              echo "ERROR: Build failed for project $project_name. See logs for details."
+            fi
           done
 
-          # Confirmar que todos los builds se completaron con éxito
-          echo "SUCCESS: All projects built successfully!" | tee -a "$global_log_file"
+          # Verificar si hay errores en el log consolidado
+          if grep -qiE "(ERROR|Build FAILED)" "$consolidated_log"; then
+              echo "ERROR: Build logs contain errors. Check the consolidated log for details."
+              exit 1
+          else
+              echo "SUCCESS: All projects built successfully!"
+          fi
       
       - name: Move build artifacts to workspace
         run: |
