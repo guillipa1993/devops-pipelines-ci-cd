@@ -18,6 +18,10 @@ on:
         description: 'The project path containing the code to scan'
         required: true
         type: string
+      node-version:
+          description: 'The Node version to use for the pipeline'
+          required: false
+          type: string
       dotnet-version:
         description: 'The .NET version to use for the pipeline'
         required: false

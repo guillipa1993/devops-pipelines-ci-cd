@@ -14,6 +14,10 @@ on:
         description: 'The programming language for linting'
         required: true
         type: string
+      node-version:
+        description: 'La versión de Node para usar en este pipeline'
+        required: false
+        type: string
       dotnet-version:
         description: 'La versión de .NET para usar en este pipeline'
         required: false
@@ -81,13 +85,57 @@ jobs:
             exit 1
           fi    
 
+      - name: Set up Node.js
+        if: ${{ inputs.language == 'node' && inputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: ${{ inputs.language == 'node' }}
+        run: |
+          echo "Installing Node.js dependencies"
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          log_file="${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-node-dependencies.log"
+          npm ci 2>&1 | tee "$log_file"
+
+          if [ ! -f "$log_file" ]; then
+            echo "ERROR: Log file $log_file was not created!" >&2
+            exit 1
+          else
+            echo "SUCCESS: Log file $log_file was created!" >&2
+          fi
+
       # Ejecutar el linter de Node.js
       - name: Run Node.js Linter
         if: ${{ inputs.language == 'node' }}
         run: |
-          echo "Running Prettier for Node.js" | tee "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-node-linter.log"
-          npm install --global prettier
-          prettier --check . 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-node-linter.log"
+          echo "Running Node.js linter"
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          log_file="${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-node-linter.log"
+          
+          # Verificar si existe un script de linting en package.json
+          if grep -q '"lint":' package.json; then
+            echo "Found 'lint' script in package.json. Running 'npm run lint'." | tee -a "$log_file"
+            npm run lint 2>&1 | tee -a "$log_file"
+          else
+            echo "No 'lint' script found in package.json. Skipping linting step." | tee -a "$log_file"
+          fi
+
+          # Verificar si hubo errores durante el linting
+          if grep -qi "error" "$log_file"; then
+            echo "ERROR: Found 'error' in linting logs!" >&2
+            exit 1
+          fi
+
+          # Confirmar la creación del log
+          if [ ! -f "$log_file" ]; then
+            echo "ERROR: Log file $log_file was not created!" >&2
+            exit 1
+          else
+            echo "SUCCESS: Log file $log_file was created!" >&2
+          fi
 
       # Ejecutar el linter de Python
       - name: Set up Python
