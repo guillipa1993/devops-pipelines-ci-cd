@@ -25,6 +25,10 @@ on:
         description: 'La ruta del proyecto donde se encuentran los archivos .csproj'
         required: true
         type: string
+      build-command:
+        description: "Comando personalizado para construir el proyecto"
+        required: false
+        type: string
       build-configuration:
         description: 'Configuración de build (Debug o Release)'
         required: true
@@ -135,13 +139,59 @@ jobs:
             echo "SUCCESS: Log file $log_file was created!" >&2
           fi
 
-      - name: Build
+      - name: Build .NET Project
+        id: build
         run: |
-          if [ "${{ inputs.build-configuration }}" != "" ]; then
-            dotnet build ${{ inputs.project-path }} --configuration ${{ inputs.build-configuration }}
+          echo "Starting the build process for the .NET project"
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+      
+          # Variables dinámicas
+          repo_name=$(basename "${GITHUB_REPOSITORY}")
+          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+      
+          # Función para registrar errores y manejar fallos
+          log_and_exit_on_failure() {
+            local message=$1
+            echo "ERROR: $message" | tee -a "$log_file" >&2
+            exit 1
+          }
+      
+          # Verificar si se proporciona un comando de build personalizado
+          if [ -n "${{ inputs.build-command }}" ]; then
+              echo "Using custom build command" | tee -a "$log_file"
+              eval "${{ inputs.build-command }}" 2>&1 | tee -a "$log_file"
+              build_status=${PIPESTATUS[0]}
+              if [ $build_status -ne 0 ]; then
+                  log_and_exit_on_failure "Custom build command failed with status $build_status."
+              fi
+          elif [ -n "${{ inputs.project-path }}" ]; then
+              echo "Building with dotnet CLI for project path: ${{ inputs.project-path }}" | tee -a "$log_file"
+              if [ -n "${{ inputs.build-configuration }}" ]; then
+                  echo "Using build configuration: ${{ inputs.build-configuration }}" | tee -a "$log_file"
+                  dotnet build "${{ inputs.project-path }}" --configuration "${{ inputs.build-configuration }}" 2>&1 | tee -a "$log_file"
+              else
+                  echo "Using default build configuration" | tee -a "$log_file"
+                  dotnet build "${{ inputs.project-path }}" 2>&1 | tee -a "$log_file"
+              fi
+              build_status=${PIPESTATUS[0]}
+              if [ $build_status -ne 0 ]; then
+                  log_and_exit_on_failure "dotnet build failed with status $build_status."
+              fi
           else
-            dotnet build ${{ inputs.project-path }}
+              log_and_exit_on_failure "No valid project path or build command provided."
           fi
+      
+          # Verificar errores en los logs
+          if grep -qi "ERROR" "$log_file"; then
+              log_and_exit_on_failure "Build logs contain 'ERROR'. Check logs for details."
+          fi
+      
+          # Confirmar que el archivo de log se creó correctamente
+          if [ ! -f "$log_file" ]; then
+              log_and_exit_on_failure "Log file $log_file was not created!"
+          else
+              echo "SUCCESS: Build completed successfully, and log file was created at $log_file" | tee -a "$log_file"
+          fi        
       
       - name: Move build artifacts to workspace
         run: |
