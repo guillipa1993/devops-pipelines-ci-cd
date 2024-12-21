@@ -143,16 +143,6 @@ jobs:
             echo "SUCCESS: Log file $log_file was created!" >&2
           fi
 
-      - name: Set Environment Variables
-        if: ${{ inputs.environment-variables }}
-        run: |
-          echo "Setting environment variables"
-          IFS=',' read -ra VARS <<< "${{ inputs.environment-variables }}"
-          for VAR in "${VARS[@]}"; do
-            echo "Setting $VAR"
-            echo "$VAR" >> $GITHUB_ENV
-          done
-
       - name: Build Project and Save Logs
         id: build
         run: |
