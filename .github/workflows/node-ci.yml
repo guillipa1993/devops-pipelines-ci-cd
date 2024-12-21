@@ -1,0 +1,389 @@
+name: "Node.js CI/CD Pipeline"
+
+on:
+  workflow_call:
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME:
+        description: "Azure Storage Account Name"
+        required: true
+      AZURE_STORAGE_ACCOUNT_KEY:
+        description: "Azure Storage Account Key"
+        required: true
+      OPENAI_API_KEY:
+        description: "OpenAI API Key"
+        required: true
+    inputs:
+      node-version:
+        description: "La versión de Node.js para usar en este pipeline"
+        required: true
+        type: string
+      language:
+        description: "El lenguaje de programación para usar en este pipeline"
+        required: true
+        type: string
+      project-path:
+        description: "La ruta del proyecto donde se encuentra el código"
+        required: true
+        type: string
+      requirements-path:
+        description: "La ruta del proyecto donde se encuentran los requisitos del proyecto node"
+        required: false
+        type: string
+      additional-install-commands:
+        description: "Comandos adicionales para instalar dependencias antes de construir"
+        required: false
+        type: string
+      build-command:
+        description: "Comando personalizado para construir el proyecto"
+        required: false
+        type: string
+      report-language:
+        description: "Idioma en el que se generará el informe (por ejemplo: English, Spanish, etc.)"
+        required: false
+        type: string
+      run-check-code-format:
+        description: "Ejecutar la verificación del formato del código"
+        required: true
+        type: boolean
+      run-code-analysis:
+        description: "Ejecutar el análisis de código"
+        required: true
+        type: boolean
+      run-lint:
+        description: "Ejecutar Lint"
+        required: true
+        type: boolean
+      environment-variables:
+        description: "Variables de entorno para configurar en el pipeline (formato: 'VAR1=value1, VAR2=value2')"
+        required: false
+        type: string
+
+jobs:
+  ci_pipeline:
+    runs-on: ubuntu-24.04
+    outputs:
+      error-detected: ${{ steps.analyze.outputs.error-detected || 'success' }}
+    steps:
+      - name: Initialize error-detected
+        run: echo "error-detected=success" >> $GITHUB_ENV
+
+      - name: Debug OS Version
+        run: lsb_release -a || cat /etc/os-release
+        continue-on-error: true
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+
+      - name: Set Azure Environment Variables
+        run: |
+          echo "AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" >> $GITHUB_ENV
+          echo "AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" >> $GITHUB_ENV
+
+      - name: Set OpenAI API Key
+        run: |
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
+
+      - name: Verify Secrets
+        run: |
+          echo "Azure Account Name: ${AZURE_STORAGE_ACCOUNT_NAME}"
+          echo "Azure Account Key: ${AZURE_STORAGE_ACCOUNT_KEY}"
+          echo "OpenAI API Key: ${OPENAI_API_KEY}"
+
+      - name: Set Environment Variables
+        if: ${{ inputs.environment-variables }}
+        run: |
+          echo "Setting environment variables"
+          IFS=',' read -ra VARS <<< "${{ inputs.environment-variables }}"
+          for VAR in "${VARS[@]}"; do
+            echo "Setting $VAR"
+            echo "$VAR" >> $GITHUB_ENV
+          done
+
+      - name: Install additional dependencies
+        if: ${{ inputs.additional-install-commands }}
+        run: |
+          echo "Running additional install commands"
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          repo_name=$(basename "${{ github.repository }}")
+          ${{ inputs.additional-install-commands }} 2>&1 | tee "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-additional_install.log"
+          if [ ! -f "${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-additional_install.log" ]; then
+            echo "ERROR : Log file for additional dependencies installation was not created!" >&2
+            exit 1
+          else
+            echo "SUCCESS : Log file for additional dependencies installation was created!" >&2
+          fi
+
+      - name: Install dependencies and Save Logs
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          
+          # Variables dinámicas
+          repo_name=$(basename "${GITHUB_REPOSITORY}")
+          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-dependencies.log"
+          
+          # Instalación de dependencias
+          if [ -f "package.json" ]; then
+            echo "Installing dependencies using package.json"
+            npm ci 2>&1 | tee "$log_file"
+          else
+            echo "No package.json file found. Skipping dependency installation." 2>&1 | tee "$log_file"
+          fi
+          
+          # Verificación de creación del log
+          if [ ! -f "$log_file" ]; then
+            echo "ERROR: Log file $log_file was not created!" >&2
+            exit 1
+          else
+            echo "SUCCESS: Log file $log_file was created!" >&2
+          fi
+
+      - name: Set Environment Variables
+        if: ${{ inputs.environment-variables }}
+        run: |
+          echo "Setting environment variables"
+          IFS=',' read -ra VARS <<< "${{ inputs.environment-variables }}"
+          for VAR in "${VARS[@]}"; do
+            echo "Setting $VAR"
+            echo "$VAR" >> $GITHUB_ENV
+          done
+
+      - name: Build Project and Save Logs
+        id: build
+        run: |
+          echo "Building Node.js project"
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+
+          # Variables dinámicas
+          repo_name=$(basename "${GITHUB_REPOSITORY}")
+          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+
+          # Verificar si se proporciona un comando de build personalizado
+          if [ -n "${{ inputs.build-command }}" ]; then
+              echo "Using custom build command"
+              ${{ inputs.build-command }} 2>&1 | tee "$log_file"
+              if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                  echo "ERROR: Custom build command failed!" >&2
+                  exit 1
+              fi
+          elif [ -f "package.json" ]; then
+              echo "Building with npm"
+              npm run build 2>&1 | tee "$log_file"
+              if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                  echo "ERROR: npm build failed!" >&2
+                  exit 1
+              fi
+          else
+              echo "No build configuration found (no package.json). Skipping build step." 2>&1 | tee "$log_file"
+              exit 1
+          fi
+
+          # Verificar errores en los logs
+          if grep -q "ERROR" "$log_file"; then
+              echo "ERROR: Found 'ERROR' in build logs!" >&2
+              exit 1
+          fi
+
+          # Confirmar la creación del log
+          if [ ! -f "$log_file" ]; then
+              echo "ERROR: Log file $log_file was not created!" >&2
+              exit 1
+          else
+              echo "SUCCESS: Log file $log_file was created!" >&2
+          fi
+          continue-on-error: true
+
+      - name: Run Linter
+        if: ${{ inputs.run-lint }}
+        run: |
+          echo "Running linter"
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          npm run lint 2>&1 | tee "${GITHUB_WORKSPACE}/logs/lint.log"
+
+      - name: Run Tests
+        if: ${{ inputs.run-code-analysis }}
+        run: |
+          echo "Running tests"
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+          npm test 2>&1 | tee "${GITHUB_WORKSPACE}/logs/tests.log"
+
+      - name: Debug Logs Directory
+        if: always()
+        run: |
+          echo "Current working directory: $(pwd)"
+          echo "Listing contents of the current directory:"
+          ls -la
+          echo "Listing contents of the GITHUB_WORKSPACE directory:"
+          ls -la $GITHUB_WORKSPACE
+          echo "Checking if the logs directory exists in the workspace:"
+          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
+            echo "Logs directory exists in the workspace."
+            ls -la $GITHUB_WORKSPACE/logs
+          else
+            echo "ERROR: Logs directory does not exist in the workspace!"
+          fi      
+     
+      # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
+      - name: Debug Storage Account Name
+        if: always()
+        run: |
+          echo "Checking if AZURE_STORAGE_ACCOUNT_NAME is set..."
+          if [ -z "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" ]; then
+            echo "ERROR: AZURE_STORAGE_ACCOUNT_NAME is not set." >&2
+            exit 1
+          else
+            echo "Account Name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}"
+          fi
+
+      - name: Verify Logs Directory
+        if: always()
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/logs" ] && [ "$(ls -A $GITHUB_WORKSPACE/logs)" ]; then
+            echo "Logs directory exists and contains files:"
+            ls -la $GITHUB_WORKSPACE/logs
+          else
+            echo "ERROR: Logs directory is empty or does not exist!" >&2
+            exit 1
+          fi
+
+      - name: Upload Logs to Azure Storage
+        if: always()
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
+            for log in $GITHUB_WORKSPACE/logs/*.log; do
+              echo "Uploading $log to Azure Storage..."
+              az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+                                    --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+                                    --container-name logs \
+                                    --file "$log" \
+                                    --name "$(basename $log)" \
+                                    --overwrite
+            done
+          else
+            echo "ERROR: Logs directory does not exist. Skipping upload." >&2
+            exit 1
+          fi
+      
+      - name: Initialize error-detected
+        if: always()
+        run: echo "error-detected=false" >> $GITHUB_ENV
+      
+      - name: Debug needs output
+        if: always()
+        run: |
+          echo "Output from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
+
+      - name: Debug analyze_failed_logs input
+        if: always()
+        run: |
+          echo "Error-detected from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
+          echo "Nueva variable input error-detected : ${{ inputs.error-detected }}"
+      
+      - name: Verify and analyze logs for errors
+        id: analyze
+        if: always()
+        run: |
+          echo "Analyzing logs for errors..."
+          repo_name=$(basename "${{ github.repository }}")
+          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+
+          if [ -f "$log_file" ]; then
+            if grep -qi "error" "$log_file"; then
+              echo "Errors found in logs."
+              echo "error-detected=failure" >> $GITHUB_ENV
+              echo "error-detected=failure" >> $GITHUB_OUTPUT
+            else
+              echo "No errors found."
+              echo "error-detected=success" >> $GITHUB_ENV
+              echo "error-detected=success" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "ERROR: Build log file not found!" >&2
+            echo "error-detected=failure" >> $GITHUB_ENV
+            echo "error-detected=failure" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Debug error-detected
+        run: |
+          echo "error-detected (from ENV): ${{ env.error-detected }}"
+          echo "error-detected (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
+  
+      - name: Debug final error-detected
+        if: always()
+        run: |
+          echo "Final error-detected value (from ENV): ${{ inputs.error-detected }} || 'not set' }}"
+          echo "Final error-detected value (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
+        
+  # Job separado para formatear código y recopilar logs
+  check-code-format:
+    name: Check Code Format
+    needs: ci_pipeline
+    if: ${{ inputs.run-check-code-format }}
+    uses: ./.github/workflows/check-code-format.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+    with:
+      language: ${{ inputs.language }}
+      node-version: ${{ inputs.node-version }}
+      project-path: ${{ inputs.project-path }}
+
+  code-analysis:
+    name: Code Analysis
+    needs: ci_pipeline
+    if: ${{ inputs.run-code-analysis }}
+    uses: ./.github/workflows/scan-security-vulnerabilities.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+    with:
+      language: ${{ inputs.language }}
+      node-version: ${{ inputs.node-version }}
+      project-path: ${{ inputs.project-path }}
+
+  node-lint:
+    name: node Linter
+    needs: ci_pipeline
+    if: ${{ inputs.run-lint }}
+    uses: ./.github/workflows/lint.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+    with:
+      language: ${{ inputs.language }}
+      node-version: ${{ inputs.node-version }}
+
+  analyze_logs:
+    name: Analyze Success Logs
+    needs: [ci_pipeline, check-code-format, code-analysis, node-lint]
+    if: always()
+    uses: ./.github/workflows/analyze-logs.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    with:
+      project-name: ${{ github.event.repository.name }}
+      run-id: ${{ github.run_id }}
+      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
+
+  summarize_and_create_ticket:
+    name: Summarize and Create Ticket
+    needs: [ci_pipeline,analyze_logs]
+    if: always()
+    uses: ./.github/workflows/summarize-and-create-ticket.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    with:
+      project-name: ${{ github.event.repository.name }}
+      run-id: ${{ github.run_id }}
+      report-language: ${{ inputs.report-language }}
+      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
+      repo: ${{ github.repository }}
