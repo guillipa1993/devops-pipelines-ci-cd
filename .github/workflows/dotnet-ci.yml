@@ -158,14 +158,14 @@ jobs:
       
           # Verificar si se proporciona un comando de build personalizado
           if [ -n "${{ inputs.build-command }}" ]; then
-              echo "Using custom build command" | tee -a "$log_file"
+              echo "Using custom build command: ${{ inputs.build-command }}" | tee -a "$log_file"
               eval "${{ inputs.build-command }}" 2>&1 | tee -a "$log_file"
               build_status=${PIPESTATUS[0]}
               if [ $build_status -ne 0 ]; then
                   log_and_exit_on_failure "Custom build command failed with status $build_status."
               fi
-          elif [ -n "${{ inputs.project-path }}" ]; then
-              echo "Building with dotnet CLI for project path: ${{ inputs.project-path }}" | tee -a "$log_file"
+          elif [ -f "${{ inputs.project-path }}" ]; then
+              echo "Building with dotnet CLI for project file: ${{ inputs.project-path }}" | tee -a "$log_file"
               if [ -n "${{ inputs.build-configuration }}" ]; then
                   echo "Using build configuration: ${{ inputs.build-configuration }}" | tee -a "$log_file"
                   dotnet build "${{ inputs.project-path }}" --configuration "${{ inputs.build-configuration }}" 2>&1 | tee -a "$log_file"
@@ -178,12 +178,12 @@ jobs:
                   log_and_exit_on_failure "dotnet build failed with status $build_status."
               fi
           else
-              log_and_exit_on_failure "No valid project path or build command provided."
+              log_and_exit_on_failure "No valid project path (.csproj) or build command provided."
           fi
       
           # Verificar errores en los logs
-          if grep -qi "ERROR" "$log_file"; then
-              log_and_exit_on_failure "Build logs contain 'ERROR'. Check logs for details."
+          if grep -qiE "(ERROR|Build FAILED)" "$log_file"; then
+              log_and_exit_on_failure "Build logs contain errors. Check logs for details."
           fi
       
           # Confirmar que el archivo de log se creó correctamente
@@ -191,7 +191,7 @@ jobs:
               log_and_exit_on_failure "Log file $log_file was not created!"
           else
               echo "SUCCESS: Build completed successfully, and log file was created at $log_file" | tee -a "$log_file"
-          fi        
+          fi
       
       - name: Move build artifacts to workspace
         run: |
