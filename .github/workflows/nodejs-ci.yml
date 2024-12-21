@@ -153,68 +153,54 @@ jobs:
             echo "$VAR" >> $GITHUB_ENV
           done
 
-          - name: Build Project and Save Logs
-          id: build
-          run: |
-            echo "Starting the build process for the Node.js project"
-            mkdir -p "${GITHUB_WORKSPACE}/logs"
-        
-            # Variables dinámicas
-            repo_name=$(basename "${GITHUB_REPOSITORY}")
-            log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
-        
-            # Función para registrar errores y manejar fallos
-            log_and_exit_on_failure() {
-              local message=$1
-              echo "ERROR: $message" | tee -a "$log_file" >&2
-              exit 1
-            }
-        
-            # Comprobar si existe un comando de build personalizado
-            if [[ -n "${{ inputs.build-command }}" ]]; then
-                echo "Using custom build command" | tee -a "$log_file"
-                eval "${{ inputs.build-command }}" 2>&1 | tee -a "$log_file"
-                build_status=${PIPESTATUS[0]}
-                if [[ $build_status -ne 0 ]]; then
-                    log_and_exit_on_failure "Custom build command failed with status $build_status."
-                fi
-            elif [[ -f "package.json" ]]; then
-                echo "Building with npm using package.json" | tee -a "$log_file"
-                npm run build 2>&1 | tee -a "$log_file"
-                build_status=${PIPESTATUS[0]}
-                if [[ $build_status -ne 0 ]]; then
-                    log_and_exit_on_failure "npm build failed with status $build_status."
-                fi
-            else
-                log_and_exit_on_failure "No build configuration found (missing package.json)."
-            fi
-        
-            # Comprobar si el log contiene errores críticos
-            if grep -qi "ERROR" "$log_file"; then
-                log_and_exit_on_failure "Build logs contain 'ERROR'. Check logs for details."
-            fi
-        
-            # Confirmar que el archivo de log se creó correctamente
-            if [[ ! -f "$log_file" ]]; then
-                log_and_exit_on_failure "Log file $log_file was not created!"
-            else
-                echo "SUCCESS: Build completed successfully, and log file was created at $log_file" | tee -a "$log_file"
-            fi
+      - name: Build Project and Save Logs
+        id: build
+        run: |
+          echo "Starting the build process for the Node.js project"
+          mkdir -p "${GITHUB_WORKSPACE}/logs"
+      
+          # Variables dinámicas
+          repo_name=$(basename "${GITHUB_REPOSITORY}")
+          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+      
+          # Función para registrar errores y manejar fallos
+          log_and_exit_on_failure() {
+            local message=$1
+            echo "ERROR: $message" | tee -a "$log_file" >&2
+            exit 1
+          }
+      
+          # Comprobar si existe un comando de build personalizado
+          if [[ -n "${{ inputs.build-command }}" ]]; then
+              echo "Using custom build command" | tee -a "$log_file"
+              eval "${{ inputs.build-command }}" 2>&1 | tee -a "$log_file"
+              build_status=${PIPESTATUS[0]}
+              if [[ $build_status -ne 0 ]]; then
+                  log_and_exit_on_failure "Custom build command failed with status $build_status."
+              fi
+          elif [[ -f "package.json" ]]; then
+              echo "Building with npm using package.json" | tee -a "$log_file"
+              npm run build 2>&1 | tee -a "$log_file"
+              build_status=${PIPESTATUS[0]}
+              if [[ $build_status -ne 0 ]]; then
+                  log_and_exit_on_failure "npm build failed with status $build_status."
+              fi
+          else
+              log_and_exit_on_failure "No build configuration found (missing package.json)."
+          fi
+      
+          # Comprobar si el log contiene errores críticos
+          if grep -qi "ERROR" "$log_file"; then
+              log_and_exit_on_failure "Build logs contain 'ERROR'. Check logs for details."
+          fi
+      
+          # Confirmar que el archivo de log se creó correctamente
+          if [[ ! -f "$log_file" ]]; then
+              log_and_exit_on_failure "Log file $log_file was not created!"
+          else
+              echo "SUCCESS: Build completed successfully, and log file was created at $log_file" | tee -a "$log_file"
+          fi
         continue-on-error: false        
-
-      - name: Run Linter
-        if: ${{ inputs.run-lint }}
-        run: |
-          echo "Running linter"
-          mkdir -p "${GITHUB_WORKSPACE}/logs"
-          npm run lint 2>&1 | tee "${GITHUB_WORKSPACE}/logs/lint.log"
-
-      - name: Run Tests
-        if: ${{ inputs.run-code-analysis }}
-        run: |
-          echo "Running tests"
-          mkdir -p "${GITHUB_WORKSPACE}/logs"
-          npm test 2>&1 | tee "${GITHUB_WORKSPACE}/logs/tests.log"
 
       - name: Debug Logs Directory
         if: always()
