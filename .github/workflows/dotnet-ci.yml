@@ -139,59 +139,47 @@ jobs:
             echo "SUCCESS: Log file $log_file was created!" >&2
           fi
 
-      - name: Build .NET Project
+      - name: Build .NET Projects
         id: build
         run: |
-          echo "Starting the build process for the .NET project"
+          echo "Starting the build process for all .csproj files in the directory"
           mkdir -p "${GITHUB_WORKSPACE}/logs"
       
           # Variables dinámicas
           repo_name=$(basename "${GITHUB_REPOSITORY}")
-          log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
+          global_log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
       
-          # Función para registrar errores y manejar fallos
-          log_and_exit_on_failure() {
-            local message=$1
-            echo "ERROR: $message" | tee -a "$log_file" >&2
-            exit 1
-          }
-      
-          # Verificar si se proporciona un comando de build personalizado
-          if [ -n "${{ inputs.build-command }}" ]; then
-              echo "Using custom build command: ${{ inputs.build-command }}" | tee -a "$log_file"
-              eval "${{ inputs.build-command }}" 2>&1 | tee -a "$log_file"
-              build_status=${PIPESTATUS[0]}
-              if [ $build_status -ne 0 ]; then
-                  log_and_exit_on_failure "Custom build command failed with status $build_status."
-              fi
-          elif [ -f "${{ inputs.project-path }}" ]; then
-              echo "Building with dotnet CLI for project file: ${{ inputs.project-path }}" | tee -a "$log_file"
+          # Encontrar todos los archivos .csproj en el directorio especificado
+          project_files=$(find "${{ inputs.project-path }}" -type f -name "*.csproj")
+          if [ -z "$project_files" ]; then
+              echo "ERROR: No .csproj files found in the specified directory: ${{ inputs.project-path }}" | tee -a "$global_log_file" >&2
+              exit 1
+          fi
+
+          # Iterar sobre cada archivo .csproj y construirlo
+          for project in $project_files; do
+              echo "Building project: $project" | tee -a "$global_log_file"
+              project_log_file="${GITHUB_WORKSPACE}/logs/$(basename "$project")-${{ github.run_id }}-build.log"
+              
+              # Construir el proyecto
               if [ -n "${{ inputs.build-configuration }}" ]; then
-                  echo "Using build configuration: ${{ inputs.build-configuration }}" | tee -a "$log_file"
-                  dotnet build "${{ inputs.project-path }}" --configuration "${{ inputs.build-configuration }}" 2>&1 | tee -a "$log_file"
+                  echo "Using build configuration: ${{ inputs.build-configuration }}" | tee -a "$project_log_file"
+                  dotnet build "$project" --configuration "${{ inputs.build-configuration }}" 2>&1 | tee -a "$project_log_file"
               else
-                  echo "Using default build configuration" | tee -a "$log_file"
-                  dotnet build "${{ inputs.project-path }}" 2>&1 | tee -a "$log_file"
+                  echo "Using default build configuration" | tee -a "$project_log_file"
+                  dotnet build "$project" 2>&1 | tee -a "$project_log_file"
               fi
+
+              # Verificar el estado del build
               build_status=${PIPESTATUS[0]}
               if [ $build_status -ne 0 ]; then
-                  log_and_exit_on_failure "dotnet build failed with status $build_status."
+                  echo "ERROR: Build failed for project: $project" | tee -a "$global_log_file" >&2
+                  exit 1
               fi
-          else
-              log_and_exit_on_failure "No valid project path (.csproj) or build command provided."
-          fi
-      
-          # Verificar errores en los logs
-          if grep -qiE "(ERROR|Build FAILED)" "$log_file"; then
-              log_and_exit_on_failure "Build logs contain errors. Check logs for details."
-          fi
-      
-          # Confirmar que el archivo de log se creó correctamente
-          if [ ! -f "$log_file" ]; then
-              log_and_exit_on_failure "Log file $log_file was not created!"
-          else
-              echo "SUCCESS: Build completed successfully, and log file was created at $log_file" | tee -a "$log_file"
-          fi
+          done
+
+          # Confirmar que todos los builds se completaron con éxito
+          echo "SUCCESS: All projects built successfully!" | tee -a "$global_log_file"
       
       - name: Move build artifacts to workspace
         run: |
