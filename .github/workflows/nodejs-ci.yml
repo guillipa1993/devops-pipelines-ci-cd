@@ -150,7 +150,7 @@ jobs:
           mkdir -p "${GITHUB_WORKSPACE}/logs"
       
           # Variables dinámicas
-          repo_name=$(basename "${GITHUB_REPOSITORY}")
+          repo_name=$(basename "${{ github.repository }}")
           log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
       
           # Función para registrar errores y manejar fallos
