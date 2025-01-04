@@ -1,4 +1,4 @@
-# DevOps CI/CD Pipelines with AI (OPCI-AI-CU)
+# DevOps CI/CD Pipelines with AI
 
 ## Descripción
 
