@@ -4,4 +4,3 @@ terraform/terraform.tfvars
 terraform/terraform.tfstate
 terraform/terraform.tfstate.backup
 terraform/tfplan.out
-grafana-loki*
