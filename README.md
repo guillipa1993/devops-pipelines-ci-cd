@@ -4,36 +4,49 @@
 
 Este repositorio contiene una colección de pipelines reutilizables para automatizar procesos de **Integración Continua (CI)** y **Despliegue Continuo (CD)**, optimizados con **Inteligencia Artificial (IA)**. El proyecto tiene como objetivo mejorar la eficiencia y seguridad en el desarrollo y despliegue de software, proporcionando una plataforma que los desarrolladores puedan usar para validar, construir y desplegar sus proyectos de manera rápida y segura. Además, la integración de IA permite analizar las builds, identificar fallos y sugerir mejoras.
 
-**Novedades recientes**:
-- **Soporte para generación de informes en múltiples idiomas**: Ahora puedes especificar el idioma en el que deseas generar el informe de análisis (por ejemplo, inglés, español, alemán, francés, italiano).
-- **Identificación de archivos y líneas afectadas en los errores detectados**: Facilita la corrección de problemas al proporcionar información precisa sobre la ubicación de los fallos en el código.
-- **Sugerencias de actualización y refactorización**: Basadas en las mejores prácticas para mejorar la robustez y la mantenibilidad del proyecto.
+---
 
-Ahora incluye soporte para **observabilidad y monitoreo** con Grafana Loki, facilitando el análisis de logs y la depuración en tiempo real.
+## Introducción Detallada
+
+En el desarrollo moderno de software, la automatización es una necesidad clave para garantizar calidad, velocidad y consistencia en los procesos. Este proyecto surge como una respuesta a los desafíos que enfrentan los equipos de desarrollo al implementar pipelines CI/CD:
+
+- **Desafío técnico**: Configuración manual de pipelines para múltiples tecnologías que consume tiempo y recursos.
+- **Seguridad**: Asegurar que las aplicaciones desplegadas cumplan con estándares de seguridad elevados.
+- **Optimización**: Detectar y resolver ineficiencias en los procesos de build y despliegue.
+
+Este repositorio ofrece una solución integral que combina los beneficios de la modularidad, la escalabilidad y la optimización basada en IA. La plataforma permite a los desarrolladores:
+
+- Automatizar las tareas repetitivas del ciclo de desarrollo.
+- Implementar pipelines altamente configurables con soporte para múltiples tecnologías.
+- Analizar logs de manera inteligente para mejorar la calidad del código y prevenir errores futuros.
+
+---
 
 ## Funcionalidades
 
-- **Pipelines reutilizables**: Puedes aplicar estos pipelines en diferentes proyectos seleccionando la tecnología deseada.
-- **Automatización de CI/CD**: Validación, construcción y despliegue automatizados para proyectos con diferentes tecnologías (Node.js, Java, Python, etc.).
-- **Seguridad**: Integración de herramientas de análisis de código y control de calidad.
-- **Optimización con IA**: Análisis de los resultados de las builds para mejorar la eficiencia, identificar errores recurrentes y sugerir optimizaciones.
-- **Soporte multilingüe**: Genera informes en inglés, español, alemán, francés, italiano, entre otros.
-- **Observabilidad con Grafana Loki**: Centralización y análisis de logs generados por los pipelines y las aplicaciones.
+- **Pipelines reutilizables**: Configuración estándar adaptable a distintos lenguajes y proyectos.
+- **Automatización de CI/CD**: Desde la validación hasta el despliegue, optimizando cada etapa del proceso.
+- **Análisis avanzado con IA**: Identificación de problemas, recomendaciones de optimización y generación de informes detallados.
+- **Seguridad incorporada**: Integración con herramientas de análisis estático y dinámico.
+- **Soporte multilingüe**: Personaliza los informes generados por la IA en varios idiomas.
+
+---
 
 ## Requisitos
 
-Para utilizar estos pipelines y la funcionalidad de monitoreo, asegúrate de cumplir con los siguientes requisitos:
+Antes de comenzar, asegúrate de tener configurados los siguientes elementos:
 
-- **GitHub Actions**: Los pipelines están diseñados para ejecutarse en GitHub Actions.
-- **Docker**: Para algunas tecnologías y para el stack de monitoreo.
-- **Docker Compose**: Para desplegar Grafana, Loki y Promtail.
-- **Acceso a un repositorio** donde se pueda ejecutar el pipeline.
+1. **GitHub Actions**: El motor principal para la ejecución de los pipelines.
+2. **Docker**: Opcional para proyectos que requieren contenedores.
+3. **Acceso a las claves necesarias**:
+   - Azure Blob Storage: Para almacenamiento de logs.
+   - OpenAI API Key: Para los análisis basados en IA.
 
-## Uso
+---
 
-### Clonar el repositorio
+## Guía de Configuración
 
-Puedes clonar este repositorio a tu entorno local usando SSH o HTTPS:
+### 1. Clonar el repositorio
 
 ```bash
 # Usando SSH
@@ -43,78 +56,100 @@ git clone git@github.com:guillipa1993/devops-pipelines-ci-cd.git
 git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
 ```
 
-### Configuración del pipeline
+### 2. Configurar los pipelines en tu proyecto
 
-1. **Configura el pipeline en tu proyecto**:
-   - En el repositorio donde deseas usar el pipeline, crea un archivo `.github/workflows/ci.yml`.
-   - Dentro del archivo YAML, invoca los pipelines reutilizables de este repositorio.
+1. Crea un archivo `.github/workflows/ci.yml` en el repositorio de tu proyecto.
+2. Define el contenido del pipeline, utilizando este repositorio como base:
 
-   Ejemplo de archivo `ci.yml` en tu proyecto:
-   ```yaml
-   name: CI/CD Pipeline
+```yaml
+name: CI/CD Pipeline
 
-   on:
-     push:
-       branches:
-         - main
+on:
+  push:
+    branches:
+      - main
 
-   jobs:
-     ci-pipeline:
-       uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/ci.yml@main
-       with:
-         node-version: '14'  # Especifica la versión de Node.js, o adapta según la tecnología
-       secrets: inherit
-   ```
+jobs:
+  ci-pipeline:
+    uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/python-ci.yml@main
+    with:
+      python-version: '3.9'
+      report-language: 'Spanish'
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+```
 
-2. **Configuración específica del proyecto**:
-   - Puedes pasar parámetros como la versión de la tecnología utilizada (por ejemplo, `node-version`, `java-version`) o el idioma para los informes (`report-language`).
+3. Personaliza los parámetros según el lenguaje y las necesidades de tu proyecto.
 
-   Ejemplo con idioma configurado:
-   ```yaml
-   with:
-     report-language: 'Spanish'
-   ```
+---
 
-### Configuración de monitoreo con Grafana Loki
+### 3. Configurar los secretos en GitHub
 
-1. **Inicia el stack de observabilidad**:
-   - En el directorio `grafana-loki`, usa Docker Compose para desplegar Grafana, Loki y Promtail:
-     ```bash
-     cd grafana-loki
-     docker-compose up -d
-     ```
-   - Esto desplegará los siguientes servicios:
-     - **Grafana** en `http://localhost:3000`
-     - **Loki** como backend de logs.
-     - **Promtail** como agente recolector de logs.
+1. Ve a tu repositorio en GitHub.
+2. Dirígete a **Settings > Secrets and variables > Actions**.
+3. Añade los siguientes secretos necesarios:
+   - `AZURE_STORAGE_ACCOUNT_NAME`
+   - `AZURE_STORAGE_ACCOUNT_KEY`
+   - `OPENAI_API_KEY`
 
-2. **Configura Grafana**:
-   - Accede a la interfaz de Grafana en `http://localhost:3000` (usuario: `admin`, contraseña: `admin`).
-   - Agrega Loki como una fuente de datos:
-     - Ve a **Configuration > Data Sources > Add data source**.
-     - Selecciona **Loki** e ingresa la URL: `http://loki:3100`.
+## Ejemplos de Configuración
 
-3. **Monitoreo en tiempo real**:
-   - Visualiza los logs recolectados desde los pipelines y aplicaciones en el panel de Grafana.
-   - Usa los dashboards preconfigurados o crea uno personalizado para tus necesidades.
+Para facilitar la integración de la librería en proyectos reales, se incluyen ejemplos de archivos `ci.yml` organizados por lenguaje de programación en la carpeta [`examples`](examples/). Estos ejemplos cubren configuraciones básicas y avanzadas para diferentes tecnologías.
+
+**Estructura de la carpeta `examples`:**
+
+```
+/examples
+├── dotnet
+│   └── ci-modular-todo-app.yml
+├── go
+│   ├── ci-cobra.yml
+│   └── ci-kit.yml
+├── java
+│   ├── ci-junit5.yml
+│   └── ci-spring-security.yml
+├── nodejs
+│   └── ci-create-react-app.yml
+└── python
+    ├── ci-requests.yml
+    └── ci-scikit-learn.yml
+```
+
+**Descripción de ejemplos destacados**:
+
+- **.NET**: Configuración para proyectos modulares, como `ci-modular-todo-app.yml`.
+- **Go**: Pipelines para aplicaciones con frameworks como Cobra y Kit.
+- **Java**: Ejemplos específicos con JUnit 5 y Spring Security.
+- **Node.js**: Configuración para proyectos como `create-react-app`.
+- **Python**: Proyectos que usan librerías como `requests` y `scikit-learn`.
+
+Estos archivos son un punto de partida ideal para configurar pipelines en diferentes lenguajes y contextos.
+
+
+---
+
+## Notas Técnicas
+
+### Diseño Modular
+El diseño de este repositorio sigue una arquitectura modular que permite:
+- Integrar diferentes lenguajes de programación.
+- Adaptar los pipelines a las necesidades específicas de cada equipo.
 
 ### Integración de IA
+La IA está integrada en los workflows para analizar logs, generar informes detallados y sugerir optimizaciones basadas en patrones detectados.
 
-La Inteligencia Artificial integrada en estos pipelines analiza los registros (logs) de las builds, detectando patrones y errores recurrentes. Esto permitirá:
+### Limitaciones Actuales
+- **Dependencia de GitHub Actions**: El sistema no es compatible con otros motores de CI/CD como Jenkins o GitLab CI.
+- **Escalabilidad del almacenamiento**: A medida que crece el volumen de logs, se incrementan los costos de almacenamiento en Azure.
 
-- **Identificar problemas automáticamente** y prevenir fallos futuros.
-- **Recomendar optimizaciones** en las builds basadas en el análisis de los datos históricos.
-- **Proveer información precisa sobre errores**, incluyendo archivos y líneas afectadas.
+### Futuras Mejoras
+- Expansión del soporte a otros lenguajes y tecnologías.
+- Integración con plataformas adicionales de análisis de código.
+- Mayor optimización de los algoritmos de IA para una detección más precisa de errores.
 
-## Cómo contribuir
-
-Si deseas contribuir a este proyecto, sigue estos pasos:
-
-1. Haz un **fork** de este repositorio.
-2. Crea una nueva rama (`git checkout -b feature/nueva-funcionalidad`).
-3. Realiza tus cambios y **haz commit** (`git commit -m 'Añadir nueva funcionalidad'`).
-4. Haz un **push** a la rama (`git push origin feature/nueva-funcionalidad`).
-5. Abre una **pull request** para revisar tus cambios.
+---
 
 ## Licencia
 

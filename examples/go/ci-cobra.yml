@@ -1,0 +1,30 @@
+name: "CI/CD Pipeline for Cobra" 
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  ci-pipeline:
+    uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/go-ci.yml@main
+    with:
+      language: 'go'
+      go-version: '1.18'
+      report-language: 'English'
+      project-path: ''
+      requirements-path: ''
+      build-configuration: ''
+      additional-install-commands: ''
+      build-command: ''
+      run-check-code-format: true
+      run-code-analysis: true
+      run-lint: true
+      environment-variables: ''
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

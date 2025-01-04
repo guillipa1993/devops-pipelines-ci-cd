@@ -1,0 +1,29 @@
+name: "CI/CD Pipeline for .NET" #
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  ci-pipeline:
+    uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/dotnet-ci.yml@main
+    with:
+      language: 'dotnet'
+      dotnet-version: '7.0'
+      report-language: 'English'
+      project-path: './src'
+      build-configuration: 'Release'
+      additional-install-commands: ''
+      run-check-code-format: true
+      run-code-analysis: true
+      run-lint: true
+      build-command: ''
+      environment-variables: 'DOTNET_ENV=Production'
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

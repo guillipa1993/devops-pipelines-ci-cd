@@ -1,0 +1,28 @@
+name: "CI/CD Pipeline for Node.js"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  ci-pipeline:
+    uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/nodejs-ci.yml@main
+    with:
+      language: 'node'
+      node-version: '16'
+      report-language: 'English'
+      project-path: './'
+      additional-install-commands: ''
+      build-command: 'npm run build'
+      run-check-code-format: true
+      run-code-analysis: true
+      run-lint: true
+      environment-variables: 'NODE_ENV=Production'
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

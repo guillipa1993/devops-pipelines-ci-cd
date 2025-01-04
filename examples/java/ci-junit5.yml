@@ -1,0 +1,32 @@
+name: "CI/CD Pipeline for Java"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  ci-pipeline:
+    uses: guillipa1993/devops-pipelines-ci-cd/.github/workflows/java-ci.yml@main
+    with:
+      language: 'java'
+      java-version: 'X.X'
+      report-language: 'English'
+      project-path: '.'
+      requirements-path: ''
+      build-configuration: ''
+      additional-install-commands: ''
+      build-command: ''
+      run-check-code-format: true
+      run-code-analysis: true
+      run-lint: true
+      debug-mode: false
+      run-tests: false
+      environment-variables: ''
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
