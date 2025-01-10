@@ -1,4 +1,4 @@
-name: "CI/CD Pipeline for Python" # TEST 7
+name: "CI/CD Pipeline for Python"
 
 on:
   push:
