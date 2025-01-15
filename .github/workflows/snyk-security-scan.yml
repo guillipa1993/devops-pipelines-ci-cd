@@ -17,16 +17,32 @@ on:
         description: "Programming language or tool for vulnerability scanning"
         required: true
         type: string
-      version:
-        description: "Version of the language or tool (if applicable)"
-        required: false
-        type: string
       project-path:
         description: "The project path containing the code to scan"
         required: true
         type: string
       docker-image:
         description: "Docker image for vulnerability scanning"
+        required: false
+        type: string
+      dotnet-version:
+        description: "La versión de .NET para usar en este pipeline"
+        required: false
+        type: string
+      node-version:
+        description: "La versión de Node.js para usar en este pipeline"
+        required: false
+        type: string
+      go-version:
+        description: "La versión de Go para usar en este pipeline"
+        required: false
+        type: string
+      python-version:
+        description: "La versión de Python para usar en este pipeline"
+        required: false
+        type: string
+      java-version:
+        description: "La versión de Java para usar en este pipeline"
         required: false
         type: string
 
@@ -39,35 +55,35 @@ jobs:
 
       # Configuración para lenguajes y herramientas específicos
       - name: Set up Node.js
-        if: ${{ inputs.language == 'node' && inputs.version != '' }}
+        if: ${{ inputs.language == 'node' && inputs.node-version }}
         uses: actions/setup-node@v3
         with:
-          node-version: ${{ inputs.version }}
+          node-version: ${{ inputs.node-version }}
 
       - name: Set up Python
-        if: ${{ inputs.language == 'python' && inputs.version != '' }}
+        if: ${{ inputs.language == 'python' && inputs.python-version }}
         uses: actions/setup-python@v3
         with:
-          python-version: ${{ inputs.version }}
+          python-version: ${{ inputs.python-version }}
 
       - name: Set up .NET
-        if: ${{ inputs.language == 'dotnet' && inputs.version != '' }}
+        if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
         uses: actions/setup-dotnet@v3
         with:
-          dotnet-version: ${{ inputs.version }}
+          dotnet-version: ${{ inputs.dotnet-version }}
 
       - name: Set up Java
-        if: ${{ inputs.language == 'java' && inputs.version != '' }}
+        if: ${{ inputs.language == 'java' && inputs.java-version }}
         uses: actions/setup-java@v3
         with:
-          java-version: ${{ inputs.version }}
+          java-version: ${{ inputs.java-version }}
           distribution: "temurin"
 
       - name: Set up Go
-        if: ${{ inputs.language == 'go' && inputs.version != '' }}
+        if: ${{ inputs.language == 'go' && inputs.go-version }}
         uses: actions/setup-go@v4
         with:
-          go-version: ${{ inputs.version }}
+          go-version: ${{ inputs.go-version }}
 
       # Ejecución de Snyk según el lenguaje o herramienta especificada
       - name: Run Snyk for Node.js
