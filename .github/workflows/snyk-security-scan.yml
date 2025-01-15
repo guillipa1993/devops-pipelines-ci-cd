@@ -73,12 +73,13 @@ jobs:
       - name: Install Python dependencies
         if: ${{ inputs.language == 'python' && inputs.requirements-path }}
         run: |
-          if [ -f "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}/requirements.txt" ]; then
-            pip install -r "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}/requirements.txt"
+          if [ -f "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}requirements.txt" ]; then
+            echo "Installing dependencies from $GITHUB_WORKSPACE/${{ inputs.requirements-path }}requirements.txt"
+            pip install -r "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}requirements.txt"
           else
             echo "No requirements.txt found in $GITHUB_WORKSPACE/${{ inputs.requirements-path }}"
           fi
-
+  
       - name: Set up .NET
         if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
         uses: actions/setup-dotnet@v3
@@ -112,6 +113,7 @@ jobs:
         uses: snyk/actions/python@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          DEBUG: "*snyk*" # Enable debug logs
         with:
           args: test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif-file-output=snyk-python.sarif
 
