@@ -138,9 +138,9 @@ jobs:
           log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-dependencies.log"
 
           # Instalación de dependencias
-          if [ -f "${{ inputs.requirements-path }}requirements.txt" ]; then
+          if [ -s "${{ inputs.requirements-path }}requirements.txt" ]; then
             echo "Installing dependencies from ${{ inputs.requirements-path }}requirements.txt"
-            pip install --timeout 60 --index-url https://pypi.org/simple -r ${{ inputs.requirements-path }}requirements.txt 2>&1 | tee "$log_file"
+            pip install --timeout 30 --retries 3 --index-url https://pypi.org/simple -r "${{ inputs.requirements-path }}requirements.txt" 2>&1 | tee "$log_file"
           elif [ -f "pyproject.toml" ]; then
             echo "Installing dependencies from pyproject.toml"
             pip install . 2>&1 | tee "$log_file"
