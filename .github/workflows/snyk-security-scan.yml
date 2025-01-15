@@ -86,7 +86,7 @@ jobs:
 
       - name: Run Snyk Scan for Code
         if: ${{ inputs.language != 'docker' }}
-        uses: snyk/actions/setup@v2
+        uses: snyk/actions/cli@v2
         with:
           args: test ${{ inputs.project-path }}
         env:
@@ -94,7 +94,7 @@ jobs:
 
       - name: Run Snyk Scan for Docker
         if: ${{ inputs.language == 'docker' && inputs.docker-image }}
-        uses: snyk/actions@v2
+        uses: snyk/actions/cli@v2
         with:
           args: container test ${{ inputs.docker-image }}
         env:
