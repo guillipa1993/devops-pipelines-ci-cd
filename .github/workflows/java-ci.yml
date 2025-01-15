@@ -66,7 +66,7 @@ on:
         required: false
         type: string
       debug-mode:
-        description: 'Habilitar modo de depuración para la build'
+        description: "Habilitar modo de depuración para la build"
         required: false
         type: boolean
 
@@ -129,15 +129,15 @@ jobs:
           else
             echo "SUCCESS : Log file for additional dependencies installation was created!" >&2
           fi
-        
+
       - name: Install dependencies and Save Logs
         run: |
           mkdir -p "${GITHUB_WORKSPACE}/logs"
-      
+
           # Variables dinámicas
           repo_name=$(basename "${GITHUB_REPOSITORY}")
           log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-dependencies.log"
-      
+
           # Instalación de dependencias
           if [ -f "${{ inputs.project-path }}/build.gradle" ]; then
             echo "Installing dependencies using Gradle"
@@ -148,7 +148,7 @@ jobs:
           else
             echo "No build.gradle or pom.xml file found. Skipping dependency installation." 2>&1 | tee "$log_file"
           fi
-      
+
           # Verificación de creación del log
           if [ ! -f "$log_file" ]; then
             echo "ERROR: Log file $log_file was not created!" >&2
@@ -162,7 +162,7 @@ jobs:
           mkdir -p "${GITHUB_WORKSPACE}/logs"
           repo_name=$(basename "${GITHUB_REPOSITORY}")
           log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
-          
+
           if [ -n "${{ inputs.project-path }}" ]; then
             if [ "${{ inputs.debug-mode }}" = "true" ]; then
               echo "Running Gradle build in debug mode (with stacktrace and verbose logs)"
@@ -186,7 +186,7 @@ jobs:
               ./gradlew build 2>&1 | tee "$log_file"
             fi
           fi
-          
+
           # Verificar la existencia del archivo de logs
           if [ ! -f "$log_file" ]; then
             echo "ERROR: Log file $log_file was not created!" >&2
@@ -196,7 +196,7 @@ jobs:
           fi
 
       - name: Move JAR file to workspace
-        id: move-jar  
+        id: move-jar
         run: |
           echo "GITHUB_WORKSPACE is: ${GITHUB_WORKSPACE}"
           echo "Checking if build/libs directory exists..."
@@ -223,10 +223,10 @@ jobs:
             echo "file-exists=false" >> $GITHUB_OUTPUT
           fi
           exit 0
-  
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
-        if: steps.move-jar.outputs.file-exists == 'true' 
+        if: steps.move-jar.outputs.file-exists == 'true'
         with:
           name: ${{ github.event.repository.name }}-${{ github.run_id }}
           path: ${{ github.workspace }}/dist/*.jar
@@ -246,8 +246,8 @@ jobs:
             ls -la $GITHUB_WORKSPACE/logs
           else
             echo "ERROR: Logs directory does not exist in the workspace!"
-          fi      
-     
+          fi
+
       # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
       - name: Debug Storage Account Name
         if: always()
@@ -270,7 +270,7 @@ jobs:
             echo "ERROR: Logs directory is empty or does not exist!" >&2
             exit 1
           fi
-      
+
       # Paso para subir los logs al contenedor de Azure Storage
       - name: Upload Logs to Azure Storage
         if: always()
@@ -289,11 +289,11 @@ jobs:
             echo "ERROR: Logs directory does not exist. Skipping upload." >&2
             exit 1
           fi
-      
+
       - name: Initialize error-detected
         if: always()
         run: echo "error-detected=false" >> $GITHUB_ENV
-      
+
       - name: Debug needs output
         if: always()
         run: |
@@ -304,7 +304,7 @@ jobs:
         run: |
           echo "Error-detected from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
           echo "Nueva variable input error-detected : ${{ inputs.error-detected }}"
-      
+
       - name: Verify and analyze logs for errors
         id: analyze
         if: always()
@@ -333,7 +333,7 @@ jobs:
         run: |
           echo "error-detected (from ENV): ${{ env.error-detected }}"
           echo "error-detected (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
-  
+
       - name: Debug final error-detected
         if: always()
         run: |
@@ -350,7 +350,7 @@ jobs:
       AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
     with:
       language: ${{ inputs.language }}
-      java-version: ${{ inputs.java-version }}  
+      java-version: ${{ inputs.java-version }}
 
   code-analysis:
     name: Code Analysis
@@ -363,7 +363,7 @@ jobs:
     with:
       language: ${{ inputs.language }}
       java-version: ${{ inputs.java-version }}
-      project-path: ${{ inputs.project-path }}  
+      project-path: ${{ inputs.project-path }}
 
   java-lint:
     name: Java Linter
@@ -394,7 +394,7 @@ jobs:
   # Job para ejecutar las pruebas
   summarize_and_create_ticket:
     name: Summarize and Create Ticket
-    needs: [ci_pipeline,analyze_logs]
+    needs: [ci_pipeline, analyze_logs]
     if: always()
     uses: ./.github/workflows/summarize-and-create-ticket.yml
     secrets:

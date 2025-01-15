@@ -4,38 +4,38 @@ on:
   workflow_call:
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME:
-        description: 'Azure Storage Account Name'
+        description: "Azure Storage Account Name"
         required: true
       AZURE_STORAGE_ACCOUNT_KEY:
-        description: 'Azure Storage Account Key'
+        description: "Azure Storage Account Key"
         required: true
     inputs:
       language:
-        description: 'The programming language for vulnerability scanning'
+        description: "The programming language for vulnerability scanning"
         required: true
         type: string
       project-path:
-        description: 'The project path containing the code to scan'
+        description: "The project path containing the code to scan"
         required: true
         type: string
       node-version:
-          description: 'The Node version to use for the pipeline'
-          required: false
-          type: string
+        description: "The Node version to use for the pipeline"
+        required: false
+        type: string
       dotnet-version:
-        description: 'The .NET version to use for the pipeline'
+        description: "The .NET version to use for the pipeline"
         required: false
         type: string
       go-version:
-        description: 'The Go version to use for the pipeline'
+        description: "The Go version to use for the pipeline"
         required: false
         type: string
       python-version:
-        description: 'The Python version to use for the pipeline'
+        description: "The Python version to use for the pipeline"
         required: false
         type: string
       java-version:
-        description: 'The Java version to use for the pipeline'
+        description: "The Java version to use for the pipeline"
         required: false
         type: string
 
@@ -93,24 +93,24 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/logs"
           repo_name="${GITHUB_REPOSITORY##*/}"
           log_name="${repo_name}-${GITHUB_RUN_ID}"
-      
+
           if [ -n "${{ inputs.project-path }}" ]; then
             cd "${{ inputs.project-path }}"
             echo "Changed to project directory: ${{ inputs.project-path }}"
           fi
-      
+
           case "${{ inputs.language }}" in
             python)
               echo "Running Bandit scan for Python"
               bandit -r . -o "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" -f json || true
-      
+
               # Filtrar y convertir solo vulnerabilidades SEVERITY.HIGH a formato log
               if [ -f "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" ]; then
                 echo "Filtering SEVERITY.HIGH and converting JSON to log format"
                 jq -r '.results[] | select(.issue_severity == "HIGH") | 
                 "Filename: \(.filename)\nIssue: \(.issue_text)\nSeverity: \(.issue_severity)\nConfidence: \(.issue_confidence)\nLine: \(.line_number)\nCode:\n\(.code)\nCWE: \(.issue_cwe.id)\nMore Info: \(.more_info)\n---"' \
                 "$GITHUB_WORKSPACE/logs/${log_name}-bandit-output.json" > "$GITHUB_WORKSPACE/logs/${log_name}-bandit-high.log"
-      
+
                 echo "Bandit SEVERITY.HIGH results converted to LOG format successfully."
               else
                 echo "ERROR: Bandit output JSON file not created!" >&2
@@ -152,27 +152,27 @@ jobs:
               echo "Unsupported language: ${{ inputs.language }}" > "$GITHUB_WORKSPACE/logs/${log_name}-unsupported-language.log"
               ;;
           esac
-      
+
           echo "Running global scans for YAML, JSON, and Bash files..."
-      
+
           # YAML validation
           echo "Scanning YAML files..."
           find . -type f \( -name "*.yml" -o -name "*.yaml" \) -exec yamllint {} + > "$GITHUB_WORKSPACE/logs/${log_name}-yaml-vulnerabilities.log" 2>&1 || true
-      
+
           # JSON validation
           echo "Scanning JSON files..."
           find . -type f -name "*.json" -exec jq empty {} + > "$GITHUB_WORKSPACE/logs/${log_name}-json-validation.log" 2>&1 || true
-      
+
           # Bash scripts security check
           echo "Scanning Bash scripts..."
           find . -type f -name "*.sh" -exec shellcheck {} + > "$GITHUB_WORKSPACE/logs/${log_name}-bash-vulnerabilities.log" 2>&1 || true
-      
+
           echo "Global scans completed successfully."
-      
+
           echo "Generated logs:"
           ls -la "$GITHUB_WORKSPACE/logs/"
         continue-on-error: true
-        
+
       - name: Upload Logs to Azure Storage
         run: |
           if [ -d "$GITHUB_WORKSPACE/logs" ]; then

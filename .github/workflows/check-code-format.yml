@@ -4,38 +4,38 @@ on:
   workflow_call:
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME:
-        description: 'Azure Storage Account Name'
+        description: "Azure Storage Account Name"
         required: true
       AZURE_STORAGE_ACCOUNT_KEY:
-        description: 'Azure Storage Account Key'
+        description: "Azure Storage Account Key"
         required: true
     inputs:
       language:
-        description: 'The programming language for the code format check'
+        description: "The programming language for the code format check"
         required: true
         type: string
       project-path:
-        description: 'The project path containing the code'
+        description: "The project path containing the code"
         required: false
         type: string
       dotnet-version:
-        description: 'The .NET version to use for this pipeline'
+        description: "The .NET version to use for this pipeline"
         required: false
         type: string
       node-version:
-        description: 'The Node.js version to use for this pipeline'
+        description: "The Node.js version to use for this pipeline"
         required: false
         type: string
       go-version:
-        description: 'The Go version to use for this pipeline'
+        description: "The Go version to use for this pipeline"
         required: false
         type: string
       python-version:
-        description: 'The Python version to use for this pipeline'
+        description: "The Python version to use for this pipeline"
         required: false
         type: string
       java-version:
-        description: 'The Java version to use for this pipeline'
+        description: "The Java version to use for this pipeline"
         required: false
         type: string
 
@@ -57,7 +57,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "${{ inputs.node-version }}"
-  
+
       - name: Install Black for Python
         if: ${{ inputs.language == 'python' }}
         run: pip install black

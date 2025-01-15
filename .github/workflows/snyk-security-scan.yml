@@ -1,0 +1,104 @@
+name: "Scan Security Vulnerabilities"
+
+on:
+  workflow_call:
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME:
+        description: "Azure Storage Account Name"
+        required: true
+      AZURE_STORAGE_ACCOUNT_KEY:
+        description: "Azure Storage Account Key"
+        required: true
+      SNYK_TOKEN:
+        description: "Snyk API Token"
+        required: true
+    inputs:
+      language:
+        description: "Programming language for vulnerability scanning"
+        required: true
+        type: string
+      project-path:
+        description: "The project path containing the code to scan"
+        required: true
+        type: string
+      node-version:
+        description: "Node.js version for the project (if applicable)"
+        required: false
+        type: string
+      dotnet-version:
+        description: "The .NET version for the project (if applicable)"
+        required: false
+        type: string
+      java-version:
+        description: "Java version for the project (if applicable)"
+        required: false
+        type: string
+      python-version:
+        description: "Python version for the project (if applicable)"
+        required: false
+        type: string
+      go-version:
+        description: "Go version for the project (if applicable)"
+        required: false
+        type: string
+
+jobs:
+  scan-security-vulnerabilities:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        if: ${{ inputs.language == 'node' && inputs.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Set up .NET
+        if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Set up Python
+        if: ${{ inputs.language == 'python' && inputs.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Set up Java
+        if: ${{ inputs.language == 'java' && inputs.java-version }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: "temurin"
+
+      - name: Set up Go
+        if: ${{ inputs.language == 'go' && inputs.go-version }}
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ inputs.go-version }}
+
+      - name: Run Snyk Scan
+        uses: snyk/actions@v2
+        with:
+          args: test
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Upload Logs to Azure Storage
+        run: |
+          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
+            for log in $GITHUB_WORKSPACE/logs/*; do
+              echo "Uploading $log to Azure Storage..."
+              az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+                                     --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+                                     --container-name logs \
+                                     --file "$log" \
+                                     --name "$(basename "$log")" \
+                                     --overwrite
+            done
+          else
+            echo "No logs found to upload."
+        continue-on-error: true

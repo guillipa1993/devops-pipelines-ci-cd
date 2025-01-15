@@ -4,34 +4,34 @@ on:
   workflow_call:
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME:
-        description: 'Azure Storage Account Name'
+        description: "Azure Storage Account Name"
         required: true
       AZURE_STORAGE_ACCOUNT_KEY:
-        description: 'Azure Storage Account Key'
+        description: "Azure Storage Account Key"
         required: true
     inputs:
       language:
-        description: 'The programming language for linting'
+        description: "The programming language for linting"
         required: true
         type: string
       node-version:
-        description: 'La versión de Node para usar en este pipeline'
+        description: "La versión de Node para usar en este pipeline"
         required: false
         type: string
       dotnet-version:
-        description: 'La versión de .NET para usar en este pipeline'
+        description: "La versión de .NET para usar en este pipeline"
         required: false
         type: string
       go-version:
-        description: 'La versión de Go para usar en este pipeline'
+        description: "La versión de Go para usar en este pipeline"
         required: false
         type: string
       python-version:
-        description: 'La versión de Python para usar en este pipeline'
+        description: "La versión de Python para usar en este pipeline"
         required: false
         type: string
       java-version:
-        description: 'La versión de Java para usar en este pipeline'
+        description: "La versión de Java para usar en este pipeline"
         required: false
         type: string
 
@@ -41,7 +41,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-      
+
       - name: Ensure logs directory exists
         run: |
           mkdir -p "${GITHUB_WORKSPACE}/logs"
@@ -83,14 +83,14 @@ jobs:
           if grep -q "ERROR" "$log_file"; then
             echo "Errors detected during Go linting and static checks." >&2
             exit 1
-          fi    
+          fi
 
       - name: Set up Node.js
         if: ${{ inputs.language == 'node' && inputs.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
-          cache: 'npm'
+          cache: "npm"
 
       - name: Install dependencies
         if: ${{ inputs.language == 'node' }}
@@ -114,7 +114,7 @@ jobs:
           echo "Running Node.js linter"
           mkdir -p "${GITHUB_WORKSPACE}/logs"
           log_file="${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-node-linter.log"
-          
+
           # Verificar si existe un script de linting en package.json
           if grep -q '"lint":' package.json; then
             echo "Found 'lint' script in package.json. Running 'npm run lint'." | tee -a "$log_file"
@@ -143,12 +143,12 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: "${{ inputs.python-version }}"
-      
+
       - name: Install Python Linter
         if: ${{ inputs.language == 'python' && inputs.python-version }}
         run: |
           pip install flake8
-      
+
       - name: Run Python Linter and Save Results
         if: ${{ inputs.language == 'python' && inputs.python-version }}
         run: |
@@ -171,7 +171,7 @@ jobs:
               dotnet format --verify-no-changes 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-dotnet-linter.log" || true
             fi
           fi
-        continue-on-error: true 
+        continue-on-error: true
 
       # Ejecutar el linter de Java
       - name: Set up Java
@@ -179,7 +179,7 @@ jobs:
         uses: actions/setup-java@v2
         with:
           java-version: "${{ inputs.java-version }}"
-          distribution: 'temurin'
+          distribution: "temurin"
 
       - name: Run Java Checkstyle
         if: ${{ inputs.language == 'java' }}
@@ -190,9 +190,9 @@ jobs:
             ./gradlew checkstyleMain 2>&1 | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-java-linter.log" || true
           else
             echo "Gradle wrapper not found. Skipping Java linter." | tee -a "${GITHUB_WORKSPACE}/logs/${{ github.event.repository.name }}-${{ github.run_id }}-java-linter.log"
-          fi        
+          fi
         continue-on-error: true
-      
+
       - name: Upload Logs to Azure Storage
         run: |
           if [ -d "$GITHUB_WORKSPACE/logs" ]; then

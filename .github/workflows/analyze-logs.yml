@@ -49,31 +49,31 @@ jobs:
           REPO_NAME="${{ inputs.project-name }}"
           RUN_ID="${{ inputs.run-id }}"
           LOG_NAME_PREFIX="${REPO_NAME}-${RUN_ID}-"
-          
+
           # List all blobs and filter by pattern
           az storage blob list \
             --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
             --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
             --container-name logs \
             --query "[].{name:name}" -o tsv | tee full_blob_list.txt
-          
+
           echo "Filtering blobs that match the pattern: ${LOG_NAME_PREFIX}*.log"
           grep "^${LOG_NAME_PREFIX}" full_blob_list.txt > matching_blobs.txt
-          
+
           echo "Matching blobs:"
           if [ -s matching_blobs.txt ]; then
             cat matching_blobs.txt
           else
             echo "No matching logs found for pattern: ${LOG_NAME_PREFIX}*.log"
           fi
-      
+
           # Confirm the results
           echo "Full blob list:"
           cat full_blob_list.txt
         env:
           AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
           AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
-        
+
       - name: Download All Logs Matching Pattern from Azure Storage
         run: |
           mkdir -p $GITHUB_WORKSPACE/logs

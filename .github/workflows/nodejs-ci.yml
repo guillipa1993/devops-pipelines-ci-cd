@@ -78,7 +78,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
-          cache: 'npm'
+          cache: "npm"
 
       - name: Set Azure Environment Variables
         run: |
@@ -122,11 +122,11 @@ jobs:
       - name: Install dependencies and Save Logs
         run: |
           mkdir -p "${GITHUB_WORKSPACE}/logs"
-          
+
           # Variables dinámicas
           repo_name=$(basename "${GITHUB_REPOSITORY}")
           log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-dependencies.log"
-          
+
           # Instalación de dependencias
           if [ -f "package.json" ]; then
             echo "Installing dependencies using package.json"
@@ -134,7 +134,7 @@ jobs:
           else
             echo "No package.json file found. Skipping dependency installation." 2>&1 | tee "$log_file"
           fi
-          
+
           # Verificación de creación del log
           if [ ! -f "$log_file" ]; then
             echo "ERROR: Log file $log_file was not created!" >&2
@@ -148,18 +148,18 @@ jobs:
         run: |
           echo "Starting the build process for the Node.js project"
           mkdir -p "${GITHUB_WORKSPACE}/logs"
-      
+
           # Variables dinámicas
           repo_name=$(basename "${{ github.repository }}")
           log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-build.log"
-      
+
           # Función para registrar errores y manejar fallos
           log_and_exit_on_failure() {
             local message=$1
             echo "ERROR: $message" | tee -a "$log_file" >&2
             exit 1
           }
-      
+
           # Comprobar si existe un comando de build personalizado
           if [[ -n "${{ inputs.build-command }}" ]]; then
               echo "Using custom build command" | tee -a "$log_file"
@@ -178,19 +178,19 @@ jobs:
           else
               log_and_exit_on_failure "No build configuration found (missing package.json)."
           fi
-      
+
           # Comprobar si el log contiene errores críticos
           if grep -qi "ERROR" "$log_file"; then
               log_and_exit_on_failure "Build logs contain 'ERROR'. Check logs for details."
           fi
-      
+
           # Confirmar que el archivo de log se creó correctamente
           if [[ ! -f "$log_file" ]]; then
               log_and_exit_on_failure "Log file $log_file was not created!"
           else
               echo "SUCCESS: Build completed successfully, and log file was created at $log_file" | tee -a "$log_file"
           fi
-        continue-on-error: false        
+        continue-on-error: false
 
       - name: Debug Logs Directory
         if: always()
@@ -206,8 +206,8 @@ jobs:
             ls -la $GITHUB_WORKSPACE/logs
           else
             echo "ERROR: Logs directory does not exist in the workspace!"
-          fi      
-     
+          fi
+
       # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
       - name: Debug Storage Account Name
         if: always()
@@ -248,11 +248,11 @@ jobs:
             echo "ERROR: Logs directory does not exist. Skipping upload." >&2
             exit 1
           fi
-      
+
       - name: Initialize error-detected
         if: always()
         run: echo "error-detected=false" >> $GITHUB_ENV
-      
+
       - name: Debug needs output
         if: always()
         run: |
@@ -263,7 +263,7 @@ jobs:
         run: |
           echo "Error-detected from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
           echo "Nueva variable input error-detected : ${{ inputs.error-detected }}"
-      
+
       - name: Verify and analyze logs for errors
         id: analyze
         if: always()
@@ -292,13 +292,13 @@ jobs:
         run: |
           echo "error-detected (from ENV): ${{ env.error-detected }}"
           echo "error-detected (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
-  
+
       - name: Debug final error-detected
         if: always()
         run: |
           echo "Final error-detected value (from ENV): ${{ inputs.error-detected }} || 'not set' }}"
           echo "Final error-detected value (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
-        
+
   # Job separado para formatear código y recopilar logs
   check-code-format:
     name: Check Code Format
@@ -354,7 +354,7 @@ jobs:
 
   summarize_and_create_ticket:
     name: Summarize and Create Ticket
-    needs: [ci_pipeline,analyze_logs]
+    needs: [ci_pipeline, analyze_logs]
     if: always()
     uses: ./.github/workflows/summarize-and-create-ticket.yml
     secrets:

@@ -4,25 +4,25 @@ on:
   workflow_call:
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME:
-        description: 'Azure Storage Account Name'
+        description: "Azure Storage Account Name"
         required: true
       AZURE_STORAGE_ACCOUNT_KEY:
-        description: 'Azure Storage Account Key'
+        description: "Azure Storage Account Key"
         required: true
       OPENAI_API_KEY:
-        description: 'OpenAI API Key'
+        description: "OpenAI API Key"
         required: true
     inputs:
       dotnet-version:
-        description: 'La versión de .NET para usar en este pipeline'
+        description: "La versión de .NET para usar en este pipeline"
         required: true
         type: string
       language:
-        description: 'El lenguaje de programación para usar en este pipeline'
+        description: "El lenguaje de programación para usar en este pipeline"
         required: true
         type: string
       project-path:
-        description: 'La ruta del proyecto donde se encuentran los archivos .csproj'
+        description: "La ruta del proyecto donde se encuentran los archivos .csproj"
         required: true
         type: string
       build-command:
@@ -30,27 +30,27 @@ on:
         required: false
         type: string
       build-configuration:
-        description: 'Configuración de build (Debug o Release)'
+        description: "Configuración de build (Debug o Release)"
         required: true
         type: string
       additional-install-commands:
-        description: 'Comandos adicionales para instalar dependencias antes de construir'
+        description: "Comandos adicionales para instalar dependencias antes de construir"
         required: false
         type: string
       report-language:
-        description: 'Idioma en el que se generará el informe (por ejemplo: English, Spanish, French, German, Italian). Por defecto, se utiliza inglés si no se especifica.'
+        description: "Idioma en el que se generará el informe (por ejemplo: English, Spanish, French, German, Italian). Por defecto, se utiliza inglés si no se especifica."
         required: false
         type: string
       run-check-code-format:
-        description: 'Ejecutar la verificación del formato del código'
+        description: "Ejecutar la verificación del formato del código"
         required: true
         type: boolean
       run-code-analysis:
-        description: 'Ejecutar el análisis de código'
+        description: "Ejecutar el análisis de código"
         required: true
         type: boolean
       run-lint:
-        description: 'Ejecutar Lint'
+        description: "Ejecutar Lint"
         required: true
         type: boolean
       environment-variables:
@@ -85,11 +85,11 @@ jobs:
           echo "Setting Azure environment variables..."
           echo "AZURE_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" >> $GITHUB_ENV
           echo "AZURE_STORAGE_ACCOUNT_KEY=${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" >> $GITHUB_ENV
-      
+
       - name: Set OpenAI API Key
         run: |
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
-      
+
       - name: Verify Secrets
         run: |
           echo "Azure Account Name: ${AZURE_STORAGE_ACCOUNT_NAME}"
@@ -105,7 +105,7 @@ jobs:
             echo "Setting $VAR"
             echo "$VAR" >> $GITHUB_ENV
           done
-      
+
       - name: Install additional dependencies
         if: ${{ inputs.additional-install-commands }}
         run: |
@@ -128,7 +128,7 @@ jobs:
           # Variables dinámicas
           repo_name=$(basename "${GITHUB_REPOSITORY}")
           log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-dependencies.log"
-      
+
           dotnet restore ${{ inputs.project-path }} 2>&1 | tee "$log_file"
 
           # Verificación de creación del log
@@ -144,12 +144,12 @@ jobs:
         run: |
           echo "Starting the build process for all .NET projects"
           mkdir -p "${GITHUB_WORKSPACE}/logs"
-      
+
           # Variables dinámicas
           repo_name="$${{ github.repository }}"  # Asegúrate de que inputs.project-name sea modular-todo-app
           consolidated_log="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-consolidated-build.log"
           touch "$consolidated_log"
-      
+
           # Buscar todos los archivos .csproj dentro del project-path
           find "${{ inputs.project-path }}" -type f -name "*.csproj" | while read -r project_file; do
             project_name=$(basename "$project_file" .csproj | sed 's/\.//g')
@@ -157,30 +157,30 @@ jobs:
             
             echo "Building project: $project_name"
             echo "Log file: $project_log"
-      
+
             # Construir el proyecto
             dotnet build "$project_file" --configuration "${{ inputs.build-configuration }}" 2>&1 | tee "$project_log"
             build_status=${PIPESTATUS[0]}
-      
+
             # Consolidar el log
             echo "======== Log for $project_name ========" >> "$consolidated_log"
             cat "$project_log" >> "$consolidated_log"
             echo "" >> "$consolidated_log"
-      
+
             # Verificar errores en el build actual
             if [ $build_status -ne 0 ]; then
               echo "ERROR: Build failed for project $project_name. See logs for details."
             fi
           done
-      
+
           # Verificar si hay errores en el log consolidado
           if grep -qiE "(ERROR|Build FAILED)" "$consolidated_log"; then
               echo "ERROR: Build logs contain errors. Check the consolidated log for details."
               exit 1
           else
               echo "SUCCESS: All projects built successfully!"
-          fi        
-      
+          fi
+
       - name: Move build artifacts to workspace
         run: |
           echo "GITHUB_WORKSPACE is: ${GITHUB_WORKSPACE}"
@@ -211,7 +211,7 @@ jobs:
           name: ${{ github.event.repository.name }}-${{ github.run_id }}
           path: ${{ github.workspace }}/dist/**
           if-no-files-found: ignore
-        
+
       - name: Debug Logs Directory
         run: |
           echo "Current working directory: $(pwd)"
@@ -225,8 +225,8 @@ jobs:
             ls -la $GITHUB_WORKSPACE/logs
           else
             echo "ERROR: Logs directory does not exist in the workspace!"
-          fi      
-     
+          fi
+
       # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
       - name: Debug Storage Account Name
         if: always()
@@ -238,7 +238,7 @@ jobs:
           else
             echo "Account Name: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}"
           fi
-      
+
       - name: Verify Logs Directory
         if: always()
         run: |
@@ -274,7 +274,7 @@ jobs:
         run: |
           echo "Error-detected from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
           echo "Nueva variable input error-detected : ${{ inputs.error-detected }}"
-      
+
       - name: Verify and analyze logs for errors
         id: analyze
         if: always()
@@ -303,13 +303,13 @@ jobs:
         run: |
           echo "error-detected (from ENV): ${{ env.error-detected }}"
           echo "error-detected (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
-  
+
       - name: Debug final error-detected
         if: always()
         run: |
           echo "Final error-detected value (from ENV): ${{ inputs.error-detected }} || 'not set' }}"
           echo "Final error-detected value (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
-        
+
   # Job separado para formatear código y recopilar logs
   check-code-format:
     name: Check Code Format
@@ -334,7 +334,7 @@ jobs:
       AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
     with:
       language: ${{ inputs.language }}
-      dotnet-version: ${{ inputs.dotnet-version }} 
+      dotnet-version: ${{ inputs.dotnet-version }}
       project-path: ${{ inputs.project-path }}
 
   # Job separado para ejecutar YAML Lint
@@ -364,7 +364,7 @@ jobs:
 
   summarize_and_create_ticket:
     name: Summarize and Create Ticket
-    needs: [ci_pipeline,analyze_logs]
+    needs: [ci_pipeline, analyze_logs]
     if: always()
     uses: ./.github/workflows/summarize-and-create-ticket.yml
     secrets:

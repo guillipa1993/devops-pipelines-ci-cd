@@ -222,7 +222,7 @@ jobs:
 
       - name: Upload Go build artifact
         uses: actions/upload-artifact@v4
-        if: steps.move-go-binary.outputs.file-exists == 'true'  # Condición basada en la salida
+        if: steps.move-go-binary.outputs.file-exists == 'true' # Condición basada en la salida
         with:
           name: ${{ github.event.repository.name }}-${{ github.run_id }}
           path: ${{ github.workspace }}/dist/app
@@ -242,8 +242,8 @@ jobs:
             ls -la $GITHUB_WORKSPACE/logs
           else
             echo "ERROR: Logs directory does not exist in the workspace!"
-          fi      
-     
+          fi
+
       # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
       - name: Debug Storage Account Name
         if: always()
@@ -266,7 +266,7 @@ jobs:
             echo "ERROR: Logs directory is empty or does not exist!" >&2
             exit 1
           fi
-      
+
       # Paso para subir los logs al contenedor de Azure Storage
       - name: Upload Logs to Azure Storage
         if: always()
@@ -285,11 +285,11 @@ jobs:
             echo "ERROR: Logs directory does not exist. Skipping upload." >&2
             exit 1
           fi
-      
+
       - name: Initialize error-detected
         if: always()
         run: echo "error-detected=false" >> $GITHUB_ENV
-      
+
       - name: Debug needs output
         if: always()
         run: |
@@ -300,7 +300,7 @@ jobs:
         run: |
           echo "Error-detected from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
           echo "Nueva variable input error-detected : ${{ inputs.error-detected }}"
-      
+
       - name: Verify and analyze logs for errors
         id: analyze
         if: always()
@@ -329,13 +329,13 @@ jobs:
         run: |
           echo "error-detected (from ENV): ${{ env.error-detected }}"
           echo "error-detected (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
-  
+
       - name: Debug final error-detected
         if: always()
         run: |
           echo "Final error-detected value (from ENV): ${{ inputs.error-detected }} || 'not set' }}"
           echo "Final error-detected value (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
-        
+
   # Job separado para formatear código y recopilar logs
   check-code-format:
     name: Check Code Format
@@ -388,10 +388,10 @@ jobs:
       project-name: ${{ github.event.repository.name }}
       run-id: ${{ github.run_id }}
       log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
-            
+
   summarize_and_create_ticket:
     name: Summarize and Create Ticket
-    needs: [ci_pipeline,analyze_logs]
+    needs: [ci_pipeline, analyze_logs]
     if: always()
     uses: ./.github/workflows/summarize-and-create-ticket.yml
     secrets:

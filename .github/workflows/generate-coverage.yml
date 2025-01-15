@@ -4,27 +4,27 @@ on:
   workflow_call:
     inputs:
       language:
-        description: 'The programming language for generating the coverage report'
+        description: "The programming language for generating the coverage report"
         required: true
         type: string
       dotnet-version:
-        description: 'La versión de .NET para usar en este pipeline'
+        description: "La versión de .NET para usar en este pipeline"
         required: false
         type: string
       node-version:
-        description: 'La versión de Node.js para usar en este pipeline'
+        description: "La versión de Node.js para usar en este pipeline"
         required: false
         type: string
       go-version:
-        description: 'La versión de Go para usar en este pipeline'
+        description: "La versión de Go para usar en este pipeline"
         required: false
         type: string
       python-version:
-        description: 'La versión de Python para usar en este pipeline'
+        description: "La versión de Python para usar en este pipeline"
         required: false
         type: string
       java-version:
-        description: 'La versión de Java para usar en este pipeline'
+        description: "La versión de Java para usar en este pipeline"
         required: false
         type: string
 

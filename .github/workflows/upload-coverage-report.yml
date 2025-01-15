@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       language:
-        description: 'The programming language for uploading the coverage report'
+        description: "The programming language for uploading the coverage report"
         required: true
         type: string
 

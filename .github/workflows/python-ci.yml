@@ -12,6 +12,9 @@ on:
       OPENAI_API_KEY:
         description: "OpenAI API Key"
         required: true
+      SNYK_TOKEN:
+        description: "Snyk API Token"
+        required: true
     inputs:
       python-version:
         description: "La versión de Python para usar en este pipeline"
@@ -55,6 +58,10 @@ on:
         type: boolean
       run-lint:
         description: "Ejecutar Lint"
+        required: true
+        type: boolean
+      run-snyk:
+        description: "Ejecutar Snyk"
         required: true
         type: boolean
       environment-variables:
@@ -121,15 +128,15 @@ jobs:
           else
             echo "SUCCESS : Log file for additional dependencies installation was created!" >&2
           fi
-        
+
       - name: Install dependencies and Save Logs
         run: |
           mkdir -p "${GITHUB_WORKSPACE}/logs"
-      
+
           # Variables dinámicas
           repo_name=$(basename "${GITHUB_REPOSITORY}")
           log_file="${GITHUB_WORKSPACE}/logs/${repo_name}-${{ github.run_id }}-dependencies.log"
-      
+
           # Instalación de dependencias
           if [ -f "${{ inputs.requirements-path }}requirements.txt" ]; then
             echo "Installing dependencies from ${{ inputs.requirements-path }}requirements.txt"
@@ -140,7 +147,7 @@ jobs:
           else
             echo "No requirements or pyproject.toml file found. Skipping dependency installation." 2>&1 | tee "$log_file"
           fi
-      
+
           # Verificación de creación del log
           if [ ! -f "$log_file" ]; then
             echo "ERROR: Log file $log_file was not created!" >&2
@@ -206,7 +213,7 @@ jobs:
         continue-on-error: true
 
       - name: Move wheel file to workspace
-        id: move-wheel  
+        id: move-wheel
         run: |
           echo "GITHUB_WORKSPACE is: ${GITHUB_WORKSPACE}"
           echo "Searching for wheel files..."
@@ -227,10 +234,10 @@ jobs:
             echo "WARNING: No wheel file found. Skipping artifact upload." >&2
             echo "file-exists=false" >> $GITHUB_OUTPUT
           fi
-        
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
-        if: steps.move-wheel.outputs.file-exists == 'true'  # Condición basada en la salida
+        if: steps.move-wheel.outputs.file-exists == 'true' # Condición basada en la salida
         with:
           name: ${{ github.event.repository.name }}-${{ github.run_id }}
           path: ${{ github.workspace }}/dist/*.whl
@@ -250,8 +257,8 @@ jobs:
             ls -la $GITHUB_WORKSPACE/logs
           else
             echo "ERROR: Logs directory does not exist in the workspace!"
-          fi      
-     
+          fi
+
       # Paso para verificar si el nombre de la cuenta de almacenamiento está configurado
       - name: Debug Storage Account Name
         if: always()
@@ -274,7 +281,7 @@ jobs:
             echo "ERROR: Logs directory is empty or does not exist!" >&2
             exit 1
           fi
-      
+
       # Paso para subir los logs al contenedor de Azure Storage
       - name: Upload Logs to Azure Storage
         if: always()
@@ -293,11 +300,11 @@ jobs:
             echo "ERROR: Logs directory does not exist. Skipping upload." >&2
             exit 1
           fi
-      
+
       - name: Initialize error-detected
         if: always()
         run: echo "error-detected=false" >> $GITHUB_ENV
-      
+
       - name: Debug needs output
         if: always()
         run: |
@@ -308,7 +315,7 @@ jobs:
         run: |
           echo "Error-detected from ci_pipeline: ${{ needs.ci_pipeline.outputs.error-detected }}"
           echo "Nueva variable input error-detected : ${{ inputs.error-detected }}"
-      
+
       - name: Verify and analyze logs for errors
         id: analyze
         if: always()
@@ -337,13 +344,13 @@ jobs:
         run: |
           echo "error-detected (from ENV): ${{ env.error-detected }}"
           echo "error-detected (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
-  
+
       - name: Debug final error-detected
         if: always()
         run: |
           echo "Final error-detected value (from ENV): ${{ inputs.error-detected }} || 'not set' }}"
           echo "Final error-detected value (from OUTPUT): ${{ steps.analyze.outputs.error-detected || 'not set' }}"
-        
+
   # Job separado para formatear código y recopilar logs
   check-code-format:
     name: Check Code Format
@@ -383,6 +390,20 @@ jobs:
       language: ${{ inputs.language }}
       python-version: ${{ inputs.python-version }}
 
+  snyk_python:
+    name: Snyk Python
+    needs: ci_pipeline
+    if: ${{ inputs.run-snyk }}
+    uses: ./.github/workflows/snyk-security-scan.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    with:
+      project-name: ${{ github.event.repository.name }}
+      language: ${{ inputs.language }}
+      python-version: ${{ inputs.python-version }}
+
   analyze_logs:
     name: Analyze Success Logs
     needs: [ci_pipeline, check-code-format, code-analysis, python-lint]
@@ -399,7 +420,7 @@ jobs:
 
   summarize_and_create_ticket:
     name: Summarize and Create Ticket
-    needs: [ci_pipeline,analyze_logs]
+    needs: [ci_pipeline, analyze_logs]
     if: always()
     uses: ./.github/workflows/summarize-and-create-ticket.yml
     secrets:
