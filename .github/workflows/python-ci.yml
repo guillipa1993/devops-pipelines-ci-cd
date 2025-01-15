@@ -406,7 +406,8 @@ jobs:
 
   analyze_logs:
     name: Analyze Success Logs
-    needs: [ci_pipeline, check-code-format, code-analysis, python-lint, snyk_python]
+    needs:
+      [ci_pipeline, check-code-format, code-analysis, python-lint, snyk_python]
     if: always()
     uses: ./.github/workflows/analyze-logs.yml
     secrets:
