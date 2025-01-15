@@ -39,32 +39,32 @@ jobs:
 
       # Configuración para lenguajes y herramientas específicos
       - name: Set up Node.js
-        if: ${{ inputs.language == 'node' && inputs.version }}
+        if: ${{ inputs.language == 'node' && inputs.version != '' }}
         uses: actions/setup-node@v3
         with:
           node-version: ${{ inputs.version }}
 
       - name: Set up Python
-        if: ${{ inputs.language == 'python' && inputs.version }}
+        if: ${{ inputs.language == 'python' && inputs.version != '' }}
         uses: actions/setup-python@v3
         with:
           python-version: ${{ inputs.version }}
 
       - name: Set up .NET
-        if: ${{ inputs.language == 'dotnet' && inputs.version }}
+        if: ${{ inputs.language == 'dotnet' && inputs.version != '' }}
         uses: actions/setup-dotnet@v3
         with:
           dotnet-version: ${{ inputs.version }}
 
       - name: Set up Java
-        if: ${{ inputs.language == 'java' && inputs.version }}
+        if: ${{ inputs.language == 'java' && inputs.version != '' }}
         uses: actions/setup-java@v3
         with:
           java-version: ${{ inputs.version }}
           distribution: "temurin"
 
       - name: Set up Go
-        if: ${{ inputs.language == 'go' && inputs.version }}
+        if: ${{ inputs.language == 'go' && inputs.version != '' }}
         uses: actions/setup-go@v4
         with:
           go-version: ${{ inputs.version }}
@@ -80,7 +80,7 @@ jobs:
 
       - name: Run Snyk for Python
         if: ${{ inputs.language == 'python' }}
-        uses: snyk/actions/python-${{ inputs.version }}@master
+        uses: snyk/actions/python@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -96,7 +96,7 @@ jobs:
 
       - name: Run Snyk for Java (Maven/Gradle)
         if: ${{ inputs.language == 'java' }}
-        uses: snyk/actions/maven-${{ inputs.version }}@master
+        uses: snyk/actions/maven@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -111,7 +111,7 @@ jobs:
           args: --sarif-file-output=snyk-go.sarif
 
       - name: Run Snyk for Docker
-        if: ${{ inputs.language == 'docker' && inputs.docker-image }}
+        if: ${{ inputs.language == 'docker' && inputs.docker-image != '' }}
         uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -120,9 +120,10 @@ jobs:
 
       # Subida de resultados SARIF a GitHub Code Scanning
       - name: Upload SARIF to GitHub Code Scanning
+        if: ${{ inputs.language != '' }}
         uses: github/codeql-action/upload-sarif@v2
         with:
-            sarif_file: ${{ inputs.language == 'node' && 'snyk-node.sarif' || inputs.language == 'python' && 'snyk-python.sarif' || inputs.language == 'dotnet' && 'snyk-dotnet.sarif' || inputs.language == 'java' && 'snyk-java.sarif' || inputs.language == 'go' && 'snyk-go.sarif' || inputs.language == 'docker' && 'snyk-docker.sarif' }}
+          sarif_file: snyk-${{ inputs.language }}.sarif
 
       # Mostrar enlace al Dashboard de Snyk
       - name: Show Snyk Dashboard Link
@@ -155,4 +156,4 @@ jobs:
 
       - name: Show Snyk Dashboard Link
         run: |
-          echo "To view detailed results, visit: https://app.snyk.io/org/<your-org>/projects"
+          echo "To view detailed results, visit: https://app.snyk.io/org/guillipa1993/projects"
