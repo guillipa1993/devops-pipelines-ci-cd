@@ -400,7 +400,6 @@ jobs:
       AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     with:
-      project-name: ${{ github.event.repository.name }}
       language: ${{ inputs.language }}
       python-version: ${{ inputs.python-version }}
       project-path: ${{ inputs.project-path }}
