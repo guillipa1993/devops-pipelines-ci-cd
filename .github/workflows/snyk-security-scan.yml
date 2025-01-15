@@ -41,6 +41,10 @@ on:
         description: "Go version for the project (if applicable)"
         required: false
         type: string
+      docker-image:
+        description: "Docker image for vulnerability scanning"
+        required: false
+        type: string
 
 jobs:
   scan-security-vulnerabilities:
@@ -80,10 +84,27 @@ jobs:
         with:
           go-version: ${{ inputs.go-version }}
 
-      - name: Run Snyk Scan
+      - name: Run Snyk Scan for Code
+        if: ${{ inputs.language != 'docker' }}
+        uses: snyk/actions/setup@v2
+        with:
+          args: test ${{ inputs.project-path }}
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Run Snyk Scan for Docker
+        if: ${{ inputs.language == 'docker' && inputs.docker-image }}
         uses: snyk/actions@v2
         with:
-          args: test
+          args: container test ${{ inputs.docker-image }}
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Generate Snyk Report
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/logs"
+          snyk test --json > "$GITHUB_WORKSPACE/logs/snyk-report-${{ github.run_id }}.json"
+          snyk test --sarif > "$GITHUB_WORKSPACE/logs/snyk-report-${{ github.run_id }}.sarif"
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
@@ -102,3 +123,7 @@ jobs:
           else
             echo "No logs found to upload."
         continue-on-error: true
+
+      - name: Show Snyk Dashboard Link
+        run: |
+          echo "To view detailed results, visit: https://app.snyk.io/org/<your-org>/projects"
