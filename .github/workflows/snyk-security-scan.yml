@@ -21,6 +21,10 @@ on:
         description: "The project path containing the code to scan"
         required: true
         type: string
+      requirements-path:
+        description: "The path to requirements.txt or equivalent"
+        required: false
+        type: string
       docker-image:
         description: "Docker image for vulnerability scanning"
         required: false
@@ -66,6 +70,15 @@ jobs:
         with:
           python-version: ${{ inputs.python-version }}
 
+      - name: Install Python dependencies
+        if: ${{ inputs.language == 'python' && inputs.requirements-path }}
+        run: |
+          if [ -f "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}/requirements.txt" ]; then
+            pip install -r "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}/requirements.txt"
+          else
+            echo "No requirements.txt found in $GITHUB_WORKSPACE/${{ inputs.requirements-path }}"
+          fi
+
       - name: Set up .NET
         if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
         uses: actions/setup-dotnet@v3
@@ -92,7 +105,7 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          args: --sarif-file-output=snyk-node.sarif
+          args: test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif-file-output=snyk-node.sarif
 
       - name: Run Snyk for Python
         if: ${{ inputs.language == 'python' }}
@@ -100,7 +113,7 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          args: --sarif-file-output=snyk-python.sarif
+          args: test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif-file-output=snyk-python.sarif
 
       - name: Run Snyk for .NET
         if: ${{ inputs.language == 'dotnet' }}
@@ -108,7 +121,7 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          args: --sarif-file-output=snyk-dotnet.sarif
+          args: test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif-file-output=snyk-dotnet.sarif
 
       - name: Run Snyk for Java (Maven/Gradle)
         if: ${{ inputs.language == 'java' }}
@@ -116,7 +129,7 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          args: --sarif-file-output=snyk-java.sarif
+          args: test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif-file-output=snyk-java.sarif
 
       - name: Run Snyk for Go
         if: ${{ inputs.language == 'go' }}
@@ -124,7 +137,7 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          args: --sarif-file-output=snyk-go.sarif
+          args: test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif-file-output=snyk-go.sarif
 
       - name: Run Snyk for Docker
         if: ${{ inputs.language == 'docker' && inputs.docker-image != '' }}
@@ -149,8 +162,8 @@ jobs:
       - name: Generate Snyk Report
         run: |
           mkdir -p "$GITHUB_WORKSPACE/logs"
-          snyk test --json > "$GITHUB_WORKSPACE/logs/snyk-report-${{ github.run_id }}.json"
-          snyk test --sarif > "$GITHUB_WORKSPACE/logs/snyk-report-${{ github.run_id }}.sarif"
+          snyk test $GITHUB_WORKSPACE/${{ inputs.project-path }} --json > "$GITHUB_WORKSPACE/logs/snyk-report-${{ github.run_id }}.json"
+          snyk test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif > "$GITHUB_WORKSPACE/logs/snyk-report-${{ github.run_id }}.sarif"
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 

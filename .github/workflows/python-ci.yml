@@ -403,6 +403,7 @@ jobs:
       language: ${{ inputs.language }}
       python-version: ${{ inputs.python-version }}
       project-path: ${{ inputs.project-path }}
+      requirements-path: ${{ inputs.requirements-path }}
 
   analyze_logs:
     name: Analyze Success Logs
