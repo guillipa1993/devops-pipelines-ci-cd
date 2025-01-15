@@ -14,32 +14,16 @@ on:
         required: true
     inputs:
       language:
-        description: "Programming language for vulnerability scanning"
+        description: "Programming language or tool for vulnerability scanning"
         required: true
+        type: string
+      version:
+        description: "Version of the language or tool (if applicable)"
+        required: false
         type: string
       project-path:
         description: "The project path containing the code to scan"
         required: true
-        type: string
-      node-version:
-        description: "Node.js version for the project (if applicable)"
-        required: false
-        type: string
-      dotnet-version:
-        description: "The .NET version for the project (if applicable)"
-        required: false
-        type: string
-      java-version:
-        description: "Java version for the project (if applicable)"
-        required: false
-        type: string
-      python-version:
-        description: "Python version for the project (if applicable)"
-        required: false
-        type: string
-      go-version:
-        description: "Go version for the project (if applicable)"
-        required: false
         type: string
       docker-image:
         description: "Docker image for vulnerability scanning"
@@ -53,52 +37,103 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      # Configuración para lenguajes y herramientas específicos
       - name: Set up Node.js
-        if: ${{ inputs.language == 'node' && inputs.node-version }}
+        if: ${{ inputs.language == 'node' && inputs.version }}
         uses: actions/setup-node@v3
         with:
-          node-version: ${{ inputs.node-version }}
-
-      - name: Set up .NET
-        if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
-        uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: ${{ inputs.dotnet-version }}
+          node-version: ${{ inputs.version }}
 
       - name: Set up Python
-        if: ${{ inputs.language == 'python' && inputs.python-version }}
+        if: ${{ inputs.language == 'python' && inputs.version }}
         uses: actions/setup-python@v3
         with:
-          python-version: ${{ inputs.python-version }}
+          python-version: ${{ inputs.version }}
+
+      - name: Set up .NET
+        if: ${{ inputs.language == 'dotnet' && inputs.version }}
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: ${{ inputs.version }}
 
       - name: Set up Java
-        if: ${{ inputs.language == 'java' && inputs.java-version }}
+        if: ${{ inputs.language == 'java' && inputs.version }}
         uses: actions/setup-java@v3
         with:
-          java-version: ${{ inputs.java-version }}
+          java-version: ${{ inputs.version }}
           distribution: "temurin"
 
       - name: Set up Go
-        if: ${{ inputs.language == 'go' && inputs.go-version }}
+        if: ${{ inputs.language == 'go' && inputs.version }}
         uses: actions/setup-go@v4
         with:
-          go-version: ${{ inputs.go-version }}
+          go-version: ${{ inputs.version }}
 
-      - name: Run Snyk Scan for Code
-        if: ${{ inputs.language != 'docker' }}
-        uses: snyk/actions/cli@v2
-        with:
-          args: test ${{ inputs.project-path }}
+      # Ejecución de Snyk según el lenguaje o herramienta especificada
+      - name: Run Snyk for Node.js
+        if: ${{ inputs.language == 'node' }}
+        uses: snyk/actions/node@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --sarif-file-output=snyk-node.sarif
 
-      - name: Run Snyk Scan for Docker
+      - name: Run Snyk for Python
+        if: ${{ inputs.language == 'python' }}
+        uses: snyk/actions/python-${{ inputs.version }}@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --sarif-file-output=snyk-python.sarif
+
+      - name: Run Snyk for .NET
+        if: ${{ inputs.language == 'dotnet' }}
+        uses: snyk/actions/dotnet@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --sarif-file-output=snyk-dotnet.sarif
+
+      - name: Run Snyk for Java (Maven/Gradle)
+        if: ${{ inputs.language == 'java' }}
+        uses: snyk/actions/maven-${{ inputs.version }}@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --sarif-file-output=snyk-java.sarif
+
+      - name: Run Snyk for Go
+        if: ${{ inputs.language == 'go' }}
+        uses: snyk/actions/golang@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --sarif-file-output=snyk-go.sarif
+
+      - name: Run Snyk for Docker
         if: ${{ inputs.language == 'docker' && inputs.docker-image }}
-        uses: snyk/actions/cli@v2
-        with:
-          args: container test ${{ inputs.docker-image }}
+        uses: snyk/actions/docker@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: container test ${{ inputs.docker-image }} --sarif-file-output=snyk-docker.sarif
+
+      # Subida de resultados SARIF a GitHub Code Scanning
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: |
+            ${{ inputs.language == 'node' && 'snyk-node.sarif' ||
+               inputs.language == 'python' && 'snyk-python.sarif' ||
+               inputs.language == 'dotnet' && 'snyk-dotnet.sarif' ||
+               inputs.language == 'java' && 'snyk-java.sarif' ||
+               inputs.language == 'go' && 'snyk-go.sarif' ||
+               inputs.language == 'docker' && 'snyk-docker.sarif' }}
+
+      # Mostrar enlace al Dashboard de Snyk
+      - name: Show Snyk Dashboard Link
+        run: |
+          echo "View results in Snyk Dashboard: https://app.snyk.io/org/guillipa1993/projects"
 
       - name: Generate Snyk Report
         run: |
