@@ -47,7 +47,7 @@ on:
         type: string
 
 jobs:
-  scan-security-vulnerabilities:
+  snyk-scan-security:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
