@@ -74,10 +74,12 @@ on:
         description: "Variables de entorno para configurar en el pipeline (formato: 'VAR1=value1, VAR2=value2')"
         required: false
         type: string
-      jira-project-key: 'Reference to the Jira Project'
+      jira-project-key: 
+        description: 'Reference to the Jira Project'
         required: true
         type: string
-      jira-url: 'URL from Jira Cloud instance'
+      jira-url: 
+        description: 'URL from Jira Cloud instance'
         required: true
         type: string
 
