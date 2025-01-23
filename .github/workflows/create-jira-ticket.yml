@@ -27,10 +27,12 @@ on:
         description: 'Type of logs to analyze (e.g., failure, success)'
         required: true
         type: string
-      jira-project-key: 'Reference to the Jira Project'
+      jira-project-key: 
+        description: 'Reference to the Jira Project'
         required: true
         type: string
-      jira-url: 'URL from Jira Cloud instance'
+      jira-url: 
+        description: 'URL from Jira Cloud instance'
         required: true
         type: string
 
