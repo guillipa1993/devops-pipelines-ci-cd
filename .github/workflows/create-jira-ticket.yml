@@ -19,6 +19,14 @@ on:
         description: "Jira Cloud API Key"
         required: true
     inputs:
+      project-name:
+        description: "The name of the GitHub repository"
+        required: true
+        type: string
+      run-id:
+        description: "The ID of the current GitHub run"
+        required: true
+        type: string
       report-language:
         description: 'Language for the summary report (e.g., English, Spanish)'
         required: false
