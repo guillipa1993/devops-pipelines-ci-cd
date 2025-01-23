@@ -71,7 +71,9 @@ jobs:
       - name: Download scripts from library repo
         run: |
           echo "Cloning the devops-pipelines-ci-cd repository to obtain scripts..."
-          git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+          # Pruebas usando otra rama que no es main, quitar antes de subir a PRO
+          # git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+          git clone --branch Add-copilot-and-jira https://github.com/guillipa1993/devops-pipelines-ci-cd.git
           mkdir -p scripts
           cp devops-pipelines-ci-cd/scripts/create_jira_ticket.py scripts/
           if [ -f "scripts/create_jira_ticket.py" ]; then
