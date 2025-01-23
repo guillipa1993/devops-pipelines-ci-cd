@@ -436,7 +436,7 @@ jobs:
 
   summarize_and_create_ticket:
     name: Summarize and Create Ticket
-    needs: [analyze_logs]
+    needs: [ci_pipeline, analyze_logs]
     if: always()
     uses: ./.github/workflows/summarize-and-create-ticket.yml
     secrets:
@@ -452,7 +452,7 @@ jobs:
 
   create_jira_ticket:
     name: Summarize and Create Ticket
-    needs: [analyze_logs]
+    needs: [ci_pipeline, analyze_logs]
     if: always()
     uses: ./.github/workflows/create-jira-ticket.yml
     secrets:
