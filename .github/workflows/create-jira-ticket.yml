@@ -28,11 +28,15 @@ on:
         required: true
         type: string
       report-language:
-        description: 'Language for the summary report (e.g., English, Spanish)'
+        description: "Language for the summary report (e.g., English, Spanish)"
         required: false
         type: string
       log-type:
-        description: 'Type of logs to analyze (e.g., failure, success)'
+        description: "Type of logs to analyze (e.g., failure, success)"
+        required: true
+        type: string
+      repo:
+        description: "The name of the GitHub repository and owner"
         required: true
         type: string
       jira-project-key: 
