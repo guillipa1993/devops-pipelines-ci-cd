@@ -57,6 +57,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Run Snyk for Python
+        run: |
+          echo "Installing Snyk CLI"
+          npm install -g snyk
+
       # Configuración para lenguajes y herramientas específicos
       - name: Set up Node.js
         if: ${{ inputs.language == 'node' && inputs.node-version }}
