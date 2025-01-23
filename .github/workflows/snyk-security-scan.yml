@@ -73,11 +73,40 @@ jobs:
       - name: Install Python dependencies
         if: ${{ inputs.language == 'python' && inputs.requirements-path }}
         run: |
+          echo "Checking for dependencies..."
+    
+          dependencies_found=false
+
+          # Verifica e instala desde requirements.txt
           if [ -f "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}requirements.txt" ]; then
             echo "Installing dependencies from $GITHUB_WORKSPACE/${{ inputs.requirements-path }}requirements.txt"
             pip install -r "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}requirements.txt"
+            dependencies_found=true
+          elif [ -f "$GITHUB_WORKSPACE/requirements.txt" ]; then
+            echo "Installing dependencies from $GITHUB_WORKSPACE/requirements.txt"
+            pip install -r "$GITHUB_WORKSPACE/requirements.txt"
+            dependencies_found=true
           else
-            echo "No requirements.txt found in $GITHUB_WORKSPACE/${{ inputs.requirements-path }}"
+            echo "No requirements.txt found in the specified path."
+          fi
+
+          # Verifica e instala desde pyproject.toml
+          if [ -f "$GITHUB_WORKSPACE/${{ inputs.project-path }}pyproject.toml" ]; then
+            echo "Installing dependencies from $GITHUB_WORKSPACE/${{ inputs.project-path }}pyproject.toml"
+            pip install "$GITHUB_WORKSPACE/${{ inputs.project-path }}"
+            dependencies_found=true
+          elif [ -f "$GITHUB_WORKSPACE/pyproject.toml" ]; then
+            echo "Installing dependencies from $GITHUB_WORKSPACE/pyproject.toml"
+            pip install "$GITHUB_WORKSPACE"
+            dependencies_found=true
+          else
+            echo "No pyproject.toml found in the specified path."
+          fi
+
+          # Lanza un error si no se encontró ningún archivo
+          if [ "$dependencies_found" = false ]; then
+            echo "No valid dependency files found (requirements.txt or pyproject.toml)."
+            exit 1
           fi
   
       - name: Set up .NET
@@ -110,12 +139,19 @@ jobs:
 
       - name: Run Snyk for Python
         if: ${{ inputs.language == 'python' }}
-        uses: snyk/actions/python@master
+        run: |
+          echo "Running Snyk for Python..."
+      
+          # Verifica que el directorio del proyecto exista
+          if [ ! -d "$GITHUB_WORKSPACE/${{ inputs.project-path }}" ]; then
+            echo "Error: Project path $GITHUB_WORKSPACE/${{ inputs.project-path }} does not exist."
+            exit 1
+          fi
+      
+          # Ejecuta Snyk
+          snyk test "$GITHUB_WORKSPACE/${{ inputs.project-path }}" --sarif-file-output=snyk-python.sarif
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-          DEBUG: "*snyk*" # Enable debug logs
-        with:
-          args: test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif-file-output=snyk-python.sarif
 
       - name: Run Snyk for .NET
         if: ${{ inputs.language == 'dotnet' }}

@@ -407,8 +407,7 @@ jobs:
   snyk_python:
     name: Snyk Python
     needs: ci_pipeline
-    # Lo que había antes if: ${{ inputs.run-snyk }}
-    if: false
+    if: ${{ inputs.run-snyk }}
     uses: ./.github/workflows/snyk-security-scan.yml
     secrets:
       AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
