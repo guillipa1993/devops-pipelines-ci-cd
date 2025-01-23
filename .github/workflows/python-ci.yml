@@ -15,6 +15,12 @@ on:
       SNYK_TOKEN:
         description: "Snyk API Token"
         required: true
+      JIRA_CLOUD_API_TOKEN:
+        description: "Jira Cloud API Key"
+        required: true
+      JIRA_CLOUD_USERNAME: 
+        description: "Jira Cloud API Key"
+        required: true
     inputs:
       python-version:
         description: "La versión de Python para usar en este pipeline"
@@ -67,6 +73,12 @@ on:
       environment-variables:
         description: "Variables de entorno para configurar en el pipeline (formato: 'VAR1=value1, VAR2=value2')"
         required: false
+        type: string
+      jira-project-key: 'Reference to the Jira Project'
+        required: true
+        type: string
+      jira-url: 'URL from Jira Cloud instance'
+        required: true
         type: string
 
 jobs:
@@ -422,7 +434,7 @@ jobs:
 
   summarize_and_create_ticket:
     name: Summarize and Create Ticket
-    needs: [ci_pipeline, analyze_logs]
+    needs: [analyze_logs]
     if: always()
     uses: ./.github/workflows/summarize-and-create-ticket.yml
     secrets:
@@ -435,3 +447,23 @@ jobs:
       report-language: ${{ inputs.report-language }}
       log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
       repo: ${{ github.repository }}
+
+  create_jira_ticket:
+    name: Summarize and Create Ticket
+    needs: [analyze_logs]
+    if: always()
+    uses: ./.github/workflows/create-jira-ticket.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      JIRA_CLOUD_USERNAME: ${{ secrets.JIRA_CLOUD_USERNAME }}
+      JIRA_CLOUD_API_TOKEN: ${{ secrets.JIRA_CLOUD_API_TOKEN }}
+    with:
+      project-name: ${{ github.event.repository.name }}
+      run-id: ${{ github.run_id }}
+      report-language: ${{ inputs.report-language }}
+      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
+      repo: ${{ github.repository }}
+      jira-project-key: ${{inputs.jira-project-key }}
+      jira-url: ${{inputs.jira-url }}
