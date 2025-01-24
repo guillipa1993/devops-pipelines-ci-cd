@@ -57,12 +57,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Run Snyk for Python
+      - name: Install Snyk CLI
         run: |
-          echo "Installing Snyk CLI"
+          echo "Installing Snyk CLI..."
           npm install -g snyk
+        shell: bash
 
-      # Configuración para lenguajes y herramientas específicos
+      - name: Validate project directory
+        run: |
+          echo "Validating project directory..."
+          if [ ! -d "$GITHUB_WORKSPACE/${{ inputs.project-path }}" ]; then
+            echo "Error: Project path $GITHUB_WORKSPACE/${{ inputs.project-path }} does not exist."
+            exit 1
+          fi
+        shell: bash
+
       - name: Set up Node.js
         if: ${{ inputs.language == 'node' && inputs.node-version }}
         uses: actions/setup-node@v3
@@ -76,44 +85,25 @@ jobs:
           python-version: ${{ inputs.python-version }}
 
       - name: Install Python dependencies
-        if: ${{ inputs.language == 'python' && inputs.requirements-path }}
+        if: ${{ inputs.language == 'python' }}
         run: |
-          echo "Checking for dependencies..."
-    
+          echo "Installing Python dependencies..."
           dependencies_found=false
 
-          # Verifica e instala desde requirements.txt
-          if [ -f "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}requirements.txt" ]; then
-            echo "Installing dependencies from $GITHUB_WORKSPACE/${{ inputs.requirements-path }}requirements.txt"
-            pip install -r "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}requirements.txt"
+          if [ -n "${{ inputs.requirements-path }}" ] && [ -f "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}" ]; then
+            pip install -r "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}"
             dependencies_found=true
-          elif [ -f "$GITHUB_WORKSPACE/requirements.txt" ]; then
-            echo "Installing dependencies from $GITHUB_WORKSPACE/requirements.txt"
-            pip install -r "$GITHUB_WORKSPACE/requirements.txt"
-            dependencies_found=true
-          else
-            echo "No requirements.txt found in the specified path."
-          fi
-
-          # Verifica e instala desde pyproject.toml
-          if [ -f "$GITHUB_WORKSPACE/${{ inputs.project-path }}pyproject.toml" ]; then
-            echo "Installing dependencies from $GITHUB_WORKSPACE/${{ inputs.project-path }}pyproject.toml"
+          elif [ -f "$GITHUB_WORKSPACE/${{ inputs.project-path }}/pyproject.toml" ]; then
             pip install "$GITHUB_WORKSPACE/${{ inputs.project-path }}"
             dependencies_found=true
-          elif [ -f "$GITHUB_WORKSPACE/pyproject.toml" ]; then
-            echo "Installing dependencies from $GITHUB_WORKSPACE/pyproject.toml"
-            pip install "$GITHUB_WORKSPACE"
-            dependencies_found=true
-          else
-            echo "No pyproject.toml found in the specified path."
           fi
 
-          # Lanza un error si no se encontró ningún archivo
           if [ "$dependencies_found" = false ]; then
-            echo "No valid dependency files found (requirements.txt or pyproject.toml)."
+            echo "No valid dependency files found."
             exit 1
           fi
-  
+        shell: bash
+
       - name: Set up .NET
         if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
         uses: actions/setup-dotnet@v3
@@ -145,15 +135,6 @@ jobs:
       - name: Run Snyk for Python
         if: ${{ inputs.language == 'python' }}
         run: |
-          echo "Running Snyk for Python..."
-      
-          # Verifica que el directorio del proyecto exista
-          if [ ! -d "$GITHUB_WORKSPACE/${{ inputs.project-path }}" ]; then
-            echo "Error: Project path $GITHUB_WORKSPACE/${{ inputs.project-path }} does not exist."
-            exit 1
-          fi
-      
-          # Ejecuta Snyk
           snyk test "$GITHUB_WORKSPACE/${{ inputs.project-path }}" --sarif-file-output=snyk-python.sarif
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -190,41 +171,29 @@ jobs:
         with:
           args: container test ${{ inputs.docker-image }} --sarif-file-output=snyk-docker.sarif
 
-      # Subida de resultados SARIF a GitHub Code Scanning
       - name: Upload SARIF to GitHub Code Scanning
         if: ${{ inputs.language != '' }}
         uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: snyk-${{ inputs.language }}.sarif
 
-      # Mostrar enlace al Dashboard de Snyk
       - name: Show Snyk Dashboard Link
         run: |
           echo "View results in Snyk Dashboard: https://app.snyk.io/org/guillipa1993/projects"
 
-      - name: Generate Snyk Report
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/logs"
-          snyk test $GITHUB_WORKSPACE/${{ inputs.project-path }} --json > "$GITHUB_WORKSPACE/logs/snyk-report-${{ github.run_id }}.json"
-          snyk test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif > "$GITHUB_WORKSPACE/logs/snyk-report-${{ github.run_id }}.sarif"
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-
       - name: Upload Logs to Azure Storage
         run: |
-          if [ -d "$GITHUB_WORKSPACE/logs" ]; then
-            for log in $GITHUB_WORKSPACE/logs/*; do
-              echo "Uploading $log to Azure Storage..."
-              az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
-                                     --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
-                                     --container-name logs \
-                                     --file "$log" \
-                                     --name "$(basename "$log")" \
-                                     --overwrite
-            done
+          echo "Uploading logs to Azure Storage..."
+          if [ -f snyk-${{ inputs.language }}.sarif ]; then
+            az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+                                   --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+                                   --container-name logs \
+                                   --file snyk-${{ inputs.language }}.sarif \
+                                   --name "snyk-${{ inputs.language }}-${{ github.run_id }}.sarif" \
+                                   --overwrite
           else
-            echo "No logs found to upload."
-        continue-on-error: true
+            echo "No SARIF log found to upload."
+        shell: bash
 
       - name: Show Snyk Dashboard Link
         run: |
