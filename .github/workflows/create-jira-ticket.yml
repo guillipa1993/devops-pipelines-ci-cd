@@ -129,7 +129,7 @@ jobs:
 
       - name: Create JIRA Ticket
         run: |
-          python create_jira_ticket.py \
+          python scripts/create_jira_ticket.py \
             --project-name "${{ github.event.repository.name }}" \
             --run-id "${{ github.run_id }}" \
             --report-language "${{ inputs.report-language }}" \
