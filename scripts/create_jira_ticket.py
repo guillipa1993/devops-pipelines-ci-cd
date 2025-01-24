@@ -111,6 +111,11 @@ def main():
     parser.add_argument("--log-dir", required=True, help="Directorio con los logs.")
     parser.add_argument("--log-type", required=True, choices=["success", "failure"], help="Tipo de log.")
     parser.add_argument("--language", default="English", help="Idioma para el resumen.")
+    parser.add_argument("--project-name", required=False, help="Nombre del repositorio en GitHub.")
+    parser.add_argument("--run-id", required=False, help="ID de la ejecución en GitHub Actions.")
+    parser.add_argument("--report-language", required=False, help="Idioma para el resumen del reporte.")
+    parser.add_argument("--repo", required=False, help="Nombre completo del repositorio (owner/repo).")
+
     args = parser.parse_args()
 
     # Variables de entorno
