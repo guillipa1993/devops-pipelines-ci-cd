@@ -134,7 +134,10 @@ jobs:
             --run-id "${{ github.run_id }}" \
             --report-language "${{ inputs.report-language }}" \
             --log-type "${{ inputs.log-type }}" \
-            --repo "${{ github.repository }}"
+            --repo "${{ github.repository }}" \
+            --jira-url "${{ inputs.jira-url }}" \
+            --jira-project-key "${{ inputs.jira-project-key }}" \
+            --log-dir "$GITHUB_WORKSPACE/analysis_results"
         env:
           JIRA_API_TOKEN: ${{ secrets.JIRA_CLOUD_API_TOKEN }}
           JIRA_USER_EMAIL: ${{ secrets.JIRA_CLOUD_USERNAME }}
