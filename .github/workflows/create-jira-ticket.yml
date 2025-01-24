@@ -133,7 +133,7 @@ jobs:
             --project-name "${{ github.event.repository.name }}" \
             --run-id "${{ github.run_id }}" \
             --report-language "${{ inputs.report-language }}" \
-            --log-type "${{ needs.ci_pipeline.outputs.error-detected }}" \
+            --log-type "${{ inputs.log-type }}" \
             --repo "${{ github.repository }}"
         env:
           JIRA_API_TOKEN: ${{ secrets.JIRA_CLOUD_API_TOKEN }}

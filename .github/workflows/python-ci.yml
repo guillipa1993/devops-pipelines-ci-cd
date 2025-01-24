@@ -451,7 +451,7 @@ jobs:
       repo: ${{ github.repository }}
 
   create_jira_ticket:
-    name: Summarize and Create Ticket
+    name: Summarize and Create Jira Ticket
     needs: [ci_pipeline, analyze_logs]
     if: always()
     uses: ./.github/workflows/create-jira-ticket.yml
