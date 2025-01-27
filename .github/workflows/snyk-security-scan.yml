@@ -30,23 +30,23 @@ on:
         required: false
         type: string
       dotnet-version:
-        description: "La versión de .NET para usar en este pipeline"
+        description: "The .NET version to use"
         required: false
         type: string
       node-version:
-        description: "La versión de Node.js para usar en este pipeline"
+        description: "The Node.js version to use"
         required: false
         type: string
       go-version:
-        description: "La versión de Go para usar en este pipeline"
+        description: "The Go version to use"
         required: false
         type: string
       python-version:
-        description: "La versión de Python para usar en este pipeline"
+        description: "The Python version to use"
         required: false
         type: string
       java-version:
-        description: "La versión de Java para usar en este pipeline"
+        description: "The Java version to use"
         required: false
         type: string
 
@@ -70,6 +70,14 @@ jobs:
             echo "Error: Project path $GITHUB_WORKSPACE/${{ inputs.project-path }} does not exist."
             exit 1
           fi
+          echo "Project directory validated: $GITHUB_WORKSPACE/${{ inputs.project-path }}"
+        shell: bash
+
+      - name: Locate dependency files
+        run: |
+          echo "Locating dependency files..."
+          find "$GITHUB_WORKSPACE/${{ inputs.project-path }}" -type f \( -name "requirements.txt" -o -name "pyproject.toml" \) > dependency_files.txt
+          cat dependency_files.txt || echo "No dependency files found."
         shell: bash
 
       - name: Set up Node.js
@@ -90,8 +98,8 @@ jobs:
           echo "Installing Python dependencies..."
           dependencies_found=false
 
-          if [ -n "${{ inputs.requirements-path }}" ] && [ -f "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}" ]; then
-            pip install -r "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}"
+          if [ -n "${{ inputs.requirements-path }}" ] && [ -f "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}/requirements.txt" ]; then
+            pip install -r "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}/requirements.txt"
             dependencies_found=true
           elif [ -f "$GITHUB_WORKSPACE/${{ inputs.project-path }}/pyproject.toml" ]; then
             pip install "$GITHUB_WORKSPACE/${{ inputs.project-path }}"
@@ -99,7 +107,7 @@ jobs:
           fi
 
           if [ "$dependencies_found" = false ]; then
-            echo "No valid dependency files found."
+            echo "No valid dependency files found for installation."
             exit 1
           fi
         shell: bash
@@ -183,7 +191,7 @@ jobs:
 
       - name: Upload Logs to Azure Storage
         run: |
-          echo "Uploading logs to Azure Storage..."
+          echo "Uploading SARIF logs to Azure Storage..."
           if [ -f snyk-${{ inputs.language }}.sarif ]; then
             az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
                                    --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
