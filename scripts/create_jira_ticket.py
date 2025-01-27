@@ -2,7 +2,7 @@ import os
 import argparse
 from jira import JIRA
 from datetime import datetime
-import openai
+from openai import OpenAI
 
 # Verificar si la clave de API está configurada
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -11,7 +11,7 @@ if not openai_api_key:
     exit(1)
 
 # Inicializar la API de OpenAI
-openai.api_key = openai_api_key
+client = OpenAI(api_key=openai_api_key)
 
 # Conectar a JIRA
 def connect_to_jira(jira_url, jira_user, jira_api_token):
@@ -91,7 +91,7 @@ def summarize_logs_with_openai(log_dir, log_type, language):
     consolidated_summary = ""
     for idx, fragment in enumerate(content_fragments, 1):
         role_content, issue_type = generate_prompt(log_type, language)
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": role_content},
@@ -145,4 +145,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
