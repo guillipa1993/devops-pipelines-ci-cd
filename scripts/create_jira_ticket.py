@@ -20,10 +20,18 @@ def connect_to_jira(jira_url, jira_user, jira_api_token):
     return jira
 
 # Consultar si existe un ticket similar en JIRA
-def check_existing_tickets(jira, project_key, summary):
+def check_existing_tickets(jira, project_key, summary, description):
+    """
+    Verifica si existe un ticket con un resumen o descripción similar en Jira.
+    """
     jql_query = f'project = "{project_key}" AND summary ~ "{summary}"'
     issues = jira.search_issues(jql_query)
-    return issues
+
+    for issue in issues:
+        if description.strip() in issue.fields.description:
+            print(f"INFO: Found an existing ticket with similar description: {issue.key}")
+            return issue.key
+    return None
 
 # Crear un ticket en JIRA
 def create_jira_ticket(jira, project_key, summary, description, issue_type):
@@ -34,7 +42,16 @@ def create_jira_ticket(jira, project_key, summary, description, issue_type):
         issue_dict = {
             'project': {'key': project_key},
             'summary': summary,
-            'description': description,
+            'description': {
+                "type": "doc",
+                "version": 1,
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": description}]
+                    }
+                ]
+            },
             'issuetype': {'name': issue_type}
         }
         issue = jira.create_issue(fields=issue_dict)
@@ -133,10 +150,10 @@ def main():
     # Procesar los logs y generar el resumen
     summary, issue_type = summarize_logs_with_openai(args.log_dir, args.log_type, args.language)
 
-    # Verificar si el ticket ya existe
-    existing_tickets = check_existing_tickets(jira, args.jira_project_key, f"Log Analysis - {args.log_type}")
-    if existing_tickets:
-        print(f"INFO: Found existing tickets: {[ticket.key for ticket in existing_tickets]}. Skipping ticket creation.")
+    # Verificar si el ticket ya existe (IA + Jira)
+    existing_ticket_key = check_existing_tickets(jira, args.jira_project_key, f"Log Analysis - {args.log_type}", summary)
+    if existing_ticket_key:
+        print(f"INFO: Ticket already exists: {existing_ticket_key}. Skipping creation.")
         return
 
     # Crear un ticket en JIRA si no existe
