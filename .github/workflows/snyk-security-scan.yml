@@ -143,9 +143,31 @@ jobs:
       - name: Run Snyk for Python
         if: ${{ inputs.language == 'python' }}
         run: |
-          snyk test "$GITHUB_WORKSPACE/${{ inputs.project-path }}" --sarif-file-output=snyk-python.sarif
+          echo "Running Snyk test for Python..."
+      
+          # Construir ruta del archivo de dependencias combinando project-path y requirements-path
+          DEPENDENCY_PATH="$GITHUB_WORKSPACE/${{ inputs.project-path }}/"
+          if [ -n "${{ inputs.requirements-path }}" ]; then
+            DEPENDENCY_PATH="$DEPENDENCY_PATH${{ inputs.requirements-path }}"
+          fi
+      
+          # Verificar que exista el archivo de dependencias
+          if [ -f "$DEPENDENCY_PATH/requirements.txt" ]; then
+            echo "Found requirements.txt at: $DEPENDENCY_PATH/requirements.txt"
+            DEPENDENCY_FILE="$DEPENDENCY_PATH/requirements.txt"
+          elif [ -f "$GITHUB_WORKSPACE/${{ inputs.project-path }}/pyproject.toml" ]; then
+            echo "Found pyproject.toml at: $GITHUB_WORKSPACE/${{ inputs.project-path }}/pyproject.toml"
+            DEPENDENCY_FILE="$GITHUB_WORKSPACE/${{ inputs.project-path }}/pyproject.toml"
+          else
+            echo "No valid dependency file found in path: $DEPENDENCY_PATH or project path."
+            exit 1
+          fi
+      
+          # Ejecutar Snyk
+          echo "Using dependency file: $DEPENDENCY_FILE"
+          snyk test "$DEPENDENCY_FILE" --sarif-file-output=snyk-python.sarif
         env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}       
 
       - name: Run Snyk for .NET
         if: ${{ inputs.language == 'dotnet' }}
