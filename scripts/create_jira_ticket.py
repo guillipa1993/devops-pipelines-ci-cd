@@ -1,9 +1,17 @@
 import os
 import argparse
 from jira import JIRA
+from openai import OpenAI
 from datetime import datetime
-import requests
-import openai
+
+# Verificar si la clave de API está configurada
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    print("ERROR: 'OPENAI_API_KEY' is not set. Please set it as an environment variable.")
+    exit(1)
+
+# Inicializar la API de OpenAI
+client = OpenAI(api_key=api_key)
 
 def connect_to_jira(jira_url, jira_user, jira_api_token):
     options = {'server': jira_url}
@@ -85,46 +93,61 @@ def create_jira_ticket(jira, project_key, summary, description, issue_type):
         print(f"ERROR: No se pudo crear el ticket en JIRA: {e}")
         return None
 
-def analyze_logs_with_ai(log_dir, log_type, report_language):
-    """
-    Analiza los logs usando OpenAI y devuelve un resumen.
-    """
+def validate_logs_directory(log_dir):
+    if not os.path.exists(log_dir):
+        raise FileNotFoundError(f"ERROR: The logs directory '{log_dir}' does not exist.")
     log_files = [
         os.path.join(log_dir, f)
         for f in os.listdir(log_dir)
         if os.path.isfile(os.path.join(log_dir, f))
     ]
+    if not log_files:
+        raise FileNotFoundError(f"ERROR: No valid files found in the directory '{log_dir}'.")
+    return log_files
 
+def clean_log_content(content):
+    lines = content.splitlines()
+    cleaned_lines = [line for line in lines if line.strip()]
+    return "\n".join(cleaned_lines)
+
+def generate_prompt(log_type, language):
+    if log_type == "failure":
+        details = "Identify issues, recommend fixes, and provide preventive measures."
+        issue_type = "Bug"
+    else:
+        details = "Confirm success, suggest optimizations, and provide scalability recommendations."
+        issue_type = "Task"
+    prompt = f"Analyze the logs provided and generate a detailed report in {language}. {details}"
+    return prompt, issue_type
+
+def analyze_logs_with_ai(log_dir, log_type, report_language):
+    log_files = validate_logs_directory(log_dir)
     combined_logs = ""
     for file in log_files:
         try:
             with open(file, "r", encoding="utf-8") as f:
-                combined_logs += f"\n### {file}\n" + f.read()
+                combined_logs += f"\n### {os.path.basename(file)}\n" + clean_log_content(f.read())
         except UnicodeDecodeError:
             print(f"WARNING: Could not read file {file} due to encoding issues. Skipping.")
             continue
 
-    openai.api_key = os.getenv("OPENAI_API_KEY")
-    prompt = (
-        f"Analyze the following logs and generate a detailed report in {report_language}:\n"
-        f"Log Type: {log_type}\n"
-        f"Logs:\n{combined_logs}"
-    )
+    prompt, issue_type = generate_prompt(log_type, report_language)
 
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": f"{prompt}\n{combined_logs}"}
             ],
-            max_tokens=2000
+            max_tokens=2000,
+            temperature=0.5
         )
-        summary = response["choices"][0]["message"]["content"]
-        return summary
+        summary = response["choices"][0]["message"]["content"].strip()
+        return summary, issue_type
     except Exception as e:
         print(f"ERROR: Failed to analyze logs with AI: {e}")
-        return None
+        return None, None
 
 def main():
     parser = argparse.ArgumentParser(description="Crear tickets en JIRA desde logs analizados.")
@@ -149,7 +172,7 @@ def main():
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
 
     summary = f"Log Analysis - {args.log_type}"
-    description = analyze_logs_with_ai(args.log_dir, args.log_type, args.report_language)
+    description, issue_type = analyze_logs_with_ai(args.log_dir, args.log_type, args.report_language)
 
     if not description:
         print("ERROR: Log analysis failed. No ticket will be created.")
