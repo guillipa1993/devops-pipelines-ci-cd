@@ -2,24 +2,14 @@ import os
 import argparse
 from jira import JIRA
 from datetime import datetime
-from openai import OpenAI
+import requests
+import openai
 
-# Verificar si la clave de API está configurada
-openai_api_key = os.getenv("OPENAI_API_KEY")
-if not openai_api_key:
-    print("ERROR: 'OPENAI_API_KEY' is not set. Please set it as an environment variable.")
-    exit(1)
-
-# Inicializar la API de OpenAI
-client = OpenAI(api_key=openai_api_key)
-
-# Conectar a JIRA
 def connect_to_jira(jira_url, jira_user, jira_api_token):
     options = {'server': jira_url}
     jira = JIRA(options, basic_auth=(jira_user, jira_api_token))
     return jira
 
-# Consultar si existe un ticket similar en JIRA
 def check_existing_tickets(jira, project_key, summary, description):
     """
     Verifica si existe un ticket con un resumen o descripción similar en Jira.
@@ -33,10 +23,43 @@ def check_existing_tickets(jira, project_key, summary, description):
             return issue.key
     return None
 
-# Crear un ticket en JIRA
+def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project_key, summary, description, issue_type):
+    url = f"{jira_url}/rest/api/3/issue"
+    headers = {
+        "Content-Type": "application/json"
+    }
+    auth = (jira_user, jira_api_token)
+    payload = {
+        "fields": {
+            "project": {"key": project_key},
+            "summary": summary,
+            "description": {
+                "type": "doc",
+                "version": 1,
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [
+                            {"type": "text", "text": description}
+                        ]
+                    }
+                ]
+            },
+            "issuetype": {"name": issue_type}
+        }
+    }
+    response = requests.post(url, json=payload, headers=headers, auth=auth)
+
+    if response.status_code == 201:
+        print("Ticket created successfully:", response.json())
+        return response.json().get("key")
+    else:
+        print(f"Failed to create ticket: {response.status_code} - {response.text}")
+        return None
+
 def create_jira_ticket(jira, project_key, summary, description, issue_type):
     """
-    Crea un ticket en JIRA.
+    Crea un ticket en JIRA usando la librería JIRA.
     """
     try:
         issue_dict = {
@@ -48,7 +71,9 @@ def create_jira_ticket(jira, project_key, summary, description, issue_type):
                 "content": [
                     {
                         "type": "paragraph",
-                        "content": [{"type": "text", "text": description}]
+                        "content": [
+                            {"type": "text", "text": description}
+                        ]
                     }
                 ]
             },
@@ -60,105 +85,112 @@ def create_jira_ticket(jira, project_key, summary, description, issue_type):
         print(f"ERROR: No se pudo crear el ticket en JIRA: {e}")
         return None
 
-# Validar los logs
-def validate_logs_directory(log_dir):
-    if not os.path.exists(log_dir):
-        raise FileNotFoundError(f"ERROR: The logs directory '{log_dir}' does not exist.")
+def analyze_logs_with_ai(log_dir, log_type, report_language):
+    """
+    Analiza los logs usando OpenAI y devuelve un resumen.
+    """
     log_files = [
         os.path.join(log_dir, f)
         for f in os.listdir(log_dir)
-        if os.path.isfile(os.path.join(log_dir, f)) and f.endswith(".txt")
+        if os.path.isfile(os.path.join(log_dir, f))
     ]
-    if not log_files:
-        raise FileNotFoundError(f"ERROR: No valid .txt files found in the directory '{log_dir}'.")
-    return log_files
 
-# Limpiar el contenido de los logs
-def clean_log_content(content):
-    lines = content.splitlines()
-    cleaned_lines = [line for line in lines if line.strip()]
-    return "\n".join(cleaned_lines)
+    combined_logs = ""
+    for file in log_files:
+        with open(file, "r") as f:
+            combined_logs += f"\n### {file}\n" + f.read()
 
-# Generar un prompt para OpenAI
-def generate_prompt(log_type, language):
-    """
-    Genera un prompt para analizar los logs con OpenAI.
-    """
-    base_prompt = "Analyze the logs provided and generate a detailed report."
-    if log_type == "failure":
-        details = "Identify issues, recommend fixes, and provide preventive measures."
-        issue_type = "Bug"
-    else:
-        details = "Confirm success, suggest optimizations, and provide scalability recommendations."
-        issue_type = "Task"
-    prompt = f"{base_prompt} {details} Ensure the summary is in {language}."
-    return prompt, issue_type
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+    prompt = (
+        f"Analyze the following logs and generate a detailed report in {report_language}:\n"
+        f"Log Type: {log_type}\n"
+        f"Logs:\n{combined_logs}"
+    )
 
-# Resumir los logs con OpenAI
-def summarize_logs_with_openai(log_dir, log_type, language):
-    log_files = validate_logs_directory(log_dir)
-    all_content = ""
-    for filename in log_files:
-        with open(filename, "r") as f:
-            file_content = f.read()
-            all_content += f"### 📄 {os.path.basename(filename)}\n{clean_log_content(file_content)}\n\n"
-
-    max_chunk_size = 30000
-    content_fragments = [all_content[i:i + max_chunk_size] for i in range(0, len(all_content), max_chunk_size)]
-    consolidated_summary = ""
-    for idx, fragment in enumerate(content_fragments, 1):
-        role_content, issue_type = generate_prompt(log_type, language)
-        response = client.chat.completions.create(
+    try:
+        response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": role_content},
-                {"role": "user", "content": fragment}
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
             ],
-            max_tokens=2000,
-            temperature=0.5
+            max_tokens=2000
         )
-        consolidated_summary += response.choices[0].message.content.strip() + "\n\n"
-    return consolidated_summary, issue_type
+        summary = response["choices"][0]["message"]["content"]
+        return summary
+    except Exception as e:
+        print(f"ERROR: Failed to analyze logs with AI: {e}")
+        return None
 
-# Flujo principal
 def main():
     parser = argparse.ArgumentParser(description="Crear tickets en JIRA desde logs analizados.")
     parser.add_argument("--jira-url", required=True, help="URL de la instancia de JIRA.")
     parser.add_argument("--jira-project-key", required=True, help="Clave del proyecto en JIRA.")
     parser.add_argument("--log-dir", required=True, help="Directorio con los logs.")
     parser.add_argument("--log-type", required=True, choices=["success", "failure"], help="Tipo de log.")
-    parser.add_argument("--language", default="English", help="Idioma para el resumen.")
-    parser.add_argument("--project-name", required=False, help="Nombre del repositorio en GitHub.")
-    parser.add_argument("--run-id", required=False, help="ID de la ejecución en GitHub Actions.")
-    parser.add_argument("--report-language", required=False, help="Idioma para el resumen del reporte.")
-    parser.add_argument("--repo", required=False, help="Nombre completo del repositorio (owner/repo).")
+    parser.add_argument("--report-language", default="English", help="Idioma para el resumen del reporte.")
+    parser.add_argument("--project-name", required=True, help="Nombre del repositorio en GitHub.")
+    parser.add_argument("--run-id", required=True, help="ID de la ejecución en GitHub Actions.")
+    parser.add_argument("--repo", required=True, help="Nombre completo del repositorio (owner/repo).")
 
     args = parser.parse_args()
 
-    # Variables de entorno
     jira_api_token = os.getenv("JIRA_API_TOKEN")
     jira_user_email = os.getenv("JIRA_USER_EMAIL")
-    openai_api_key = os.getenv("OPENAI_API_KEY")
 
-    if not all([jira_api_token, jira_user_email, openai_api_key]):
-        print("ERROR: Missing required environment variables. Please set them before running the script.")
+    if not all([jira_api_token, jira_user_email]):
+        print("ERROR: Missing required environment variables JIRA_API_TOKEN or JIRA_USER_EMAIL.")
         exit(1)
 
-    # Conectar a JIRA
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
 
-    # Procesar los logs y generar el resumen
-    summary, issue_type = summarize_logs_with_openai(args.log_dir, args.log_type, args.language)
+    # Determinar el tipo de ticket basado en el tipo de log
+    if args.log_type == "success":
+        issue_type = "Task"  # Cambiar a "Mejora" si está configurado así en Jira
+        summary_prefix = "Success"
+    else:
+        issue_type = "Bug"  # O "Error" según la configuración de Jira
+        summary_prefix = "Failure"
 
-    # Verificar si el ticket ya existe (IA + Jira)
-    existing_ticket_key = check_existing_tickets(jira, args.jira_project_key, f"Log Analysis - {args.log_type}", summary)
+    summary = f"{summary_prefix} Log Analysis - {args.project_name}"
+    description = analyze_logs_with_ai(args.log_dir, args.log_type, args.report_language)
+
+    if not description:
+        print("ERROR: Log analysis failed. No ticket will be created.")
+        return
+
+    # Verificar si ya existe un ticket con el resumen o descripción similar
+    existing_ticket_key = check_existing_tickets(jira, args.jira_project_key, summary, description)
     if existing_ticket_key:
         print(f"INFO: Ticket already exists: {existing_ticket_key}. Skipping creation.")
         return
 
-    # Crear un ticket en JIRA si no existe
-    ticket_key = create_jira_ticket(jira, args.jira_project_key, f"Log Analysis - {args.log_type}", summary, issue_type)
-    print(f"JIRA Ticket Created: {ticket_key}")
+    # Intentar crear el ticket
+    ticket_key = create_jira_ticket(
+        jira,
+        args.jira_project_key,
+        summary,
+        description,
+        issue_type
+    )
+
+    if ticket_key:
+        print(f"JIRA Ticket Created using JIRA library: {ticket_key}")
+    else:
+        print("Falling back to creating ticket via API...")
+        ticket_key = create_jira_ticket_via_requests(
+            args.jira_url,
+            jira_user_email,
+            jira_api_token,
+            args.jira_project_key,
+            summary,
+            description,
+            issue_type
+        )
+        if ticket_key:
+            print(f"JIRA Ticket Created via API: {ticket_key}")
+        else:
+            print("Failed to create JIRA ticket.")
 
 if __name__ == "__main__":
     main()
