@@ -149,12 +149,8 @@ def analyze_logs_with_ai(log_dir, log_type, report_language):
             temperature=0.5
         )
         summary = response.choices[0].message.content.strip()
-
-        # Generar un título más descriptivo
         summary_title = f"{log_type.capitalize()} Log: {summary.splitlines()[0][:50]}"
-
-        # Limitar la descripción a texto plano o Markdown
-        description_plain = f"# Resumen\n\n{summary}\n\n# Logs Analizados\n\n{combined_logs[:1000]}..."  # Limitar longitud
+        description_plain = f"# Resumen\n\n{summary}\n\n# Logs Analizados\n\n{combined_logs[:1000]}..."
         return summary_title, description_plain, issue_type
     except Exception as e:
         print(f"ERROR: Failed to analyze logs with AI: {e}")
@@ -183,7 +179,7 @@ def main():
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
 
     summary = f"Log Analysis - {args.log_type}"
-    description, issue_type = analyze_logs_with_ai(args.log_dir, args.log_type, args.report_language)
+    summary, description, issue_type = analyze_logs_with_ai(args.log_dir, args.log_type, args.report_language)
 
     if not description or not issue_type:
         print("ERROR: Log analysis failed or invalid issue type. No ticket will be created.")
