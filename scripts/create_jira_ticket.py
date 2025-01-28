@@ -23,12 +23,13 @@ def connect_to_jira(jira_url, jira_user, jira_api_token):
 def check_existing_tickets(jira, project_key, summary, description):
     """
     Verifica si existe un ticket con un resumen o descripción similar en Jira.
+    Solo busca tickets en estado "To Do" o "In Progress" para evitar duplicados.
     """
-    jql_query = f'project = "{project_key}" AND summary ~ "{summary}"'
+    jql_query = f'project = "{project_key}" AND summary ~ "{summary}" AND status IN ("To Do", "In Progress")'
     issues = jira.search_issues(jql_query)
 
     for issue in issues:
-        if description.strip() in issue.fields.description:
+        if description.strip().lower() in issue.fields.description.lower():
             print(f"INFO: Found an existing ticket with similar description: {issue.key}")
             return issue.key
     return None
@@ -77,7 +78,7 @@ def validate_logs_directory(log_dir):
     if not os.path.exists(log_dir):
         raise FileNotFoundError(f"ERROR: The logs directory '{log_dir}' does not exist.")
     log_files = []
-
+    
     for file in os.listdir(log_dir):
         file_path = os.path.join(log_dir, file)
         if file.endswith(".tar.gz"):
@@ -117,12 +118,32 @@ def validate_issue_type(jira_url, jira_user, jira_api_token, project_key, issue_
 
 def generate_prompt(log_type, language):
     if log_type == "failure":
-        details = "Identify issues, recommend fixes, and provide preventive measures."
-        issue_type = "Error"  
+        details = (
+            "You are an expert technical writer. Generate a Jira Cloud ticket based on the provided logs. "
+            "The ticket should be structured as follows:\n\n"
+            "1. **Summary**: Provide a concise summary of the detected issue, clearly highlighting the problem. Use relevant emojis like `🔍`.\n"
+            "2. **Root Cause Analysis**: Analyze the logs to identify the primary cause of the issue. Include critical error messages or log snippets in code blocks (``` ```).\n"
+            "3. **Proposed Solutions**: List actionable steps to resolve the issue. Use numbered lists and provide code examples in blocks. Emphasize key actions with emojis like 💡 or 🔧.\n"
+            "4. **Preventive Measures**: Suggest strategies to avoid similar issues in the future. Use bullet points (`-`) and actionable advice.\n"
+            "5. **Critical Issues Highlight**: Explain the risks of not addressing the issue. Use impactful emojis like 💣 or ⚠️ to stress criticality.\n"
+            "6. **Impact Analysis**: Describe the implications of the issue on development workflows, users, or systems.\n\n"
+        )
+        issue_type = "Error"
     else:
-        details = "Confirm success, suggest optimizations, and provide scalability recommendations."
-        issue_type = "Tarea"  
-    prompt = f"Analyze the logs provided and generate a detailed report in {language}. {details}"
+        details = (
+            "You are an expert technical writer. Generate a Jira Cloud ticket based on the provided logs. "
+            "The ticket should be structured as follows:\n\n"
+            "1. **Summary**: Provide a concise summary of the successful state of the build. Use relevant emojis like `✅`.\n"
+            "2. **Success Confirmation**: Outline the tasks completed successfully and the technical milestones achieved.\n"
+            "3. **Proposed Optimizations**: Recommend potential improvements or adjustments to enhance performance or scalability. Use bullet points (`-`) and provide examples in code blocks.\n"
+            "4. **Scalability Recommendations**: Suggest ideas to make the system ready for higher loads, updates, or new functionalities.\n"
+            "5. **Solution Benefits**: Highlight the positive outcomes of the successful build for the project, users, or system stability.\n\n"
+        )
+        issue_type = "Task"
+    prompt = (
+        f"{details} Ensure the ticket is clear, professional, and formatted to fit Jira Cloud's requirements. "
+        f"The ticket content must be generated in {language}."
+    )
     return prompt, issue_type
 
 def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
