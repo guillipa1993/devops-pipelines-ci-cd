@@ -2,6 +2,7 @@ import os
 import argparse
 from jira import JIRA
 import tarfile
+import requests
 from openai import OpenAI
 from datetime import datetime
 
