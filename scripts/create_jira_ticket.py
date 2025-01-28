@@ -1,6 +1,7 @@
 import os
 import argparse
 from jira import JIRA
+import tarfile
 from openai import OpenAI
 from datetime import datetime
 
@@ -96,11 +97,19 @@ def create_jira_ticket(jira, project_key, summary, description, issue_type):
 def validate_logs_directory(log_dir):
     if not os.path.exists(log_dir):
         raise FileNotFoundError(f"ERROR: The logs directory '{log_dir}' does not exist.")
-    log_files = [
-        os.path.join(log_dir, f)
-        for f in os.listdir(log_dir)
-        if os.path.isfile(os.path.join(log_dir, f))
-    ]
+    log_files = []
+
+    for file in os.listdir(log_dir):
+        file_path = os.path.join(log_dir, file)
+        if file.endswith(".tar.gz"):
+            with tarfile.open(file_path, "r:gz") as tar:
+                tar.extractall(path=log_dir)
+                log_files.extend(
+                    os.path.join(log_dir, member.name) for member in tar.getmembers() if member.isfile()
+                )
+        elif os.path.isfile(file_path):
+            log_files.append(file_path)
+
     if not log_files:
         raise FileNotFoundError(f"ERROR: No valid files found in the directory '{log_dir}'.")
     return log_files
@@ -143,7 +152,7 @@ def analyze_logs_with_ai(log_dir, log_type, report_language):
             max_tokens=2000,
             temperature=0.5
         )
-        summary = response["choices"][0]["message"]["content"].strip()
+        summary = response.choices[0].message.content.strip()
         return summary, issue_type
     except Exception as e:
         print(f"ERROR: Failed to analyze logs with AI: {e}")
