@@ -153,7 +153,7 @@ def analyze_logs_with_ai(log_dir, log_type, report_language):
             max_tokens=2000,
             temperature=0.5
         )
-        summary = response.choices[0].message.content.strip()
+        summary = response["choices"][0]["message"]["content"].strip()
         return summary, issue_type
     except Exception as e:
         print(f"ERROR: Failed to analyze logs with AI: {e}")
@@ -184,8 +184,8 @@ def main():
     summary = f"Log Analysis - {args.log_type}"
     description, issue_type = analyze_logs_with_ai(args.log_dir, args.log_type, args.report_language)
 
-    if not description:
-        print("ERROR: Log analysis failed. No ticket will be created.")
+    if not description or not issue_type:
+        print("ERROR: Log analysis failed or invalid issue type. No ticket will be created.")
         return
 
     existing_ticket_key = check_existing_tickets(jira, args.jira_project_key, summary, description)
@@ -198,7 +198,7 @@ def main():
         args.jira_project_key,
         summary,
         description,
-        "Bug" if args.log_type == "failure" else "Task"
+        issue_type
     )
 
     if ticket_key:
@@ -212,7 +212,7 @@ def main():
             args.jira_project_key,
             summary,
             description,
-            "Bug" if args.log_type == "failure" else "Task"
+            issue_type
         )
         if ticket_key:
             print(f"JIRA Ticket Created via API: {ticket_key}")
