@@ -43,18 +43,7 @@ def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project
         "fields": {
             "project": {"key": project_key},
             "summary": summary,
-            "description": {
-                "type": "doc",
-                "version": 1,
-                "content": [
-                    {
-                        "type": "paragraph",
-                        "content": [
-                            {"type": "text", "text": description}
-                        ]
-                    }
-                ]
-            },
+            "description": description,  # Usar texto plano aquí
             "issuetype": {"name": issue_type}
         }
     }
@@ -75,18 +64,7 @@ def create_jira_ticket(jira, project_key, summary, description, issue_type):
         issue_dict = {
             'project': {'key': project_key},
             'summary': summary,
-            'description': {
-                "type": "doc",
-                "version": 1,
-                "content": [
-                    {
-                        "type": "paragraph",
-                        "content": [
-                            {"type": "text", "text": description}
-                        ]
-                    }
-                ]
-            },
+            'description': description,  # Usar texto plano aquí
             'issuetype': {'name': issue_type}
         }
         issue = jira.create_issue(fields=issue_dict)
@@ -171,10 +149,16 @@ def analyze_logs_with_ai(log_dir, log_type, report_language):
             temperature=0.5
         )
         summary = response.choices[0].message.content.strip()
-        return summary, issue_type
+
+        # Generar un título más descriptivo
+        summary_title = f"{log_type.capitalize()} Log: {summary.splitlines()[0][:50]}"
+
+        # Limitar la descripción a texto plano o Markdown
+        description_plain = f"# Resumen\n\n{summary}\n\n# Logs Analizados\n\n{combined_logs[:1000]}..."  # Limitar longitud
+        return summary_title, description_plain, issue_type
     except Exception as e:
         print(f"ERROR: Failed to analyze logs with AI: {e}")
-        return None, None
+        return None, None, None
 
 def main():
     parser = argparse.ArgumentParser(description="Crear tickets en JIRA desde logs analizados.")
