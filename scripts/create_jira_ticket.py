@@ -153,7 +153,7 @@ def analyze_logs_with_ai(log_dir, log_type, report_language):
             max_tokens=2000,
             temperature=0.5
         )
-        summary = response["choices"][0]["message"]["content"].strip()
+        summary = response.choices[0].message.content.strip()
         return summary, issue_type
     except Exception as e:
         print(f"ERROR: Failed to analyze logs with AI: {e}")
