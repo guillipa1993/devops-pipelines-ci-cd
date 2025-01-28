@@ -97,8 +97,12 @@ def analyze_logs_with_ai(log_dir, log_type, report_language):
 
     combined_logs = ""
     for file in log_files:
-        with open(file, "r") as f:
-            combined_logs += f"\n### {file}\n" + f.read()
+        try:
+            with open(file, "r", encoding="utf-8") as f:
+                combined_logs += f"\n### {file}\n" + f.read()
+        except UnicodeDecodeError:
+            print(f"WARNING: Could not read file {file} due to encoding issues. Skipping.")
+            continue
 
     openai.api_key = os.getenv("OPENAI_API_KEY")
     prompt = (
@@ -144,34 +148,24 @@ def main():
 
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
 
-    # Determinar el tipo de ticket basado en el tipo de log
-    if args.log_type == "success":
-        issue_type = "Task"  # Cambiar a "Mejora" si está configurado así en Jira
-        summary_prefix = "Success"
-    else:
-        issue_type = "Bug"  # O "Error" según la configuración de Jira
-        summary_prefix = "Failure"
-
-    summary = f"{summary_prefix} Log Analysis - {args.project_name}"
+    summary = f"Log Analysis - {args.log_type}"
     description = analyze_logs_with_ai(args.log_dir, args.log_type, args.report_language)
 
     if not description:
         print("ERROR: Log analysis failed. No ticket will be created.")
         return
 
-    # Verificar si ya existe un ticket con el resumen o descripción similar
     existing_ticket_key = check_existing_tickets(jira, args.jira_project_key, summary, description)
     if existing_ticket_key:
         print(f"INFO: Ticket already exists: {existing_ticket_key}. Skipping creation.")
         return
 
-    # Intentar crear el ticket
     ticket_key = create_jira_ticket(
         jira,
         args.jira_project_key,
         summary,
         description,
-        issue_type
+        "Bug" if args.log_type == "failure" else "Task"
     )
 
     if ticket_key:
@@ -185,7 +179,7 @@ def main():
             args.jira_project_key,
             summary,
             description,
-            issue_type
+            "Bug" if args.log_type == "failure" else "Task"
         )
         if ticket_key:
             print(f"JIRA Ticket Created via API: {ticket_key}")
