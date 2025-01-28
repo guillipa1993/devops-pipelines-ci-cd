@@ -125,7 +125,7 @@ def generate_prompt(log_type, language):
     prompt = f"Analyze the logs provided and generate a detailed report in {language}. {details}"
     return prompt, issue_type
 
-def analyze_logs_with_ai(log_dir, log_type, report_language):
+def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
     log_files = validate_logs_directory(log_dir)
     combined_logs = ""
     for file in log_files:
@@ -151,11 +151,11 @@ def analyze_logs_with_ai(log_dir, log_type, report_language):
         summary = response.choices[0].message.content.strip()
 
         # Generar un título más descriptivo
-        summary_title = f"{args.project_name}: {log_type.capitalize()} Error - {summary.splitlines()[0]}"
+        summary_title = f"{project_name}: {log_type.capitalize()} Error - {summary.splitlines()[0]}"
 
         # Formatear la descripción en Markdown para Jira
         description_plain = f"""
-# Informe de Análisis de Logs: Error en `{args.project_name}`
+# Informe de Análisis de Logs: Error en `{project_name}`
 
 ## Resumen del Problema
 {summary}
@@ -198,7 +198,7 @@ def main():
 
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
 
-    summary, description, issue_type = analyze_logs_with_ai(args.log_dir, args.log_type, args.report_language)
+    summary, description, issue_type = analyze_logs_with_ai(args.log_dir, args.log_type, args.report_language, args.project_name)
 
     if not summary or not description or not issue_type:
         print("ERROR: Log analysis failed or invalid issue type. No ticket will be created.")
