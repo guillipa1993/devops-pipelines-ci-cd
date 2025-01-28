@@ -120,13 +120,30 @@ def clean_log_content(content):
     cleaned_lines = [line for line in lines if line.strip()]
     return "\n".join(cleaned_lines)
 
+def validate_issue_type(jira_url, jira_user, jira_api_token, project_key, issue_type):
+    """
+    Valida si el tipo de incidencia es válido para el proyecto especificado.
+    """
+    url = f"{jira_url}/rest/api/3/issue/createmeta?projectKeys={project_key}"
+    headers = {"Content-Type": "application/json"}
+    auth = (jira_user, jira_api_token)
+    response = requests.get(url, headers=headers, auth=auth)
+    if response.status_code == 200:
+        valid_types = [
+            issue["name"] for issue in response.json()["projects"][0]["issuetypes"]
+        ]
+        if issue_type not in valid_types:
+            raise ValueError(f"Invalid issue type: '{issue_type}'. Valid types: {valid_types}")
+    else:
+        raise Exception(f"Failed to fetch issue types: {response.status_code} - {response.text}")
+
 def generate_prompt(log_type, language):
     if log_type == "failure":
         details = "Identify issues, recommend fixes, and provide preventive measures."
-        issue_type = "Bug"
+        issue_type = "Error"  
     else:
         details = "Confirm success, suggest optimizations, and provide scalability recommendations."
-        issue_type = "Task"
+        issue_type = "Tarea"  
     prompt = f"Analyze the logs provided and generate a detailed report in {language}. {details}"
     return prompt, issue_type
 
@@ -186,6 +203,15 @@ def main():
 
     if not description or not issue_type:
         print("ERROR: Log analysis failed or invalid issue type. No ticket will be created.")
+        return
+
+    try:
+        validate_issue_type(args.jira_url, jira_user_email, jira_api_token, args.jira_project_key, issue_type)
+    except ValueError as e:
+        print(f"ERROR: {e}")
+        return
+    except Exception as e:
+        print(f"ERROR: Failed to validate issue type: {e}")
         return
 
     existing_ticket_key = check_existing_tickets(jira, args.jira_project_key, summary, description)
