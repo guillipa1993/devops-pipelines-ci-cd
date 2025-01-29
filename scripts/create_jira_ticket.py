@@ -41,42 +41,54 @@ def calculate_similarity(text1, text2):
 def check_existing_tickets(jira, project_key, summary, description):
     """
     Verifica si existe un ticket con un resumen o descripción similar en Jira.
-    - Primero hace un filtrado con JQL usando un resumen "sanitizado".
-    - Luego, para cada ticket candidato, verifica localmente la similitud (SequenceMatcher).
-      Si el umbral es alto (p.ej., > 0.8), se asume un match.
-    - Si no hay match local, llama a la IA para comparar descripciones en detalle.
-      Se analiza la respuesta de la IA (sí/no).
-    - Retorna la key del primer ticket que considera duplicado, o None si no encuentra coincidencias.
+    1) Sanitiza el resumen para la búsqueda JQL.
+    2) Busca tickets en múltiples estados (puedes ajustar el listado).
+    3) Aplica comparación local (SequenceMatcher) con un umbral ajustable.
+    4) Si no supera el umbral local, usa IA para confirmar similitud.
+    5) Retorna la key del primer ticket que considera duplicado o None si no hay coincidencias.
     """
-
-    # 1. Limpieza básica del summary para evitar caracteres conflictivos en la JQL
-    sanitized_summary = sanitize_summary(summary)
     
-    # 2. Buscar tickets en Jira con estado "To Do" o "In Progress" (puedes agregar más estados)
+    # Ajusta el umbral de similitud local (SequenceMatcher)
+    LOCAL_SIMILARITY_THRESHOLD = 0.75  # Por ejemplo, 0.75
+    # Ajusta el umbral "casi alto" para fallback en caso de respuesta IA ambigua
+    LOCAL_FALLBACK_THRESHOLD = 0.70
+    
+    # 1. Sanitizar el resumen para JQL
+    sanitized_summary = sanitize_summary(summary)  # Usa tu método sanitize_summary
+    
+    # 2. Preparar una lista de estados que quieras incluir
+    #    (Si prefieres uno en concreto, ajusta la lista)
+    jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']  
+    states_str = ", ".join(jql_states)
+    
+    # 3. Construir la query JQL
     jql_query = (
         f'project = "{project_key}" AND summary ~ "{sanitized_summary}" '
-        f'AND status IN ("To Do", "In Progress")'
+        f'AND status IN ({states_str})'
     )
-
+    
     try:
+        # 4. Ejecutar la búsqueda en Jira
         issues = jira.search_issues(jql_query)
+        print(f"DEBUG: Found {len(issues)} candidate issues with JQL: {jql_query}")
     except Exception as e:
         print(f"ERROR: Failed to execute JQL query: {e}")
         return None
 
-    # 3. Recorrer los tickets encontrados y comparar con la descripción actual
+    # 5. Revisar cada ticket candidato
     for issue in issues:
         existing_description = issue.fields.description or ""
         
-        # 3A. Verificación local de similitud (SequenceMatcher)
+        # 5A. Comparación local
         similarity = calculate_similarity(description, existing_description)
-        if similarity > 0.8:
-            print(
-                f"INFO: Found an existing ticket (local similarity {similarity:.2f}) -> {issue.key}"
-            )
+        print(f"DEBUG: Comparing with Issue {issue.key} -> Local similarity: {similarity:.2f}")
+        
+        if similarity >= LOCAL_SIMILARITY_THRESHOLD:
+            # Si supera el umbral local alto, se considera duplicado
+            print(f"INFO: Found an existing ticket (local similarity {similarity:.2f}) -> {issue.key}")
             return issue.key
-
-        # 3B. Si no se cumple el umbral local, usa la IA para un segundo filtro
+        
+        # 5B. Si la similitud local es menor, usar IA para un segundo filtro
         try:
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -85,13 +97,13 @@ def check_existing_tickets(jira, project_key, summary, description):
                         "role": "system",
                         "content": (
                             "You are an assistant specialized in analyzing text similarity. "
-                            "You should respond ONLY with 'yes' or 'no' to indicate whether the two descriptions match in meaning."
+                            "You must respond only with 'yes' or 'no' to indicate whether the two descriptions match."
                         )
                     },
                     {
                         "role": "user",
                         "content": (
-                            "Compare the following descriptions in terms of meaning, ignoring language differences. "
+                            "Compare these two descriptions in terms of meaning, ignoring language differences. "
                             "If they describe the same or very similar issue, respond with 'yes'. Otherwise, respond with 'no'.\n\n"
                             f"Existing description:\n{existing_description}\n\n"
                             f"New description:\n{description}"
@@ -102,9 +114,9 @@ def check_existing_tickets(jira, project_key, summary, description):
                 temperature=0.3
             )
             ai_result = response.choices[0].message.content.strip().lower()
-            
-            # 3C. Interpretar la respuesta de la IA
-            #    Restringimos la lógica a "yes" / "no" exactos
+            print(f"DEBUG: AI comparison result for {issue.key}: '{ai_result}'")
+
+            # 5C. Interpretar la respuesta de la IA
             if ai_result.startswith("yes"):
                 print(f"INFO: Found an existing ticket (AI indicates match) -> {issue.key}")
                 return issue.key
@@ -112,23 +124,25 @@ def check_existing_tickets(jira, project_key, summary, description):
                 # Continúa buscando en otros tickets
                 continue
             else:
-                # Respuesta ambigua; fallback a ver si similitud local era suficientemente alta
-                if similarity > 0.7:
+                # Respuesta ambigua -> fallback local
+                if similarity >= LOCAL_FALLBACK_THRESHOLD:
                     print(
-                        f"WARNING: AI gave ambiguous response '{ai_result}', but local similarity is {similarity:.2f} -> {issue.key}"
+                        f"WARNING: AI gave ambiguous response '{ai_result}', "
+                        f"but local similarity is {similarity:.2f} -> {issue.key}"
                     )
                     return issue.key
 
         except Exception as e:
             print(f"WARNING: Failed to analyze similarity with AI: {e}")
-            # Fallback: si la similitud local es alta, considerarlo duplicado
-            if similarity > 0.8:
+            # Fallback: si la similitud local es alta (>= LOCAL_SIMILARITY_THRESHOLD)
+            # de todos modos considerarlo duplicado
+            if similarity >= LOCAL_SIMILARITY_THRESHOLD:
                 print(
-                    f"INFO: Found an existing ticket (local fallback {similarity:.2f}) -> {issue.key}"
+                    f"INFO: Found an existing ticket (fallback local {similarity:.2f}) -> {issue.key}"
                 )
                 return issue.key
 
-    # 4. Si no se encontró ningún duplicado, retornar None
+    # 6. Si no se encontró ningún duplicado, retornar None
     return None
 
 def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project_key, summary, description, issue_type):
@@ -215,8 +229,8 @@ def validate_issue_type(jira_url, jira_user, jira_api_token, project_key, issue_
 
 def generate_prompt(log_type, language):
     """
-    Genera un prompt más refinado para la IA, con instrucciones claras sobre
-    cómo estructurar el ticket de Jira en Markdown y evitando redundancias.
+    Genera un prompt refinado para la IA, con instrucciones claras sobre
+    cómo estructurar el ticket de Jira en Markdown y añadiendo emojis.
     Retorna el prompt y el tipo de incidencia (Error / Task).
     """
 
@@ -225,12 +239,12 @@ def generate_prompt(log_type, language):
             "You are a technical writer creating a concise Jira Cloud ticket from logs. "
             "Keep the format short and professional, using minimal Markdown. "
             "Focus on these sections:\n\n"
-            "1) **Summary**: A single-sentence overview of the main issue.\n"
-            "2) **Root Cause Analysis**: Briefly state the cause. Include log snippets only if crucial.\n"
-            "3) **Proposed Solutions**: List concrete steps to fix the issue, using bullets or short paragraphs.\n"
-            "4) **Preventive Measures**: Suggest ways to avoid recurrence. Keep it succinct.\n"
-            "5) **Impact Analysis**: What happens if it's not addressed?\n\n"
-            "Avoid triple backticks unless strictly necessary, and do not add extra emojis."
+            "1) **Summary** ❗: A single-sentence overview of the main issue.\n"
+            "2) **Root Cause Analysis** 🔍: Briefly state the cause. Include log snippets if crucial.\n"
+            "3) **Proposed Solutions** 🛠️: List concrete steps to fix the issue, using bullets or short paragraphs.\n"
+            "4) **Preventive Measures** ⛑️: Suggest ways to avoid recurrence. Keep it succinct.\n"
+            "5) **Impact Analysis** ⚠️: What happens if it's not addressed?\n\n"
+            "Avoid triple backticks unless strictly necessary, and keep the use of emojis minimal but clear."
         )
         issue_type = "Error"
     else:
@@ -238,15 +252,15 @@ def generate_prompt(log_type, language):
             "You are a technical writer creating a concise Jira Cloud ticket from logs. "
             "Keep the format short and professional, using minimal Markdown. "
             "Focus on these sections:\n\n"
-            "1) **Summary**: A single-sentence overview of the successful outcome.\n"
-            "2) **Success Details**: Important tasks or milestones achieved.\n"
-            "3) **Recommendations**: Suggested optimizations or scalability measures.\n"
-            "4) **Impact**: Positive effects or benefits of this success.\n\n"
-            "Avoid triple backticks unless strictly necessary, and do not add extra emojis."
+            "1) **Summary** ✅: A single-sentence overview of the successful outcome.\n"
+            "2) **Success Details** 🚀: Important tasks or milestones achieved.\n"
+            "3) **Recommendations** 💡: Suggested optimizations or scalability measures.\n"
+            "4) **Impact** 🌟: Positive effects or benefits of this success.\n\n"
+            "Avoid triple backticks unless strictly necessary, and keep the use of emojis minimal but clear."
         )
         issue_type = "Task"
 
-    # Añadimos un recordatorio de concisión y del idioma
+    # Añadimos un recordatorio de concisión y del idioma deseado
     prompt = (
         f"{details}\n\n"
         f"Be concise, professional, and compatible with Jira Cloud's Markdown. "
