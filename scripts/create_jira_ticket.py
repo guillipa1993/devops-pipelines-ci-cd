@@ -1,9 +1,9 @@
 import os
 import argparse
-from jira import JIRA
 import tarfile
 import requests
 import re
+from jira import JIRA
 from openai import OpenAI
 from datetime import datetime
 from difflib import SequenceMatcher
@@ -254,6 +254,17 @@ def generate_prompt(log_type, language):
     )
     return prompt, issue_type
 
+def unify_double_to_single_asterisks(description):
+    """
+    Reemplaza de forma iterativa cualquier aparición de '**' por '*'.
+    Esto simplifica todos los casos en los que la IA use doble asterisco,
+    sin importar el idioma o el contexto.
+    """
+    # Mientras sigamos encontrando '**', las reducimos a un '*'
+    while '**' in description:
+        description = description.replace('**', '*')
+    return description
+
 def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
     """
     Analiza los logs en log_dir, genera un prompt para la IA y obtiene
@@ -324,6 +335,9 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
             .strip()
         )
         
+        # Opcional: quitar doble asteriscos si no los quieres en el título
+        cleaned_title_line = unify_double_to_single_asterisks(cleaned_title_line)
+
         # Armar el título final
         label = "Error" if log_type == "failure" else "Success"
         summary_title = f"{project_name}: {label} - {cleaned_title_line}"
@@ -333,7 +347,10 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
         # Eliminar tabulaciones y espacios repetidos
         # (Si usas HTML en Jira, podrías convertir markdown a HTML, etc.)
         description_plain = description_plain.replace("\t", " ")
-        
+
+        # Reemplazar doble asterisco por uno solo
+        description_plain = unify_double_to_single_asterisks(description_plain)
+
         return summary_title, description_plain, issue_type
     
     except Exception as e:
