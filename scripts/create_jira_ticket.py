@@ -23,15 +23,44 @@ def connect_to_jira(jira_url, jira_user, jira_api_token):
 def check_existing_tickets(jira, project_key, summary, description):
     """
     Verifica si existe un ticket con un resumen o descripción similar en Jira.
-    Solo busca tickets en estado "To Do" o "In Progress" para evitar duplicados.
+    Compara también el contenido del ticket usando IA para evitar duplicados.
+    Solo busca tickets en estado "To Do" o "In Progress".
     """
+    # Buscar tickets en el estado especificado con un resumen similar
     jql_query = f'project = "{project_key}" AND summary ~ "{summary}" AND status IN ("To Do", "In Progress")'
     issues = jira.search_issues(jql_query)
 
     for issue in issues:
-        if description.strip().lower() in issue.fields.description.lower():
-            print(f"INFO: Found an existing ticket with similar description: {issue.key}")
-            return issue.key
+        existing_description = issue.fields.description or ""
+
+        # Usar IA para determinar similitud entre descripciones
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are an assistant specialized in analyzing text similarity."},
+                    {
+                        "role": "user",
+                        "content": f"Does the following description match this one?\n\n"
+                                   f"Existing description:\n{existing_description}\n\n"
+                                   f"New description:\n{description}"
+                    }
+                ],
+                max_tokens=5000,
+                temperature=0.4
+            )
+            ai_result = response.choices[0].message.content.strip().lower()
+            if "yes" in ai_result or "match" in ai_result:
+                print(f"INFO: Found an existing ticket with similar content: {issue.key}")
+                return issue.key
+
+        except Exception as e:
+            print(f"WARNING: Failed to analyze similarity with AI: {e}")
+            # Fallback to simple string comparison
+            if description.strip().lower() in existing_description.lower():
+                print(f"INFO: Found an existing ticket with similar description (fallback): {issue.key}")
+                return issue.key
+
     return None
 
 def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project_key, summary, description, issue_type):
@@ -78,7 +107,7 @@ def validate_logs_directory(log_dir):
     if not os.path.exists(log_dir):
         raise FileNotFoundError(f"ERROR: The logs directory '{log_dir}' does not exist.")
     log_files = []
-    
+
     for file in os.listdir(log_dir):
         file_path = os.path.join(log_dir, file)
         if file.endswith(".tar.gz"):
