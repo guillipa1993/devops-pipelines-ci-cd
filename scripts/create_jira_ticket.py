@@ -231,7 +231,7 @@ def generate_prompt(log_type, language):
     """
     Genera un prompt refinado para la IA, con instrucciones claras sobre
     cómo estructurar el ticket de Jira en Markdown y añadiendo emojis.
-    Retorna el prompt y el tipo de incidencia (Error / Task).
+    Retorna el prompt y el tipo de incidencia (Error / Tarea).
     """
 
     if log_type == "failure":
@@ -258,7 +258,7 @@ def generate_prompt(log_type, language):
             "4) **Impact** 🌟: Positive effects or benefits of this success.\n\n"
             "Avoid triple backticks unless strictly necessary, and keep the use of emojis minimal but clear."
         )
-        issue_type = "Task"
+        issue_type = "Tarea"
 
     # Añadimos un recordatorio de concisión y del idioma deseado
     prompt = (
