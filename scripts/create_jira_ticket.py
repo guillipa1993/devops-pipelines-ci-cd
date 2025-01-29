@@ -221,7 +221,7 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": f"{prompt}\n{combined_logs}"}
             ],
-            max_tokens=2000,
+            max_tokens=700,
             temperature=0.5
         )
         summary = response.choices[0].message.content.strip()
@@ -238,7 +238,7 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
 
 ### 📂 Logs Analizados  
 ```plaintext
-{combined_logs[:2000]}
+{combined_logs}
 """
         return summary_title, description_plain, issue_type
     except Exception as e:
