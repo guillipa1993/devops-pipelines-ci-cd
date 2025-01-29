@@ -229,8 +229,9 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
         )
         summary = response.choices[0].message.content.strip()
 
-        # Generar un título más descriptivo sin "Resumen"
-        summary_title = f"{project_name}: {log_type.capitalize()} Error - {summary.splitlines()[0]}"
+        # Generar un título más descriptivo
+        clean_summary = summary.splitlines()[0].strip().replace("```markdown", "").replace("```", "")
+        summary_title = f"{project_name}: {log_type.capitalize()} Error - {clean_summary}"
 
         # Usar directamente el contenido de la IA para la descripción
         description_plain = summary.strip()
