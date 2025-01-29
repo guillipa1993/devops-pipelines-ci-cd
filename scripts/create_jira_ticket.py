@@ -5,6 +5,7 @@ import tarfile
 import requests
 from openai import OpenAI
 from datetime import datetime
+from difflib import SequenceMatcher
 
 # Verificar si la clave de API está configurada
 api_key = os.getenv("OPENAI_API_KEY")
@@ -26,10 +27,17 @@ def sanitize_summary(summary):
     """
     return "".join(c for c in summary if c.isalnum() or c.isspace())
 
+def calculate_similarity(text1, text2):
+    """
+    Calcula la similitud entre dos textos usando SequenceMatcher.
+    Retorna un valor entre 0 y 1.
+    """
+    return SequenceMatcher(None, text1.strip().lower(), text2.strip().lower()).ratio()
+
 def check_existing_tickets(jira, project_key, summary, description):
     """
     Verifica si existe un ticket con un resumen o descripción similar en Jira.
-    Compara también el contenido del ticket usando IA para evitar duplicados.
+    Compara también el contenido del ticket usando IA y una métrica de similitud local.
     Solo busca tickets en estado "To Do" o "In Progress".
     """
     # Limpiar el resumen para evitar errores en JQL
@@ -60,7 +68,7 @@ def check_existing_tickets(jira, project_key, summary, description):
                                        f"New description:\n{description}"
                         }
                     ],
-                    max_tokens=5000,
+                    max_tokens=500,
                     temperature=0.4
                 )
                 ai_result = response.choices[0].message.content.strip().lower()
@@ -70,9 +78,10 @@ def check_existing_tickets(jira, project_key, summary, description):
 
             except Exception as e:
                 print(f"WARNING: Failed to analyze similarity with AI: {e}")
-                # Fallback to simple string comparison
-                if description.strip().lower() in existing_description.lower():
-                    print(f"INFO: Found an existing ticket with similar description (fallback): {issue.key}")
+                # Fallback to local similarity check
+                similarity = calculate_similarity(description, existing_description)
+                if similarity > 0.8:  # Umbral de similitud
+                    print(f"INFO: Found an existing ticket with similar description (local similarity {similarity}): {issue.key}")
                     return issue.key
 
     except Exception as e:
@@ -222,21 +231,14 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
 
         # Formatear la descripción en Markdown para Jira
         description_plain = f"""
-# Informe de Análisis de Logs: Error en `{project_name}`
+# 📌 Informe de Análisis de Logs: Error en `{project_name}`
 
-## Resumen del Problema
+### 🔍 Resumen del Problema  
 {summary}
 
-## Logs Analizados
-```
-{combined_logs}
-```
-
-## Soluciones Recomendadas 💡
-- [Incluir pasos sugeridos aquí]
-
-## Análisis de Impacto 🚫⚠️
-- [Incluir impacto aquí]
+### 📂 Logs Analizados  
+```plaintext
+{combined_logs[:2000]}
 """
         return summary_title, description_plain, issue_type
     except Exception as e:
