@@ -3,6 +3,7 @@ import argparse
 from jira import JIRA
 import tarfile
 import requests
+import re
 from openai import OpenAI
 from datetime import datetime
 from difflib import SequenceMatcher
@@ -27,23 +28,31 @@ def sanitize_summary(summary):
     """
     return "".join(c for c in summary if c.isalnum() or c.isspace())
 
+def preprocess_text(text):
+    # Quita puntuación y espacios extra
+    text = re.sub(r'[^\w\s]', '', text)
+    return text.strip().lower()
+
 def calculate_similarity(text1, text2):
-    """
-    Calcula la similitud entre dos textos usando SequenceMatcher.
-    Retorna un valor entre 0 y 1.
-    """
-    return SequenceMatcher(None, text1.strip().lower(), text2.strip().lower()).ratio()
+    t1 = preprocess_text(text1)
+    t2 = preprocess_text(text2)
+    return SequenceMatcher(None, t1, t2).ratio()
 
 def check_existing_tickets(jira, project_key, summary, description):
     """
     Verifica si existe un ticket con un resumen o descripción similar en Jira.
-    Compara también el contenido del ticket usando IA y una métrica de similitud local.
-    Solo busca tickets en estado "To Do" o "In Progress".
+    - Primero hace un filtrado con JQL usando un resumen "sanitizado".
+    - Luego, para cada ticket candidato, verifica localmente la similitud (SequenceMatcher).
+      Si el umbral es alto (p.ej., > 0.8), se asume un match.
+    - Si no hay match local, llama a la IA para comparar descripciones en detalle.
+      Se analiza la respuesta de la IA (sí/no).
+    - Retorna la key del primer ticket que considera duplicado, o None si no encuentra coincidencias.
     """
-    # Limpiar el resumen para evitar errores en JQL
-    sanitized_summary = sanitize_summary(summary)
 
-    # Buscar tickets en el estado especificado con un resumen similar
+    # 1. Limpieza básica del summary para evitar caracteres conflictivos en la JQL
+    sanitized_summary = sanitize_summary(summary)
+    
+    # 2. Buscar tickets en Jira con estado "To Do" o "In Progress" (puedes agregar más estados)
     jql_query = (
         f'project = "{project_key}" AND summary ~ "{sanitized_summary}" '
         f'AND status IN ("To Do", "In Progress")'
@@ -51,44 +60,75 @@ def check_existing_tickets(jira, project_key, summary, description):
 
     try:
         issues = jira.search_issues(jql_query)
-
-        for issue in issues:
-            existing_description = issue.fields.description or ""
-
-            # Usar IA para determinar similitud entre descripciones
-            try:
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "You are an assistant specialized in analyzing text similarity."},
-                        {
-                            "role": "user",
-                            "content": f"Does the following description match this one in meaning, regardless of language?\n\n" 
-                                       f"Consider similar or identical description.\n\n"
-                                       f"Respond with a yes or no to indicate if there is a match.\n\n"
-                                       f"Existing description:\n{existing_description}\n\n"
-                                       f"New description:\n{description}"
-                        }
-                    ],
-                    max_tokens=500,
-                    temperature=0.4
-                )
-                ai_result = response.choices[0].message.content.strip().lower()
-                if "yes" in ai_result or "match" in ai_result:
-                    print(f"INFO: Found an existing ticket with similar content: {issue.key}")
-                    return issue.key
-
-            except Exception as e:
-                print(f"WARNING: Failed to analyze similarity with AI: {e}")
-                # Fallback to local similarity check
-                similarity = calculate_similarity(description, existing_description)
-                if similarity > 0.8:  # Umbral de similitud
-                    print(f"INFO: Found an existing ticket with similar description (local similarity {similarity}): {issue.key}")
-                    return issue.key
-
     except Exception as e:
         print(f"ERROR: Failed to execute JQL query: {e}")
+        return None
 
+    # 3. Recorrer los tickets encontrados y comparar con la descripción actual
+    for issue in issues:
+        existing_description = issue.fields.description or ""
+        
+        # 3A. Verificación local de similitud (SequenceMatcher)
+        similarity = calculate_similarity(description, existing_description)
+        if similarity > 0.8:
+            print(
+                f"INFO: Found an existing ticket (local similarity {similarity:.2f}) -> {issue.key}"
+            )
+            return issue.key
+
+        # 3B. Si no se cumple el umbral local, usa la IA para un segundo filtro
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an assistant specialized in analyzing text similarity. "
+                            "You should respond ONLY with 'yes' or 'no' to indicate whether the two descriptions match in meaning."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            "Compare the following descriptions in terms of meaning, ignoring language differences. "
+                            "If they describe the same or very similar issue, respond with 'yes'. Otherwise, respond with 'no'.\n\n"
+                            f"Existing description:\n{existing_description}\n\n"
+                            f"New description:\n{description}"
+                        )
+                    }
+                ],
+                max_tokens=200,
+                temperature=0.3
+            )
+            ai_result = response.choices[0].message.content.strip().lower()
+            
+            # 3C. Interpretar la respuesta de la IA
+            #    Restringimos la lógica a "yes" / "no" exactos
+            if ai_result.startswith("yes"):
+                print(f"INFO: Found an existing ticket (AI indicates match) -> {issue.key}")
+                return issue.key
+            elif ai_result.startswith("no"):
+                # Continúa buscando en otros tickets
+                continue
+            else:
+                # Respuesta ambigua; fallback a ver si similitud local era suficientemente alta
+                if similarity > 0.7:
+                    print(
+                        f"WARNING: AI gave ambiguous response '{ai_result}', but local similarity is {similarity:.2f} -> {issue.key}"
+                    )
+                    return issue.key
+
+        except Exception as e:
+            print(f"WARNING: Failed to analyze similarity with AI: {e}")
+            # Fallback: si la similitud local es alta, considerarlo duplicado
+            if similarity > 0.8:
+                print(
+                    f"INFO: Found an existing ticket (local fallback {similarity:.2f}) -> {issue.key}"
+                )
+                return issue.key
+
+    # 4. Si no se encontró ningún duplicado, retornar None
     return None
 
 def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project_key, summary, description, issue_type):
@@ -174,69 +214,128 @@ def validate_issue_type(jira_url, jira_user, jira_api_token, project_key, issue_
         raise Exception(f"Failed to fetch issue types: {response.status_code} - {response.text}")
 
 def generate_prompt(log_type, language):
+    """
+    Genera un prompt más refinado para la IA, con instrucciones claras sobre
+    cómo estructurar el ticket de Jira en Markdown y evitando redundancias.
+    Retorna el prompt y el tipo de incidencia (Error / Task).
+    """
+
     if log_type == "failure":
         details = (
-            "You are an expert technical writer. Generate a concise Jira Cloud ticket based on the provided logs. "
-            "The ticket should be structured in clear Markdown format with the following sections:\n\n"
-            "1. Summary: Provide a concise overview of the issue, clearly highlighting the problem.\n"
-            "2. Root Cause Analysis: Explain the primary cause of the issue and include relevant log snippets.\n"
-            "3. Proposed Solutions: List specific, actionable steps to resolve the issue.\n"
-            "4. Preventive Measures: Suggest ways to avoid similar issues in the future.\n"
-            "5. Impact Analysis: Explain the consequences of not addressing this issue.\n\n"
-            "Use Markdown syntax for formatting (e.g., headings, lists, code blocks) and avoid excessive emojis."
+            "You are a technical writer creating a concise Jira Cloud ticket from logs. "
+            "Keep the format short and professional, using minimal Markdown. "
+            "Focus on these sections:\n\n"
+            "1) **Summary**: A single-sentence overview of the main issue.\n"
+            "2) **Root Cause Analysis**: Briefly state the cause. Include log snippets only if crucial.\n"
+            "3) **Proposed Solutions**: List concrete steps to fix the issue, using bullets or short paragraphs.\n"
+            "4) **Preventive Measures**: Suggest ways to avoid recurrence. Keep it succinct.\n"
+            "5) **Impact Analysis**: What happens if it's not addressed?\n\n"
+            "Avoid triple backticks unless strictly necessary, and do not add extra emojis."
         )
         issue_type = "Error"
     else:
         details = (
-            "You are an expert technical writer. Generate a concise Jira Cloud ticket based on the provided logs. "
-            "The ticket should be structured in clear Markdown format with the following sections:\n\n"
-            "1. Summary: Provide an overview of the successful state of the process.\n"
-            "2. Success Details: Highlight completed tasks and achievements.\n"
-            "3. Recommendations: Suggest optimizations or scalability measures.\n"
-            "4. Impact: Explain the positive implications of the success.\n\n"
-            "Use Markdown syntax for formatting (e.g., headings, lists, code blocks) and avoid excessive emojis."
+            "You are a technical writer creating a concise Jira Cloud ticket from logs. "
+            "Keep the format short and professional, using minimal Markdown. "
+            "Focus on these sections:\n\n"
+            "1) **Summary**: A single-sentence overview of the successful outcome.\n"
+            "2) **Success Details**: Important tasks or milestones achieved.\n"
+            "3) **Recommendations**: Suggested optimizations or scalability measures.\n"
+            "4) **Impact**: Positive effects or benefits of this success.\n\n"
+            "Avoid triple backticks unless strictly necessary, and do not add extra emojis."
         )
         issue_type = "Task"
-    
+
+    # Añadimos un recordatorio de concisión y del idioma
     prompt = (
-        f"{details} Ensure the content is concise, professional, and fits Jira Cloud's Markdown requirements. "
+        f"{details}\n\n"
+        f"Be concise, professional, and compatible with Jira Cloud's Markdown. "
         f"Write the ticket in {language}."
     )
     return prompt, issue_type
 
 def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
+    """
+    Analiza los logs en log_dir, genera un prompt para la IA y obtiene
+    un resumen y descripción para crear el ticket de Jira.
+    """
+    # 1. Validar y cargar archivos de logs
     log_files = validate_logs_directory(log_dir)
-    combined_logs = ""
+    combined_logs = []
+    
+    # 2. Filtrado básico de logs (Ejemplo: limitar a 300 líneas totales)
+    max_lines = 300
     for file in log_files:
         try:
             with open(file, "r", encoding="utf-8") as f:
-                combined_logs += f"\n### {os.path.basename(file)}\n" + clean_log_content(f.read())
+                lines = f.read().splitlines()
+                # Opcional: filtrar solo secciones relevantes
+                # lines = [ln for ln in lines if "ERROR" in ln or "Exception" in ln]
+                
+                # Agregamos hasta 'max_lines' para que no sea muy extenso
+                combined_logs.extend(lines[:max_lines])
         except UnicodeDecodeError:
             print(f"WARNING: Could not read file {file} due to encoding issues. Skipping.")
             continue
 
+    # Si quieres separar cada archivo en el prompt, puedes crear secciones
+    logs_content = "\n".join(combined_logs)
+    if not logs_content.strip():
+        print("ERROR: No relevant logs found for analysis.")
+        return None, None, None
+
+    # 3. Generar el prompt para la IA
     prompt, issue_type = generate_prompt(log_type, report_language)
 
+    # 4. Llamar a la IA con un rol system que fuerce respuestas breves y concisas
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": f"{prompt}\n\nLogs:\n{combined_logs}"}
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful assistant generating concise Jira tickets. "
+                        "Use short, direct statements and minimal markdown formatting. "
+                        "Avoid triple backticks for code unless strictly necessary."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": f"{prompt}\n\nLogs:\n{logs_content}"
+                }
             ],
-            max_tokens=700,
-            temperature=0.5
+            max_tokens=600,  # Límite menor para no generar texto muy largo
+            temperature=0.4   # Menor temperatura para ser más directa y predecible
         )
+        
+        # 5. Procesar la respuesta de la IA
         summary = response.choices[0].message.content.strip()
-
-        # Generar un título más descriptivo
-        clean_summary = summary.splitlines()[0].strip().replace("```markdown", "").replace("```", "")
-        summary_title = f"{project_name}: {log_type.capitalize()} Error - {clean_summary}"
-
-        # Usar directamente el contenido de la IA para la descripción
-        description_plain = summary.strip()
-
+        
+        # 6. Limpiar la primera línea para evitar secuencias no deseadas como ```markdown
+        lines = summary.splitlines()
+        first_line = lines[0] if lines else "No Title"
+        
+        # Eliminar triple backticks y la palabra 'markdown'
+        cleaned_title_line = (
+            first_line
+            .replace("```markdown", "")
+            .replace("```", "")
+            .strip()
+        )
+        
+        # Armar el título final
+        label = "Error" if log_type == "failure" else "Success"
+        summary_title = f"{project_name}: {label} - {cleaned_title_line}"
+        
+        # 7. Descripción final (posprocesado opcional para quitar tabulaciones, etc.)
+        description_plain = summary
+        # Eliminar tabulaciones y espacios repetidos
+        # (Si usas HTML en Jira, podrías convertir markdown a HTML, etc.)
+        description_plain = description_plain.replace("\t", " ")
+        
         return summary_title, description_plain, issue_type
+    
     except Exception as e:
         print(f"ERROR: Failed to analyze logs with AI: {e}")
         return None, None, None
