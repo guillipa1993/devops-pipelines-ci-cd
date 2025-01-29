@@ -63,7 +63,9 @@ def check_existing_tickets(jira, project_key, summary, description):
                         {"role": "system", "content": "You are an assistant specialized in analyzing text similarity."},
                         {
                             "role": "user",
-                            "content": f"Does the following description match this one?\n\n"
+                            "content": f"Does the following description match this one in meaning, regardless of language?\n\n" 
+                                       f"Consider similar or identical description.\n\n"
+                                       f"Respond with a yes or no to indicate if there is a match.\n\n"
                                        f"Existing description:\n{existing_description}\n\n"
                                        f"New description:\n{description}"
                         }
@@ -174,30 +176,31 @@ def validate_issue_type(jira_url, jira_user, jira_api_token, project_key, issue_
 def generate_prompt(log_type, language):
     if log_type == "failure":
         details = (
-            "You are an expert technical writer. Generate a Jira Cloud ticket based on the provided logs. "
-            "The ticket should be structured as follows:\n\n"
-            "1. **Summary**: Provide a concise summary of the detected issue, clearly highlighting the problem. Use relevant emojis like `🔍`.\n"
-            "2. **Root Cause Analysis**: Analyze the logs to identify the primary cause of the issue. Include critical error messages or log snippets in code blocks (``` ```).\n"
-            "3. **Proposed Solutions**: List actionable steps to resolve the issue. Use numbered lists and provide code examples in blocks. Emphasize key actions with emojis like 💡 or 🔧.\n"
-            "4. **Preventive Measures**: Suggest strategies to avoid similar issues in the future. Use bullet points (`-`) and actionable advice.\n"
-            "5. **Critical Issues Highlight**: Explain the risks of not addressing the issue. Use impactful emojis like 💣 or ⚠️ to stress criticality.\n"
-            "6. **Impact Analysis**: Describe the implications of the issue on development workflows, users, or systems.\n\n"
+            "You are an expert technical writer. Generate a concise Jira Cloud ticket based on the provided logs. "
+            "The ticket should be structured in clear Markdown format with the following sections:\n\n"
+            "1. Summary: Provide a concise overview of the issue, clearly highlighting the problem.\n"
+            "2. Root Cause Analysis: Explain the primary cause of the issue and include relevant log snippets.\n"
+            "3. Proposed Solutions: List specific, actionable steps to resolve the issue.\n"
+            "4. Preventive Measures: Suggest ways to avoid similar issues in the future.\n"
+            "5. Impact Analysis: Explain the consequences of not addressing this issue.\n\n"
+            "Use Markdown syntax for formatting (e.g., headings, lists, code blocks) and avoid excessive emojis."
         )
         issue_type = "Error"
     else:
         details = (
-            "You are an expert technical writer. Generate a Jira Cloud ticket based on the provided logs. "
-            "The ticket should be structured as follows:\n\n"
-            "1. **Summary**: Provide a concise summary of the successful state of the build. Use relevant emojis like `✅`.\n"
-            "2. **Success Confirmation**: Outline the tasks completed successfully and the technical milestones achieved.\n"
-            "3. **Proposed Optimizations**: Recommend potential improvements or adjustments to enhance performance or scalability. Use bullet points (`-`) and provide examples in code blocks.\n"
-            "4. **Scalability Recommendations**: Suggest ideas to make the system ready for higher loads, updates, or new functionalities.\n"
-            "5. **Solution Benefits**: Highlight the positive outcomes of the successful build for the project, users, or system stability.\n\n"
+            "You are an expert technical writer. Generate a concise Jira Cloud ticket based on the provided logs. "
+            "The ticket should be structured in clear Markdown format with the following sections:\n\n"
+            "1. Summary: Provide an overview of the successful state of the process.\n"
+            "2. Success Details: Highlight completed tasks and achievements.\n"
+            "3. Recommendations: Suggest optimizations or scalability measures.\n"
+            "4. Impact: Explain the positive implications of the success.\n\n"
+            "Use Markdown syntax for formatting (e.g., headings, lists, code blocks) and avoid excessive emojis."
         )
         issue_type = "Task"
+    
     prompt = (
-        f"{details} Ensure the ticket is clear, professional, and formatted to fit Jira Cloud's requirements. "
-        f"The ticket content must be generated in {language}."
+        f"{details} Ensure the content is concise, professional, and fits Jira Cloud's Markdown requirements. "
+        f"Write the ticket in {language}."
     )
     return prompt, issue_type
 
@@ -219,27 +222,19 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": f"{prompt}\n{combined_logs}"}
+                {"role": "user", "content": f"{prompt}\n\nLogs:\n{combined_logs}"}
             ],
             max_tokens=700,
             temperature=0.5
         )
         summary = response.choices[0].message.content.strip()
 
-        # Generar un título más descriptivo
+        # Generar un título más descriptivo sin "Resumen"
         summary_title = f"{project_name}: {log_type.capitalize()} Error - {summary.splitlines()[0]}"
 
-        # Formatear la descripción en Markdown para Jira
-        description_plain = f"""
-# 📌 Informe de Análisis de Logs: Error en `{project_name}`
+        # Usar directamente el contenido de la IA para la descripción
+        description_plain = summary.strip()
 
-### 🔍 Resumen del Problema  
-{summary}
-
-### 📂 Logs Analizados  
-```plaintext
-{combined_logs}
-"""
         return summary_title, description_plain, issue_type
     except Exception as e:
         print(f"ERROR: Failed to analyze logs with AI: {e}")
