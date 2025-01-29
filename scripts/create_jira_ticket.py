@@ -265,6 +265,22 @@ def unify_double_to_single_asterisks(description):
         description = description.replace('**', '*')
     return description
 
+def sanitize_title(title):
+    """
+    Elimina asteriscos (*) y backticks (`) del título,
+    incluyendo posibles triples (```).
+    Mantiene letras, números, espacios y signos de puntuación básicos.
+    Luego recorta espacios al inicio/fin.
+    """
+    # Sustituye cualquier aparición de `*` o `` ` `` (en bloque o individual) por nada
+    # Ejemplo: "```markdown" -> "markdown", "***Error***" -> "Error"
+    title = re.sub(r"[\*`]+", "", title)
+
+    # Elimina espacios en exceso
+    title = title.strip()
+
+    return title
+
 def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
     """
     Analiza los logs en log_dir, genera un prompt para la IA y obtiene
@@ -336,7 +352,7 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
         )
         
         # Opcional: quitar doble asteriscos si no los quieres en el título
-        cleaned_title_line = unify_double_to_single_asterisks(cleaned_title_line)
+        cleaned_title_line = sanitize_title(cleaned_title_line)
 
         # Armar el título final
         label = "Error" if log_type == "failure" else "Success"
