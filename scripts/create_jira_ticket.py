@@ -20,46 +20,63 @@ def connect_to_jira(jira_url, jira_user, jira_api_token):
     jira = JIRA(options, basic_auth=(jira_user, jira_api_token))
     return jira
 
+def sanitize_summary(summary):
+    """
+    Limpia el resumen para eliminar caracteres que puedan causar problemas en el JQL.
+    """
+    return "".join(c for c in summary if c.isalnum() or c.isspace())
+
 def check_existing_tickets(jira, project_key, summary, description):
     """
     Verifica si existe un ticket con un resumen o descripción similar en Jira.
     Compara también el contenido del ticket usando IA para evitar duplicados.
     Solo busca tickets en estado "To Do" o "In Progress".
     """
+    # Limpiar el resumen para evitar errores en JQL
+    sanitized_summary = sanitize_summary(summary)
+
     # Buscar tickets en el estado especificado con un resumen similar
-    jql_query = f'project = "{project_key}" AND summary ~ "{summary}" AND status IN ("To Do", "In Progress")'
-    issues = jira.search_issues(jql_query)
+    jql_query = (
+        f'project = "{project_key}" AND summary ~ "{sanitized_summary}" '
+        f'AND status IN ("To Do", "In Progress")'
+    )
 
-    for issue in issues:
-        existing_description = issue.fields.description or ""
+    try:
+        issues = jira.search_issues(jql_query)
 
-        # Usar IA para determinar similitud entre descripciones
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are an assistant specialized in analyzing text similarity."},
-                    {
-                        "role": "user",
-                        "content": f"Does the following description match this one?\n\n"
-                                   f"Existing description:\n{existing_description}\n\n"
-                                   f"New description:\n{description}"
-                    }
-                ],
-                max_tokens=5000,
-                temperature=0.4
-            )
-            ai_result = response.choices[0].message.content.strip().lower()
-            if "yes" in ai_result or "match" in ai_result:
-                print(f"INFO: Found an existing ticket with similar content: {issue.key}")
-                return issue.key
+        for issue in issues:
+            existing_description = issue.fields.description or ""
 
-        except Exception as e:
-            print(f"WARNING: Failed to analyze similarity with AI: {e}")
-            # Fallback to simple string comparison
-            if description.strip().lower() in existing_description.lower():
-                print(f"INFO: Found an existing ticket with similar description (fallback): {issue.key}")
-                return issue.key
+            # Usar IA para determinar similitud entre descripciones
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are an assistant specialized in analyzing text similarity."},
+                        {
+                            "role": "user",
+                            "content": f"Does the following description match this one?\n\n"
+                                       f"Existing description:\n{existing_description}\n\n"
+                                       f"New description:\n{description}"
+                        }
+                    ],
+                    max_tokens=5000,
+                    temperature=0.4
+                )
+                ai_result = response.choices[0].message.content.strip().lower()
+                if "yes" in ai_result or "match" in ai_result:
+                    print(f"INFO: Found an existing ticket with similar content: {issue.key}")
+                    return issue.key
+
+            except Exception as e:
+                print(f"WARNING: Failed to analyze similarity with AI: {e}")
+                # Fallback to simple string comparison
+                if description.strip().lower() in existing_description.lower():
+                    print(f"INFO: Found an existing ticket with similar description (fallback): {issue.key}")
+                    return issue.key
+
+    except Exception as e:
+        print(f"ERROR: Failed to execute JQL query: {e}")
 
     return None
 
