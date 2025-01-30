@@ -8,15 +8,17 @@ from openai import OpenAI
 from datetime import datetime
 from difflib import SequenceMatcher
 
-# Verificar si la clave de API está configurada
+# ============ CONFIGURACIÓN OPENAI ============
+
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     print("ERROR: 'OPENAI_API_KEY' is not set. Please set it as an environment variable.")
     exit(1)
 
-# Inicializar la API de OpenAI
 print("DEBUG: Initializing OpenAI client...")
 client = OpenAI(api_key=api_key)
+
+# ============ CONEXIÓN A JIRA ============
 
 def connect_to_jira(jira_url, jira_user, jira_api_token):
     print(f"DEBUG: Connecting to Jira at {jira_url} with user {jira_user}...")
@@ -24,6 +26,8 @@ def connect_to_jira(jira_url, jira_user, jira_api_token):
     jira = JIRA(options, basic_auth=(jira_user, jira_api_token))
     print("DEBUG: Successfully connected to Jira.")
     return jira
+
+# ============ FUNCIONES DE SANITIZACIÓN Y SIMILITUD ============
 
 def sanitize_summary(summary):
     """
@@ -55,22 +59,36 @@ def calculate_similarity(text1, text2):
     print(f"DEBUG: Similarity ratio = {ratio:.2f}")
     return ratio
 
-def check_existing_tickets(jira, project_key, summary, description):
+# ============ BÚSQUEDA DE TICKETS EXISTENTES (FILTRANDO POR ISSUE_TYPE) ============
+
+def check_existing_tickets(jira, project_key, summary, description, issue_type):
     """
-    Verifica si existe un ticket con un resumen o descripción similar en Jira.
+    Verifica si existe un ticket con un resumen o descripción similar en Jira,
+    filtrando por el 'issue_type' y estados relevantes.
+    1) Sanitiza el resumen para la búsqueda JQL.
+    2) Busca tickets en múltiples estados (por defecto: "To Do", "In Progress", "Open", "Reopened").
+    3) Aplica comparación local (SequenceMatcher) con un umbral ajustable.
+    4) Si no supera el umbral local, usa IA para confirmar similitud.
+    5) Retorna la key del primer ticket que considera duplicado o None si no hay coincidencias.
     """
     print("DEBUG: Checking for existing tickets...")
     LOCAL_SIMILARITY_THRESHOLD = 0.75
     LOCAL_FALLBACK_THRESHOLD = 0.70
 
+    # 1. Sanitizar el resumen para JQL
     sanitized_summary = sanitize_summary(summary)
 
-    # Ajusta los estados que quieras incluir
+    # 2. Ajusta los estados que quieras incluir
     jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
     states_str = ", ".join(jql_states)
 
+    # Filtrar por issuetype (p.ej., "Error" o "Tarea"), dependiendo de log_type
+    # si log_type es 'failure' => issue_type = "Error", si es 'success' => "Tarea"
+    # (Ya lo manejas en generate_prompt, pero aquí nos aseguramos de filtrar la búsqueda)
     jql_query = (
-        f'project = "{project_key}" AND summary ~ "{sanitized_summary}" '
+        f'project = "{project_key}" '
+        f'AND issuetype = "{issue_type}" '
+        f'AND summary ~ "{sanitized_summary}" '
         f'AND status IN ({states_str})'
     )
     print(f"DEBUG: JQL Query -> {jql_query}")
@@ -85,13 +103,15 @@ def check_existing_tickets(jira, project_key, summary, description):
     for issue in issues:
         existing_description = issue.fields.description or ""
         print(f"DEBUG: Analyzing Issue {issue.key} with local similarity check...")
+
+        # Comparación local
         similarity = calculate_similarity(description, existing_description)
         if similarity >= LOCAL_SIMILARITY_THRESHOLD:
             print(f"INFO: Found an existing ticket (local similarity {similarity:.2f}) -> {issue.key}")
             return issue.key
 
         # Si no supera el umbral local, usar IA
-        print(f"DEBUG: Using IA to compare with Issue {issue.key} if local similarity < {LOCAL_SIMILARITY_THRESHOLD}")
+        print(f"DEBUG: Using IA to compare with Issue {issue.key} if local similarity < {LOCAL_SIMILARITY_THRESHOLD:.2f}")
         try:
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -128,21 +148,19 @@ def check_existing_tickets(jira, project_key, summary, description):
             else:
                 print(f"WARNING: AI gave ambiguous response '{ai_result}'")
                 if similarity >= LOCAL_FALLBACK_THRESHOLD:
-                    print(
-                        f"WARNING: Using local fallback, similarity {similarity:.2f} -> Marking {issue.key} as duplicate."
-                    )
+                    print(f"WARNING: Using local fallback, similarity {similarity:.2f} -> Marking {issue.key} as duplicate.")
                     return issue.key
 
         except Exception as e:
             print(f"WARNING: Failed to analyze similarity with AI: {e}")
             if similarity >= LOCAL_SIMILARITY_THRESHOLD:
-                print(
-                    f"INFO: Found an existing ticket (fallback local {similarity:.2f}) -> {issue.key}"
-                )
+                print(f"INFO: Found an existing ticket (fallback local {similarity:.2f}) -> {issue.key}")
                 return issue.key
 
     print("DEBUG: No duplicate ticket found after checking all candidates.")
     return None
+
+# ============ CREACIÓN DE TICKETS ============
 
 def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project_key, summary, description, issue_type):
     print("DEBUG: Creating Jira ticket via REST API (requests)...")
@@ -190,6 +208,8 @@ def create_jira_ticket(jira, project_key, summary, description, issue_type):
         print(f"ERROR: Could not create ticket via JIRA library: {e}")
         return None
 
+# ============ VALIDACIÓN DE LOGS ============
+
 def validate_logs_directory(log_dir):
     print(f"DEBUG: Validating logs directory -> {log_dir}")
     if not os.path.exists(log_dir):
@@ -222,6 +242,8 @@ def clean_log_content(content):
     cleaned_lines = [line for line in lines if line.strip()]
     return "\n".join(cleaned_lines)
 
+# ============ VALIDACIÓN DE TIPO DE INCIDENCIA ============
+
 def validate_issue_type(jira_url, jira_user, jira_api_token, project_key, issue_type):
     """
     Valida si el tipo de incidencia es válido para el proyecto especificado.
@@ -238,6 +260,8 @@ def validate_issue_type(jira_url, jira_user, jira_api_token, project_key, issue_
             raise ValueError(f"Invalid issue type: '{issue_type}'. Valid types: {valid_types}")
     else:
         raise Exception(f"Failed to fetch issue types: {response.status_code} - {response.text}")
+
+# ============ GENERACIÓN DEL PROMPT PARA LA IA ============
 
 def generate_prompt(log_type, language):
     """
@@ -280,11 +304,12 @@ def generate_prompt(log_type, language):
     print(f"DEBUG: Prompt generated. Issue type = {issue_type}")
     return prompt, issue_type
 
+# ============ FUNCIÓN PARA UNIFICAR ASTERISCOS ============
+
 def unify_double_to_single_asterisks(description):
     """
     Reemplaza de forma iterativa cualquier aparición de '**' por '*'.
-    Esto simplifica todos los casos en los que la IA use doble asterisco,
-    sin importar el idioma o el contexto.
+    Esto simplifica todos los casos en los que la IA use doble asterisco.
     """
     print("DEBUG: Unifying double asterisks to single...")
     while '**' in description:
@@ -303,6 +328,8 @@ def sanitize_title(title):
     title = title.strip()
     print(f"DEBUG: Title after sanitize -> '{title}'")
     return title
+
+# ============ PROCESO PRINCIPAL ============
 
 def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
     """
@@ -402,8 +429,10 @@ def main():
         print("ERROR: Missing required environment variables JIRA_API_TOKEN or JIRA_USER_EMAIL.")
         exit(1)
 
+    # 1. Conectar a Jira
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
 
+    # 2. Analizar logs y obtener summary, description, issue_type
     summary, description, issue_type = analyze_logs_with_ai(
         args.log_dir,
         args.log_type,
@@ -417,6 +446,7 @@ def main():
 
     print(f"DEBUG: Proposed summary -> '{summary}'\nDEBUG: Proposed issue_type -> '{issue_type}'")
 
+    # 3. Validar si el issue_type es válido para el proyecto
     try:
         validate_issue_type(args.jira_url, jira_user_email, jira_api_token, args.jira_project_key, issue_type)
     except ValueError as e:
@@ -426,12 +456,14 @@ def main():
         print(f"ERROR: Failed to validate issue type: {e}")
         return
 
+    # 4. Revisar si existe un ticket similar (filtrando por summary e issuetype)
     print("DEBUG: Checking for existing tickets...")
-    existing_ticket_key = check_existing_tickets(jira, args.jira_project_key, summary, description)
+    existing_ticket_key = check_existing_tickets(jira, args.jira_project_key, summary, description, issue_type)
     if existing_ticket_key:
         print(f"INFO: Ticket already exists: {existing_ticket_key}. Skipping creation.")
         return
 
+    # 5. Crear ticket en Jira
     print("DEBUG: Creating ticket in Jira...")
     ticket_key = create_jira_ticket(
         jira,
