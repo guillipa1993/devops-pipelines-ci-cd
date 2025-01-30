@@ -61,6 +61,155 @@ def calculate_similarity(text1, text2):
 
 # ============ BÚSQUEDA DE TICKETS EXISTENTES (FILTRANDO POR ISSUE_TYPE) ============
 
+def check_existing_tickets_local_and_ia_summary_desc(
+    jira,
+    project_key,
+    new_summary,       # El summary propuesto para el nuevo ticket
+    new_description,   # La descripción generada para el nuevo ticket
+    issue_type
+):
+    """
+    Verifica duplicados combinando comparaciones locales (título y descripción)
+    con IA de manera escalonada:
+
+      1) JQL para filtrar issues con un summary parecido ('summary ~ sanitized_summary').
+      2) Comparación local en summary y description:
+         - Si la similitud en ambos es >= 0.9 => duplicado inmediato
+         - Si ambos < 0.3 => descartar
+         - Resto => IA decide.
+      3) IA: se le pasa la descripción actual y la del ticket existente. Responde 'yes' / 'no'.
+
+    Devuelve la key del primer ticket considerado duplicado, o None si no se encontró.
+    Con debug para entender el proceso.
+    """
+
+    print("DEBUG: Checking for existing tickets (local + IA, summary + description)")
+
+    # Umbrales
+    LOCAL_SIM_LOW = 0.3
+    LOCAL_SIM_HIGH = 0.9
+
+    # 1) JQL: filtrar por summary ~ sanitized_summary
+    sanitized_summary = sanitize_summary(new_summary)
+    print(f"DEBUG: sanitized_summary='{sanitized_summary}'")
+
+    jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
+    states_str = ", ".join(jql_states)
+
+    jql_query = (
+        f'project = "{project_key}" '
+        f'AND issuetype = "{issue_type}" '
+        f'AND summary ~ "{sanitized_summary}" '
+        f'AND status IN ({states_str})'
+    )
+
+    print(f"DEBUG: JQL -> {jql_query}")
+    try:
+        issues = jira.search_issues(jql_query)
+        print(f"DEBUG: Found {len(issues)} candidate issue(s).")
+    except Exception as e:
+        print(f"ERROR: Failed to execute JQL query: {e}")
+        return None
+
+    # 2) Para cada candidate issue, comparamos
+    for issue in issues:
+        issue_key = issue.key
+        existing_summary = issue.fields.summary or ""
+        existing_description = issue.fields.description or ""
+
+        print(f"DEBUG: Analyzing Issue {issue_key}")
+
+        # 2A) Similaridad local en summary
+        summary_sim = calculate_similarity(new_summary, existing_summary)
+        print(f"DEBUG: summary_sim with {issue_key} = {summary_sim:.2f}")
+
+        # 2B) Similaridad local en description
+        desc_sim = calculate_similarity(new_description, existing_description)
+        print(f"DEBUG: desc_sim with {issue_key} = {desc_sim:.2f}")
+
+        # CASO A: Ambos muy bajos => descartar
+        if summary_sim < LOCAL_SIM_LOW and desc_sim < LOCAL_SIM_LOW:
+            print(
+                f"DEBUG: Both summary_sim={summary_sim:.2f} and desc_sim={desc_sim:.2f} "
+                f"< {LOCAL_SIM_LOW}, ignoring {issue_key}."
+            )
+            continue
+
+        # CASO B: Ambos muy altos => duplicado sin IA
+        if summary_sim >= LOCAL_SIM_HIGH and desc_sim >= LOCAL_SIM_HIGH:
+            print(
+                f"INFO: Found existing ticket {issue_key} (summary_sim={summary_sim:.2f}, desc_sim={desc_sim:.2f} >= {LOCAL_SIM_HIGH}). "
+                "Marking as duplicate without IA."
+            )
+            return issue_key
+
+        # CASO C: Resto => IA decide
+        print(
+            f"DEBUG: Intermediate range -> summary_sim={summary_sim:.2f}, "
+            f"desc_sim={desc_sim:.2f}. Asking IA about {issue_key}..."
+        )
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an assistant specialized in analyzing text similarity. "
+                            "You respond only with 'yes' or 'no' to indicate whether the two issues match in meaning."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            "We have two issues:\n\n"
+                            f"Existing issue (summary + description):\n"
+                            f"Summary:\n{existing_summary}\n\n"
+                            f"Description:\n{existing_description}\n\n"
+                            "New issue (summary + description):\n"
+                            f"Summary:\n{new_summary}\n\n"
+                            f"Description:\n{new_description}\n\n"
+                            "If they describe essentially the same issue, respond 'yes'. Otherwise, respond 'no'."
+                        )
+                    }
+                ],
+                max_tokens=200,
+                temperature=0.3
+            )
+
+            ai_result = response.choices[0].message.content.strip().lower()
+            print(f"DEBUG: AI result for {issue_key}: '{ai_result}'")
+
+            if ai_result.startswith("yes"):
+                print(f"INFO: Found an existing ticket (AI says 'yes') -> {issue_key}")
+                return issue_key
+            elif ai_result.startswith("no"):
+                print(f"DEBUG: AI says 'no' => Not considering {issue_key} a duplicate.")
+                continue
+            else:
+                print(
+                    f"WARNING: AI gave ambiguous response '{ai_result}'. "
+                    f"Continuing with next candidate."
+                )
+                continue
+
+        except Exception as e:
+            print(f"WARNING: IA call failed for {issue_key}: {e}")
+            # fallback local
+            # si summary o desc sim >= 0.8 => consideramos duplicado
+            if summary_sim >= 0.8 or desc_sim >= 0.8:
+                print(
+                    f"INFO: local fallback => summary_sim={summary_sim:.2f}, "
+                    f"desc_sim={desc_sim:.2f} => Marking {issue_key} as duplicate."
+                )
+                return issue_key
+            else:
+                print(f"DEBUG: local similarity not high enough for fallback => ignoring {issue_key}.")
+                continue
+
+    print("DEBUG: No duplicate ticket found after checking summary & description with local + IA approach.")
+    return None
+
 def check_existing_tickets_local_and_ia(
     jira,
     project_key,
@@ -673,7 +822,8 @@ def main():
     # 4. Revisar si existe un ticket similar (filtrando por summary e issuetype)
     print("DEBUG: Checking for existing tickets...")
     #existing_ticket_key = check_existing_tickets(jira, args.jira_project_key, summary, description, issue_type)
-    existing_ticket_key = check_existing_tickets_local_and_ia(jira, args.jira_project_key, summary, description, issue_type)
+    #existing_ticket_key = check_existing_tickets_local_and_ia(jira, args.jira_project_key, summary, description, issue_type)
+    existing_ticket_key = check_existing_tickets_local_and_ia_summary_desc(jira, args.jira_project_key, summary, description, issue_type)
 
     if existing_ticket_key:
         print(f"INFO: Ticket already exists: {existing_ticket_key}. Skipping creation.")
