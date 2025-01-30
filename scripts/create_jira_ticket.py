@@ -15,80 +15,83 @@ if not api_key:
     exit(1)
 
 # Inicializar la API de OpenAI
+print("DEBUG: Initializing OpenAI client...")
 client = OpenAI(api_key=api_key)
 
 def connect_to_jira(jira_url, jira_user, jira_api_token):
+    print(f"DEBUG: Connecting to Jira at {jira_url} with user {jira_user}...")
     options = {'server': jira_url}
     jira = JIRA(options, basic_auth=(jira_user, jira_api_token))
+    print("DEBUG: Successfully connected to Jira.")
     return jira
 
 def sanitize_summary(summary):
     """
     Limpia el resumen para eliminar caracteres que puedan causar problemas en el JQL.
     """
-    return "".join(c for c in summary if c.isalnum() or c.isspace())
+    print(f"DEBUG: Sanitizing summary: '{summary}'")
+    sanitized = "".join(c for c in summary if c.isalnum() or c.isspace())
+    print(f"DEBUG: Resulting sanitized summary: '{sanitized}'")
+    return sanitized
 
 def preprocess_text(text):
-    # Quita puntuación y espacios extra
-    text = re.sub(r'[^\w\s]', '', text)
-    return text.strip().lower()
+    """
+    Quita puntuación y espacios extra, lleva a minúsculas.
+    Se usa para comparar similitud con SequenceMatcher.
+    """
+    print(f"DEBUG: Preprocessing text for similarity comparison...")
+    text_no_punct = re.sub(r'[^\w\s]', '', text)
+    lowered = text_no_punct.strip().lower()
+    return lowered
 
 def calculate_similarity(text1, text2):
+    """
+    Calcula la similitud usando SequenceMatcher, retornando un valor entre 0 y 1.
+    """
+    print("DEBUG: Calculating local similarity with SequenceMatcher...")
     t1 = preprocess_text(text1)
     t2 = preprocess_text(text2)
-    return SequenceMatcher(None, t1, t2).ratio()
+    ratio = SequenceMatcher(None, t1, t2).ratio()
+    print(f"DEBUG: Similarity ratio = {ratio:.2f}")
+    return ratio
 
 def check_existing_tickets(jira, project_key, summary, description):
     """
     Verifica si existe un ticket con un resumen o descripción similar en Jira.
-    1) Sanitiza el resumen para la búsqueda JQL.
-    2) Busca tickets en múltiples estados (puedes ajustar el listado).
-    3) Aplica comparación local (SequenceMatcher) con un umbral ajustable.
-    4) Si no supera el umbral local, usa IA para confirmar similitud.
-    5) Retorna la key del primer ticket que considera duplicado o None si no hay coincidencias.
     """
-    
-    # Ajusta el umbral de similitud local (SequenceMatcher)
-    LOCAL_SIMILARITY_THRESHOLD = 0.75  # Por ejemplo, 0.75
-    # Ajusta el umbral "casi alto" para fallback en caso de respuesta IA ambigua
+    print("DEBUG: Checking for existing tickets...")
+    LOCAL_SIMILARITY_THRESHOLD = 0.75
     LOCAL_FALLBACK_THRESHOLD = 0.70
-    
-    # 1. Sanitizar el resumen para JQL
-    sanitized_summary = sanitize_summary(summary)  # Usa tu método sanitize_summary
-    
-    # 2. Preparar una lista de estados que quieras incluir
-    #    (Si prefieres uno en concreto, ajusta la lista)
-    jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']  
+
+    sanitized_summary = sanitize_summary(summary)
+
+    # Ajusta los estados que quieras incluir
+    jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
     states_str = ", ".join(jql_states)
-    
-    # 3. Construir la query JQL
+
     jql_query = (
         f'project = "{project_key}" AND summary ~ "{sanitized_summary}" '
         f'AND status IN ({states_str})'
     )
-    
+    print(f"DEBUG: JQL Query -> {jql_query}")
+
     try:
-        # 4. Ejecutar la búsqueda en Jira
         issues = jira.search_issues(jql_query)
-        print(f"DEBUG: Found {len(issues)} candidate issues with JQL: {jql_query}")
+        print(f"DEBUG: Found {len(issues)} candidate issue(s).")
     except Exception as e:
         print(f"ERROR: Failed to execute JQL query: {e}")
         return None
 
-    # 5. Revisar cada ticket candidato
     for issue in issues:
         existing_description = issue.fields.description or ""
-        
-        # 5A. Comparación local
+        print(f"DEBUG: Analyzing Issue {issue.key} with local similarity check...")
         similarity = calculate_similarity(description, existing_description)
-        print(f"DEBUG: Comparing with Issue {issue.key} -> Local similarity: {similarity:.2f}")
-        
         if similarity >= LOCAL_SIMILARITY_THRESHOLD:
-            # Si supera el umbral local alto, se considera duplicado
             print(f"INFO: Found an existing ticket (local similarity {similarity:.2f}) -> {issue.key}")
             return issue.key
-        
-        # 5B. Si la similitud local es menor, usar IA para un segundo filtro
+
+        # Si no supera el umbral local, usar IA
+        print(f"DEBUG: Using IA to compare with Issue {issue.key} if local similarity < {LOCAL_SIMILARITY_THRESHOLD}")
         try:
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -116,36 +119,33 @@ def check_existing_tickets(jira, project_key, summary, description):
             ai_result = response.choices[0].message.content.strip().lower()
             print(f"DEBUG: AI comparison result for {issue.key}: '{ai_result}'")
 
-            # 5C. Interpretar la respuesta de la IA
             if ai_result.startswith("yes"):
                 print(f"INFO: Found an existing ticket (AI indicates match) -> {issue.key}")
                 return issue.key
             elif ai_result.startswith("no"):
-                # Continúa buscando en otros tickets
+                print(f"DEBUG: AI says 'no' -> continuing with next issue candidate.")
                 continue
             else:
-                # Respuesta ambigua -> fallback local
+                print(f"WARNING: AI gave ambiguous response '{ai_result}'")
                 if similarity >= LOCAL_FALLBACK_THRESHOLD:
                     print(
-                        f"WARNING: AI gave ambiguous response '{ai_result}', "
-                        f"but local similarity is {similarity:.2f} -> {issue.key}"
+                        f"WARNING: Using local fallback, similarity {similarity:.2f} -> Marking {issue.key} as duplicate."
                     )
                     return issue.key
 
         except Exception as e:
             print(f"WARNING: Failed to analyze similarity with AI: {e}")
-            # Fallback: si la similitud local es alta (>= LOCAL_SIMILARITY_THRESHOLD)
-            # de todos modos considerarlo duplicado
             if similarity >= LOCAL_SIMILARITY_THRESHOLD:
                 print(
                     f"INFO: Found an existing ticket (fallback local {similarity:.2f}) -> {issue.key}"
                 )
                 return issue.key
 
-    # 6. Si no se encontró ningún duplicado, retornar None
+    print("DEBUG: No duplicate ticket found after checking all candidates.")
     return None
 
 def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project_key, summary, description, issue_type):
+    print("DEBUG: Creating Jira ticket via REST API (requests)...")
     url = f"{jira_url}/rest/api/3/issue"
     headers = {
         "Content-Type": "application/json"
@@ -155,44 +155,51 @@ def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project
         "fields": {
             "project": {"key": project_key},
             "summary": summary,
-            "description": description,  # Usar texto plano aquí
+            "description": description,
             "issuetype": {"name": issue_type}
         }
     }
+    print(f"DEBUG: Payload -> {payload}")
     response = requests.post(url, json=payload, headers=headers, auth=auth)
 
     if response.status_code == 201:
+        print("DEBUG: Ticket created successfully via API.")
         print("Ticket created successfully:", response.json())
         return response.json().get("key")
     else:
-        print(f"Failed to create ticket: {response.status_code} - {response.text}")
+        print(f"ERROR: Failed to create ticket via API: {response.status_code} - {response.text}")
         return None
 
 def create_jira_ticket(jira, project_key, summary, description, issue_type):
     """
     Crea un ticket en JIRA usando la librería JIRA.
     """
+    print("DEBUG: Creating Jira ticket via JIRA library...")
     try:
         issue_dict = {
             'project': {'key': project_key},
             'summary': summary,
-            'description': description,  # Usar texto plano aquí
+            'description': description,
             'issuetype': {'name': issue_type}
         }
+        print(f"DEBUG: Issue fields -> {issue_dict}")
         issue = jira.create_issue(fields=issue_dict)
+        print("DEBUG: Ticket created successfully via JIRA library.")
         return issue.key
     except Exception as e:
-        print(f"ERROR: No se pudo crear el ticket en JIRA: {e}")
+        print(f"ERROR: Could not create ticket via JIRA library: {e}")
         return None
 
 def validate_logs_directory(log_dir):
+    print(f"DEBUG: Validating logs directory -> {log_dir}")
     if not os.path.exists(log_dir):
         raise FileNotFoundError(f"ERROR: The logs directory '{log_dir}' does not exist.")
-    log_files = []
 
+    log_files = []
     for file in os.listdir(log_dir):
         file_path = os.path.join(log_dir, file)
         if file.endswith(".tar.gz"):
+            print(f"DEBUG: Extracting tar.gz -> {file_path}")
             with tarfile.open(file_path, "r:gz") as tar:
                 tar.extractall(path=log_dir)
                 log_files.extend(
@@ -203,9 +210,14 @@ def validate_logs_directory(log_dir):
 
     if not log_files:
         raise FileNotFoundError(f"ERROR: No valid files found in the directory '{log_dir}'.")
+
+    print(f"DEBUG: Found {len(log_files)} log file(s) in total.")
     return log_files
 
 def clean_log_content(content):
+    """
+    Quita líneas vacías y retorna contenido limpio.
+    """
     lines = content.splitlines()
     cleaned_lines = [line for line in lines if line.strip()]
     return "\n".join(cleaned_lines)
@@ -214,14 +226,14 @@ def validate_issue_type(jira_url, jira_user, jira_api_token, project_key, issue_
     """
     Valida si el tipo de incidencia es válido para el proyecto especificado.
     """
+    print(f"DEBUG: Validating issue type '{issue_type}' for project '{project_key}'...")
     url = f"{jira_url}/rest/api/3/issue/createmeta?projectKeys={project_key}"
     headers = {"Content-Type": "application/json"}
     auth = (jira_user, jira_api_token)
     response = requests.get(url, headers=headers, auth=auth)
     if response.status_code == 200:
-        valid_types = [
-            issue["name"] for issue in response.json()["projects"][0]["issuetypes"]
-        ]
+        valid_types = [issue["name"] for issue in response.json()["projects"][0]["issuetypes"]]
+        print(f"DEBUG: Valid issue types -> {valid_types}")
         if issue_type not in valid_types:
             raise ValueError(f"Invalid issue type: '{issue_type}'. Valid types: {valid_types}")
     else:
@@ -233,7 +245,7 @@ def generate_prompt(log_type, language):
     cómo estructurar el ticket de Jira en Markdown y añadiendo emojis.
     Retorna el prompt y el tipo de incidencia (Error / Tarea).
     """
-
+    print(f"DEBUG: Generating prompt for log_type='{log_type}', language='{language}'...")
     if log_type == "failure":
         details = (
             "You are a technical writer creating a concise Jira Cloud ticket from logs. "
@@ -260,12 +272,12 @@ def generate_prompt(log_type, language):
         )
         issue_type = "Tarea"
 
-    # Añadimos un recordatorio de concisión y del idioma deseado
     prompt = (
         f"{details}\n\n"
         f"Be concise, professional, and compatible with Jira Cloud's Markdown. "
         f"Write the ticket in {language}."
     )
+    print(f"DEBUG: Prompt generated. Issue type = {issue_type}")
     return prompt, issue_type
 
 def unify_double_to_single_asterisks(description):
@@ -274,7 +286,7 @@ def unify_double_to_single_asterisks(description):
     Esto simplifica todos los casos en los que la IA use doble asterisco,
     sin importar el idioma o el contexto.
     """
-    # Mientras sigamos encontrando '**', las reducimos a un '*'
+    print("DEBUG: Unifying double asterisks to single...")
     while '**' in description:
         description = description.replace('**', '*')
     return description
@@ -286,13 +298,10 @@ def sanitize_title(title):
     Mantiene letras, números, espacios y signos de puntuación básicos.
     Luego recorta espacios al inicio/fin.
     """
-    # Sustituye cualquier aparición de `*` o `` ` `` (en bloque o individual) por nada
-    # Ejemplo: "```markdown" -> "markdown", "***Error***" -> "Error"
+    print(f"DEBUG: Sanitizing title '{title}'...")
     title = re.sub(r"[\*`]+", "", title)
-
-    # Elimina espacios en exceso
     title = title.strip()
-
+    print(f"DEBUG: Title after sanitize -> '{title}'")
     return title
 
 def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
@@ -300,35 +309,29 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
     Analiza los logs en log_dir, genera un prompt para la IA y obtiene
     un resumen y descripción para crear el ticket de Jira.
     """
-    # 1. Validar y cargar archivos de logs
+    print(f"DEBUG: analyze_logs_with_ai(log_dir={log_dir}, log_type={log_type}, language={report_language}, project={project_name})")
     log_files = validate_logs_directory(log_dir)
     combined_logs = []
     
-    # 2. Filtrado básico de logs (Ejemplo: limitar a 300 líneas totales)
     max_lines = 300
     for file in log_files:
         try:
             with open(file, "r", encoding="utf-8") as f:
                 lines = f.read().splitlines()
-                # Opcional: filtrar solo secciones relevantes
-                # lines = [ln for ln in lines if "ERROR" in ln or "Exception" in ln]
-                
-                # Agregamos hasta 'max_lines' para que no sea muy extenso
                 combined_logs.extend(lines[:max_lines])
+                print(f"DEBUG: Reading '{file}', taking up to {max_lines} lines.")
         except UnicodeDecodeError:
             print(f"WARNING: Could not read file {file} due to encoding issues. Skipping.")
             continue
 
-    # Si quieres separar cada archivo en el prompt, puedes crear secciones
     logs_content = "\n".join(combined_logs)
     if not logs_content.strip():
         print("ERROR: No relevant logs found for analysis.")
         return None, None, None
 
-    # 3. Generar el prompt para la IA
+    print("DEBUG: Generating prompt and calling OpenAI...")
     prompt, issue_type = generate_prompt(log_type, report_language)
 
-    # 4. Llamar a la IA con un rol system que fuerce respuestas breves y concisas
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -346,41 +349,32 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
                     "content": f"{prompt}\n\nLogs:\n{logs_content}"
                 }
             ],
-            max_tokens=600,  # Límite menor para no generar texto muy largo
-            temperature=0.4   # Menor temperatura para ser más directa y predecible
+            max_tokens=600,
+            temperature=0.4
         )
         
-        # 5. Procesar la respuesta de la IA
         summary = response.choices[0].message.content.strip()
-        
-        # 6. Limpiar la primera línea para evitar secuencias no deseadas como ```markdown
+        print(f"DEBUG: AI returned summary of length {len(summary)} chars.")
+
         lines = summary.splitlines()
         first_line = lines[0] if lines else "No Title"
-        
-        # Eliminar triple backticks y la palabra 'markdown'
+
         cleaned_title_line = (
             first_line
             .replace("```markdown", "")
             .replace("```", "")
             .strip()
         )
-        
-        # Opcional: quitar doble asteriscos si no los quieres en el título
         cleaned_title_line = sanitize_title(cleaned_title_line)
 
-        # Armar el título final
         label = "Error" if log_type == "failure" else "Success"
         summary_title = f"{project_name}: {label} - {cleaned_title_line}"
-        
-        # 7. Descripción final (posprocesado opcional para quitar tabulaciones, etc.)
-        description_plain = summary
-        # Eliminar tabulaciones y espacios repetidos
-        # (Si usas HTML en Jira, podrías convertir markdown a HTML, etc.)
-        description_plain = description_plain.replace("\t", " ")
 
-        # Reemplazar doble asterisco por uno solo
+        description_plain = summary.replace("\t", " ")
         description_plain = unify_double_to_single_asterisks(description_plain)
 
+        print(f"DEBUG: Final summary title -> {summary_title}")
+        print(f"DEBUG: Description length -> {len(description_plain)} chars.")
         return summary_title, description_plain, issue_type
     
     except Exception as e:
@@ -399,6 +393,7 @@ def main():
     parser.add_argument("--repo", required=True, help="Nombre completo del repositorio (owner/repo).")
 
     args = parser.parse_args()
+    print("DEBUG: Starting main process with arguments:", args)
 
     jira_api_token = os.getenv("JIRA_API_TOKEN")
     jira_user_email = os.getenv("JIRA_USER_EMAIL")
@@ -409,11 +404,18 @@ def main():
 
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
 
-    summary, description, issue_type = analyze_logs_with_ai(args.log_dir, args.log_type, args.report_language, args.project_name)
+    summary, description, issue_type = analyze_logs_with_ai(
+        args.log_dir,
+        args.log_type,
+        args.report_language,
+        args.project_name
+    )
 
     if not summary or not description or not issue_type:
         print("ERROR: Log analysis failed or invalid issue type. No ticket will be created.")
         return
+
+    print(f"DEBUG: Proposed summary -> '{summary}'\nDEBUG: Proposed issue_type -> '{issue_type}'")
 
     try:
         validate_issue_type(args.jira_url, jira_user_email, jira_api_token, args.jira_project_key, issue_type)
@@ -424,11 +426,13 @@ def main():
         print(f"ERROR: Failed to validate issue type: {e}")
         return
 
+    print("DEBUG: Checking for existing tickets...")
     existing_ticket_key = check_existing_tickets(jira, args.jira_project_key, summary, description)
     if existing_ticket_key:
         print(f"INFO: Ticket already exists: {existing_ticket_key}. Skipping creation.")
         return
 
+    print("DEBUG: Creating ticket in Jira...")
     ticket_key = create_jira_ticket(
         jira,
         args.jira_project_key,
@@ -454,6 +458,8 @@ def main():
             print(f"JIRA Ticket Created via API: {ticket_key}")
         else:
             print("Failed to create JIRA ticket.")
+
+    print("DEBUG: Process finished.")
 
 if __name__ == "__main__":
     main()
