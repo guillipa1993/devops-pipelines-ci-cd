@@ -99,7 +99,7 @@ def check_existing_tickets_local_and_ia_summary_desc(
     jql_query = (
         f'project = "{project_key}" '
         f'AND issuetype = "{issue_type}" '
-        f'AND summary ~ "{sanitized_summary}" '
+        #f'AND summary ~ "{sanitized_summary}" '
         f'AND status IN ({states_str})'
     )
 
