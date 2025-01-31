@@ -29,6 +29,68 @@ def connect_to_jira(jira_url, jira_user, jira_api_token):
 
 # ============ FUNCIONES DE SANITIZACIÓN Y SIMILITUD ============
 
+def parse_recommendations(ai_text):
+    """
+    Parsea el texto devuelto por la IA (cuando log_type == 'success')
+    y extrae una lista de recomendaciones. Cada recomendación tendrá
+    un 'summary' y un 'description'.
+
+    Ejemplo de formato esperado (puedes ajustarlo según tu prompt IA):
+    - **Recommendation**: "Improve X"
+      **Description**: "..."
+    - **Recommendation**: "Implement Z"
+      **Description**: "..."
+
+    Retorna una lista de dict: [{"summary": ..., "description": ...}, ...]
+    """
+    recommendations = []
+    
+    # Ejemplo sencillo: dividimos por líneas que contengan "- **Recommendation**:"
+    blocks = ai_text.split("- **Recommendation**:")
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        # Buscamos la línea de Summary y la de Description
+        # Podrías usar regex o strings. Ejemplo naive:
+        summary_part = None
+        description_part = None
+
+        # Suponemos que la línea con "**Description**:" marca el final de summary
+        lines = block.splitlines()
+        summary_lines = []
+        description_lines = []
+        in_summary = True
+
+        for line in lines:
+            line = line.strip()
+            if line.lower().startswith("**description**:"):
+                in_summary = False
+                # Extraemos desc. El resto de la lines se asume la description
+                desc_text = line[len("**description**:"):].strip()
+                description_lines.append(desc_text)
+            else:
+                if in_summary:
+                    summary_lines.append(line)
+                else:
+                    description_lines.append(line)
+
+        summary_part = " ".join(summary_lines).strip()
+        description_part = " ".join(description_lines).strip()
+
+        if summary_part and description_part:
+            # Podemos limpiar asteriscos o parsear más
+            summary_part = summary_part.replace('"', '').replace("'", "")
+            description_part = description_part.replace('"', '').replace("'", "")
+            
+            recommendations.append({
+                "summary": summary_part,
+                "description": description_part
+            })
+
+    return recommendations
+
 def sanitize_summary(summary):
     """
     Limpia el resumen para eliminar caracteres que puedan causar problemas en el JQL.
@@ -648,8 +710,10 @@ def generate_prompt(log_type, language):
         issue_type = "Error"
     else:
         details = (
-            "You are a technical writer creating a concise Jira Cloud ticket from logs. "
+            "You are a technical writer creating one or more recommendations in a concise Jira Cloud ticket from logs. "
+            "Please list each recommendation as a separate bullet point, each with a short summary title and a brief description. "
             "Keep the format short and professional, using minimal Markdown. "
+            "Please list each recommendation as a separate bullet point, each with a short summary title and a brief description. "
             "Focus on these sections:\n\n"
             "1) **Summary** ✅: A single-sentence overview of the successful outcome.\n"
             "2) **Success Details** 🚀: Important tasks or milestones achieved.\n"
@@ -693,6 +757,49 @@ def sanitize_title(title):
     return title
 
 # ============ PROCESO PRINCIPAL ============
+
+def analyze_logs_for_recommendations(log_dir, report_language, project_name):
+    """
+    Similar a analyze_logs_with_ai, pero en caso de success, la IA
+    genera múltiples recomendaciones con su mini-title y description.
+    """
+    print("DEBUG: analyze_logs_for_recommendations...")
+
+    # 1. Leer logs, igual que antes
+    # ...
+    logs_content = "...contenido..."
+
+    # 2. Llamar a la IA con un prompt pidiendo multiples recomendaciones
+    # Podrías reusar 'generate_prompt' o tener un prompt especial
+    prompt = (
+        f"You are a helpful assistant. The logs indicate successful build. "
+        f"Please list separate recommendations as bullet points. Each bullet has a short summary and a brief description. "
+        f"Write in {report_language}. Avoid triple backticks. etc..."
+        f"\n\nLogs:\n{logs_content}"
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant..."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1000,  # mayor
+            temperature=0.5
+        )
+
+        text = response.choices[0].message.content.strip()
+        print("DEBUG: AI returned text for recommendations:\n", text)
+
+        # 3. Parsear la respuesta en recomendaciones
+        recs = parse_recommendations(text)
+        print(f"DEBUG: Parsed {len(recs)} recommendations.")
+        return recs
+
+    except Exception as e:
+        print(f"ERROR: {e}")
+        return []  # sin recomendaciones
 
 def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
     """
@@ -787,7 +894,7 @@ def main():
 
     jira_api_token = os.getenv("JIRA_API_TOKEN")
     jira_user_email = os.getenv("JIRA_USER_EMAIL")
-
+    
     if not all([jira_api_token, jira_user_email]):
         print("ERROR: Missing required environment variables JIRA_API_TOKEN or JIRA_USER_EMAIL.")
         exit(1)
@@ -795,67 +902,84 @@ def main():
     # 1. Conectar a Jira
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
 
-    # 2. Analizar logs y obtener summary, description, issue_type
-    summary, description, issue_type = analyze_logs_with_ai(
-        args.log_dir,
-        args.log_type,
-        args.report_language,
-        args.project_name
-    )
-
-    if not summary or not description or not issue_type:
-        print("ERROR: Log analysis failed or invalid issue type. No ticket will be created.")
-        return
-
-    print(f"DEBUG: Proposed summary -> '{summary}'\nDEBUG: Proposed issue_type -> '{issue_type}'")
-
-    # 3. Validar si el issue_type es válido para el proyecto
-    try:
-        validate_issue_type(args.jira_url, jira_user_email, jira_api_token, args.jira_project_key, issue_type)
-    except ValueError as e:
-        print(f"ERROR: {e}")
-        return
-    except Exception as e:
-        print(f"ERROR: Failed to validate issue type: {e}")
-        return
-
-    # 4. Revisar si existe un ticket similar (filtrando por summary e issuetype)
-    print("DEBUG: Checking for existing tickets...")
-    #existing_ticket_key = check_existing_tickets(jira, args.jira_project_key, summary, description, issue_type)
-    #existing_ticket_key = check_existing_tickets_local_and_ia(jira, args.jira_project_key, summary, description, issue_type)
-    existing_ticket_key = check_existing_tickets_local_and_ia_summary_desc(jira, args.jira_project_key, summary, description, issue_type)
-
-    if existing_ticket_key:
-        print(f"INFO: Ticket already exists: {existing_ticket_key}. Skipping creation.")
-        return
-    
-    # 5. Crear ticket en Jira
-    print("DEBUG: Creating ticket in Jira...")
-    ticket_key = create_jira_ticket(
-        jira,
-        args.jira_project_key,
-        summary,
-        description,
-        issue_type
-    )
-
-    if ticket_key:
-        print(f"JIRA Ticket Created using JIRA library: {ticket_key}")
-    else:
-        print("Falling back to creating ticket via API...")
-        ticket_key = create_jira_ticket_via_requests(
-            args.jira_url,
-            jira_user_email,
-            jira_api_token,
-            args.jira_project_key,
-            summary,
-            description,
-            issue_type
+    if args.log_type == "failure":
+        # 2. Analizar logs y obtener summary, description, issue_type
+        summary, description, issue_type = analyze_logs_with_ai(
+            args.log_dir,
+            args.log_type,
+            args.report_language,
+            args.project_name
         )
+
+        if not summary or not description or not issue_type:
+            print("ERROR: Log analysis failed or invalid issue type. No ticket will be created.")
+            return
+
+        print(f"DEBUG: Proposed summary -> '{summary}'\nDEBUG: Proposed issue_type -> '{issue_type}'")
+
+        # 3. Validar si el issue_type es válido para el proyecto
+        try:
+            validate_issue_type(args.jira_url, jira_user_email, jira_api_token, args.jira_project_key, issue_type)
+        except ValueError as e:
+            print(f"ERROR: {e}")
+            return
+        except Exception as e:
+            print(f"ERROR: Failed to validate issue type: {e}")
+            return
+
+        # 4. Revisar si existe un ticket similar (filtrando por summary e issuetype)
+        print("DEBUG: Checking for existing tickets...")
+        existing_ticket_key = check_existing_tickets_local_and_ia_summary_desc(
+            jira, args.jira_project_key, summary, description, issue_type
+        )
+
+        if existing_ticket_key:
+            print(f"INFO: Ticket already exists: {existing_ticket_key}. Skipping creation.")
+            return
+
+        # 5. Crear ticket en Jira
+        print("DEBUG: Creating ticket in Jira...")
+        ticket_key = create_jira_ticket(
+            jira, args.jira_project_key, summary, description, issue_type
+        )
+
         if ticket_key:
-            print(f"JIRA Ticket Created via API: {ticket_key}")
+            print(f"JIRA Ticket Created using JIRA library: {ticket_key}")
         else:
-            print("Failed to create JIRA ticket.")
+            print("Falling back to creating ticket via API...")
+            ticket_key = create_jira_ticket_via_requests(
+                args.jira_url, jira_user_email, jira_api_token, args.jira_project_key,
+                summary, description, issue_type
+            )
+            if ticket_key:
+                print(f"JIRA Ticket Created via API: {ticket_key}")
+            else:
+                print("Failed to create JIRA ticket.")
+
+    else:
+        # log_type == "success"
+        recs = analyze_logs_for_recommendations(
+            args.log_dir, args.report_language, args.project_name
+        )
+
+        for i, rec in enumerate(recs):
+            r_summary = rec["summary"]
+            r_desc = rec["description"]
+            issue_type = "Tarea"
+
+            dup_key = check_existing_tickets_local_and_ia_summary_desc(
+                jira, args.jira_project_key, r_summary, r_desc, issue_type
+            )
+            if dup_key:
+                print(f"INFO: Not creating, already covered by {dup_key}")
+            else:
+                new_key = create_jira_ticket(
+                    jira, args.jira_project_key, r_summary, r_desc, issue_type
+                )
+                if new_key:
+                    print(f"Created {new_key}")
+                else:
+                    print("Failed to create JIRA ticket.")
 
     print("DEBUG: Process finished.")
 
