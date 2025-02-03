@@ -59,48 +59,63 @@ def calculate_similarity(text1, text2):
 # ============ PARSEO DE RECOMENDACIONES ============
 def parse_recommendations(ai_text):
     """
-    Parsea el texto devuelto por la IA (cuando log_type == 'success') y extrae una lista de recomendaciones.
-    Se espera un formato similar a:
+    Parses the AI text (for log_type 'success') and extracts a list of recommendations.
+    Expected format is a series of bullet points starting with a line like:
     
-    ### Recommendations
-
-    - **Quoting Variables**: 
-      - Summary: Improve script robustness by consistently quoting variables.
-      - Description: Use double quotes around variables (e.g., "$VARIABLE") to prevent issues with word splitting and globbing, particularly when variables contain spaces or special characters.
-
-    - **Use of Command Substitution Notation**: 
-      - Summary: Enhance readability by transitioning to modern syntax.
-      - Description: Replace legacy backticks (`...`) with $(...) for command substitution, making the code easier to read and maintain.
+    - **Title**: 
+      - Summary: <summary text>
+      - Description: <description text>
     
-    Retorna una lista de dict con las claves "summary" y "description", donde se combina el título y el summary para formar el resumen del ticket.
+    However, if the block does not contain explicit "Summary:" and "Description:" labels,
+    this function will instead split the block into lines, take the first non-empty line as the summary,
+    and the rest as the description.
+    
+    Returns a list of dictionaries with keys "summary" and "description".
     """
     recommendations = []
+    
     # Primero, eliminamos cualquier encabezado como "### Recommendations" si existe.
     ai_text = ai_text.strip()
     ai_text = re.sub(r"^#+\s*Recommendations\s*", "", ai_text, flags=re.IGNORECASE).strip()
     
-    # Patrón que busca bloques que comiencen con "- **Título**:" y captura todo el bloque hasta el próximo bloque o final de texto.
+    # Patrón que captura cada bloque que empieza con "- **Title**:" y su contenido hasta el siguiente bloque o el final del texto.
     pattern = re.compile(
-        r"(?ms)^\s*-\s*\*\*(?P<title>.+?)\*\*:\s*(?P<block>.*?)(?=^\s*-\s*\*\*|$)",
+        r"(?ms)^\s*-\s*\*\*(?P<title>.+?)\*\*:\s*(?:\n\s*)?(?P<content>.*?)(?=^\s*-\s*\*\*|\Z)",
         re.MULTILINE | re.DOTALL
     )
+    
     for match in pattern.finditer(ai_text):
         title = match.group("title").strip()
-        block = match.group("block").strip()
-        # Buscar en el bloque las líneas que contengan "Summary:" y "Description:" (ignorando mayúsculas/minúsculas)
-        summary_match = re.search(r"(?i)^\s*-\s*Summary:\s*(?P<summary>.+)", block, re.MULTILINE)
-        description_match = re.search(r"(?i)^\s*-\s*Description:\s*(?P<description>.+)", block, re.MULTILINE | re.DOTALL)
+        content = match.group("content").strip()
+        
+        # Intentar extraer explícitamente las etiquetas "Summary:" y "Description:" si están presentes
+        summary_match = re.search(r"(?i)^\s*-\s*Summary:\s*(?P<summary>.+)", content, re.MULTILINE)
+        description_match = re.search(r"(?i)^\s*-\s*Description:\s*(?P<description>.+)", content, re.MULTILINE | re.DOTALL)
+        
         if summary_match and description_match:
             rec_summary = summary_match.group("summary").strip()
             rec_description = description_match.group("description").strip()
-            # Combina el título con el summary para formar el resumen del ticket
-            combined_summary = f"{title}: {rec_summary}"
+        else:
+            # Si no hay etiquetas explícitas, separamos el bloque en líneas no vacías
+            lines = [line.strip() for line in content.splitlines() if line.strip()]
+            if lines:
+                rec_summary = lines[0]
+                rec_description = " ".join(lines[1:]).strip() if len(lines) > 1 else ""
+            else:
+                rec_summary = ""
+                rec_description = ""
+        
+        # Combinar el título con el resumen si éste existe, para formar un resumen completo
+        full_summary = f"{title}: {rec_summary}" if rec_summary else title
+        
+        if full_summary or rec_description:
             recommendations.append({
-                "summary": combined_summary,
+                "summary": full_summary,
                 "description": rec_description
             })
         else:
             print("WARNING: Could not parse a recommendation block:", match.group(0))
+    
     print(f"DEBUG: Parsed {len(recommendations)} recommendation(s).")
     return recommendations
 
