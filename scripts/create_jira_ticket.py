@@ -59,59 +59,26 @@ def calculate_similarity(text1, text2):
 # ============ PARSEO DE RECOMENDACIONES ============
 def parse_recommendations(ai_text):
     """
-    Parses the AI text (for log_type 'success') and extracts a list of recommendations.
-    Expected format is a series of bullet points starting with a line like:
+    Parsea el texto devuelto por la IA (cuando log_type == 'success') y extrae una lista de recomendaciones.
+    Se espera que cada bloque de recomendación tenga el siguiente formato (o similar):
     
-    - **Title**: 
-      - Summary: <summary text>
-      - Description: <description text>
+      - **Título de la Recomendación:**
+        Contenido de la recomendación, que puede abarcar varias líneas.
     
-    However, if the block does not contain explicit "Summary:" and "Description:" labels,
-    this function will instead split the block into lines, take the first non-empty line as the summary,
-    and the rest as the description.
-    
-    Returns a list of dictionaries with keys "summary" and "description".
+    Retorna una lista de diccionarios: [{"summary": <título>, "description": <contenido>}, ...].
     """
     recommendations = []
-    
-    # Primero, eliminamos cualquier encabezado como "### Recommendations" si existe.
-    ai_text = ai_text.strip()
-    ai_text = re.sub(r"^#+\s*Recommendations\s*", "", ai_text, flags=re.IGNORECASE).strip()
-    
-    # Patrón que captura cada bloque que empieza con "- **Title**:" y su contenido hasta el siguiente bloque o el final del texto.
-    pattern = re.compile(
-        r"(?ms)^\s*-\s*\*\*(?P<title>.+?)\*\*:\s*(?:\n\s*)?(?P<content>.*?)(?=^\s*-\s*\*\*|\Z)",
-        re.MULTILINE | re.DOTALL
-    )
+    # El patrón busca un guión seguido de espacios, luego un texto entre doble asteriscos hasta dos puntos,
+    # seguido de contenido hasta que se encuentre otro guión y doble asteriscos o hasta el final del texto.
+    pattern = re.compile(r"(?ms)-\s*\*\*(?P<title>.+?):\*\*\s*(?P<content>.*?)(?=-\s*\*\*|\Z)")
     
     for match in pattern.finditer(ai_text):
         title = match.group("title").strip()
         content = match.group("content").strip()
-        
-        # Intentar extraer explícitamente las etiquetas "Summary:" y "Description:" si están presentes
-        summary_match = re.search(r"(?i)^\s*-\s*Summary:\s*(?P<summary>.+)", content, re.MULTILINE)
-        description_match = re.search(r"(?i)^\s*-\s*Description:\s*(?P<description>.+)", content, re.MULTILINE | re.DOTALL)
-        
-        if summary_match and description_match:
-            rec_summary = summary_match.group("summary").strip()
-            rec_description = description_match.group("description").strip()
-        else:
-            # Si no hay etiquetas explícitas, separamos el bloque en líneas no vacías
-            lines = [line.strip() for line in content.splitlines() if line.strip()]
-            if lines:
-                rec_summary = lines[0]
-                rec_description = " ".join(lines[1:]).strip() if len(lines) > 1 else ""
-            else:
-                rec_summary = ""
-                rec_description = ""
-        
-        # Combinar el título con el resumen si éste existe, para formar un resumen completo
-        full_summary = f"{title}: {rec_summary}" if rec_summary else title
-        
-        if full_summary or rec_description:
+        if title and content:
             recommendations.append({
-                "summary": full_summary,
-                "description": rec_description
+                "summary": title,
+                "description": content
             })
         else:
             print("WARNING: Could not parse a recommendation block:", match.group(0))
