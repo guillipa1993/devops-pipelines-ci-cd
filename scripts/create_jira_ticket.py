@@ -273,16 +273,25 @@ def check_existing_tickets(jira, project_key, summary, description, issue_type):
     LOCAL_SIMILARITY_THRESHOLD = 0.75
     LOCAL_FALLBACK_THRESHOLD = 0.70
 
+    # 1. Sanitizar el resumen para JQL
     sanitized_summary = sanitize_summary(summary)
+
+    # 2. Preparar los estados que se desean incluir en la búsqueda
     jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
     states_str = ", ".join(jql_states)
+
+    # IMPORTANTE: Para la consulta JQL, si el issue_type es "Tarea", usamos "Task" (en inglés)
+    jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
+
+    # 3. Construir la consulta JQL usando el issue type transformado
     jql_query = (
         f'project = "{project_key}" '
-        f'AND issuetype = "{issue_type}" '
+        f'AND issuetype = "{jql_issue_type}" '
         f'AND summary ~ "{sanitized_summary}" '
         f'AND status IN ({states_str})'
     )
     print(f"DEBUG: JQL Query -> {jql_query}")
+
     try:
         issues = jira.search_issues(jql_query)
         print(f"DEBUG: Found {len(issues)} candidate issue(s).")
@@ -290,21 +299,27 @@ def check_existing_tickets(jira, project_key, summary, description, issue_type):
         print(f"ERROR: Failed to execute JQL query: {e}")
         return None
 
+    # 4. Analizar cada ticket candidato
     for issue in issues:
         existing_description = issue.fields.description or ""
         print(f"DEBUG: Analyzing Issue {issue.key} with local similarity check...")
         local_similarity = calculate_similarity(description, existing_description)
         print(f"DEBUG: local_similarity with {issue.key} = {local_similarity:.2f}")
+
         if local_similarity >= LOCAL_SIMILARITY_THRESHOLD:
             print(f"INFO: Found duplicate ticket (local similarity {local_similarity:.2f}) -> {issue.key}")
             return issue.key
+
         print(f"DEBUG: Using IA to compare with Issue {issue.key} if local similarity < {LOCAL_SIMILARITY_THRESHOLD:.2f}")
         try:
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system",
-                     "content": "You are an assistant specialized in analyzing text similarity. Respond only 'yes' or 'no'."},
+                     "content": (
+                         "You are an assistant specialized in analyzing text similarity. "
+                         "Respond only 'yes' or 'no' to indicate whether the two descriptions match in meaning."
+                     )},
                     {"role": "user",
                      "content": (
                          "Compare these two descriptions in terms of meaning, ignoring language differences. "
@@ -325,7 +340,7 @@ def check_existing_tickets(jira, project_key, summary, description, issue_type):
                 print(f"DEBUG: AI says 'no' for {issue.key}. Continuing with next candidate.")
                 continue
             else:
-                print(f"WARNING: AI ambiguous response '{ai_result}' for {issue.key}.")
+                print(f"WARNING: AI gave ambiguous response '{ai_result}' for {issue.key}.")
                 if local_similarity >= LOCAL_FALLBACK_THRESHOLD:
                     print(f"WARNING: Fallback local: similarity {local_similarity:.2f} => Marking {issue.key} as duplicate.")
                     return issue.key
@@ -334,6 +349,7 @@ def check_existing_tickets(jira, project_key, summary, description, issue_type):
             if local_similarity >= LOCAL_SIMILARITY_THRESHOLD:
                 print(f"INFO: Fallback local (similarity {local_similarity:.2f}) => {issue.key}")
                 return issue.key
+
     print("DEBUG: No duplicate ticket found after checking all candidates.")
     return None
 
