@@ -62,9 +62,12 @@ def parse_recommendations(ai_text):
     Parsea el texto devuelto por la IA (cuando log_type == 'success') y extrae una lista de recomendaciones.
     Se espera que cada bloque de recomendación tenga el siguiente formato (o similar):
     
-      - **Título de la Recomendación**: [texto opcional en la misma línea]
+      - **Título de la Recomendación**: [texto opcional]
           - **Summary**: <Texto breve que resume la recomendación.>
           - **Description**: <Descripción detallada de la recomendación.>
+    
+    Si no se encuentran las etiquetas "Summary:" o "Description:" en el sub-bloque, se utilizará
+    el texto completo del sub-bloque como resumen y se dejará la descripción vacía.
     
     Retorna una lista de diccionarios con la forma:
       [{"summary": "<Título>: <Summary>", "description": "<Description>"}, ...]
@@ -72,55 +75,70 @@ def parse_recommendations(ai_text):
     import re
 
     recommendations = []
-    current_title = None
-    current_summary = None
-    current_description = None
-
-    # Separamos el texto en líneas
-    lines = ai_text.splitlines()
-    for line in lines:
-        line = line.strip()
-        if not line:
+    # Dividir el texto en bloques basados en líneas que comienzan con un guión
+    blocks = re.split(r"\n\s*-\s+", ai_text.strip())
+    for block in blocks:
+        block = block.strip()
+        if not block:
             continue
 
-        # Si la línea comienza con "- **", es el inicio de una nueva recomendación
-        if line.startswith("- **"):
-            # Si ya tenemos datos de una recomendación previa, la agregamos si cuenta con summary y description
-            if current_title is not None and current_summary and current_description:
-                full_summary = f"{current_title}: {current_summary}"
-                recommendations.append({
-                    "summary": full_summary,
-                    "description": current_description
-                })
-            # Reiniciamos los valores para la nueva recomendación
-            current_title = None
-            current_summary = None
-            current_description = None
-            # Extraemos el título usando regex (se espera que esté entre ** y seguido de dos puntos)
-            m = re.match(r"-\s*\*\*(.+?)\*\*\s*:?\s*(.*)", line)
-            if m:
-                current_title = m.group(1).strip()
-                current_summary = m.group(2).strip() if m.group(2) else ""
-            else:
-                print("WARNING: Could not extract title from line:", line)
-        elif re.match(r"(?i)-\s*\*\*summary\*\*:", line):
-            # Actualizamos o asignamos el resumen de la recomendación
-            current_summary = line.split(":", 1)[1].strip()
-        elif re.match(r"(?i)-\s*\*\*description\*\*:", line):
-            # Actualizamos o asignamos la descripción de la recomendación
-            current_description = line.split(":", 1)[1].strip()
+        # La primera línea se espera que sea el encabezado con el título entre ** **
+        lines = block.splitlines()
+        header_line = lines[0].strip()
+        header_match = re.match(r"\*\*(.+?)\*\*\s*:?\s*(.*)", header_line, re.DOTALL)
+        if header_match:
+            header_title = header_match.group(1).strip()
+            header_remaining = header_match.group(2).strip()  # Texto adicional en el encabezado, si lo hay
         else:
-            # Si ya se está recogiendo la descripción, se asume que las líneas siguientes forman parte de ella
-            if current_description is not None:
-                current_description += " " + line
+            # Si no se encuentra el formato esperado, se usa la línea completa
+            header_title = header_line
+            header_remaining = ""
 
-    # Agregar el último bloque si se completó correctamente
-    if current_title is not None and current_summary and current_description:
-        full_summary = f"{current_title}: {current_summary}"
-        recommendations.append({
-            "summary": full_summary,
-            "description": current_description
-        })
+        # Si no hay líneas adicionales en el bloque, usamos el texto del encabezado (si existe)
+        if len(lines) == 1:
+            if header_remaining:
+                recommendations.append({
+                    "summary": f"{header_title}: {header_remaining}",
+                    "description": ""
+                })
+            else:
+                recommendations.append({
+                    "summary": header_title,
+                    "description": ""
+                })
+            continue
+
+        # Procesar las líneas restantes como sub-bullets
+        for sub_line in lines[1:]:
+            sub_line = sub_line.strip()
+            if sub_line.startswith("-"):
+                sub_line = sub_line[1:].strip()
+            if not sub_line:
+                continue
+
+            # Si el sub-bullet contiene las etiquetas "Summary:" y "Description:" (no sensibles a mayúsculas)
+            summary_match = re.search(r"(?i)Summary:\s*(.+?)(?=\s*-\s*\*\*|$)", sub_line, re.DOTALL)
+            description_match = re.search(r"(?i)Description:\s*(.+)", sub_line, re.DOTALL)
+            if summary_match:
+                sub_summary = summary_match.group(1).strip()
+            else:
+                sub_summary = sub_line  # Se usa todo el texto como resumen si no se encuentra "Summary:"
+            if description_match:
+                sub_description = description_match.group(1).strip()
+            else:
+                sub_description = ""
+
+            # Si no se encontraron sub-bullets en este bloque, se usa el encabezado y el texto adicional
+            if not sub_summary and header_remaining:
+                sub_summary = header_remaining
+
+            # Combinar el título de bloque con el sub-summary para formar el resumen final
+            full_summary = f"{header_title}: {sub_summary}" if sub_summary else header_title
+
+            recommendations.append({
+                "summary": full_summary,
+                "description": sub_description
+            })
 
     print(f"DEBUG: Parsed {len(recommendations)} recommendation(s).")
     return recommendations
