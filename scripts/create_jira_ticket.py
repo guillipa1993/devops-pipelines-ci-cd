@@ -62,35 +62,41 @@ def parse_recommendations(ai_text):
     Parsea el texto devuelto por la IA (cuando log_type == 'success') y extrae una lista de recomendaciones.
     Se espera un formato similar a:
     
-    - **Confirmation of Success**: 
-      - Summary: Ensure all configurations are optimal.
-      - Description: Check the build settings and parameters to verify that they align with project requirements and best practices.
+    ### Recommendations
+
+    - **Quoting Variables**: 
+      - Summary: Improve script robustness by consistently quoting variables.
+      - Description: Use double quotes around variables (e.g., "$VARIABLE") to prevent issues with word splitting and globbing, particularly when variables contain spaces or special characters.
+
+    - **Use of Command Substitution Notation**: 
+      - Summary: Enhance readability by transitioning to modern syntax.
+      - Description: Replace legacy backticks (`...`) with $(...) for command substitution, making the code easier to read and maintain.
     
-    - **Opportunities for Optimization**: 
-      - Summary: Enhance code quality through peer review.
-      - Description: Have team members review the code for potential improvements, bugs, and adherence to coding standards.
-    
-    Retorna una lista de dict: [{"summary": ..., "description": ...}, ...]
+    Retorna una lista de dict con las claves "summary" y "description", donde se combina el título y el summary para formar el resumen del ticket.
     """
     recommendations = []
-    # El patrón captura cada bloque que comience con "- **Título**:" y capture el contenido hasta el próximo bloque o el final del texto.
+    # Primero, eliminamos cualquier encabezado como "### Recommendations" si existe.
+    ai_text = ai_text.strip()
+    ai_text = re.sub(r"^#+\s*Recommendations\s*", "", ai_text, flags=re.IGNORECASE).strip()
+    
+    # Patrón que busca bloques que comiencen con "- **Título**:" y captura todo el bloque hasta el próximo bloque o final de texto.
     pattern = re.compile(
-        r"(?ms)^\s*-\s*\*\*(?P<title>.*?)\*\*:\s*(?P<content>.*?)(?=^\s*-\s*\*\*|\Z)",
+        r"(?ms)^\s*-\s*\*\*(?P<title>.+?)\*\*:\s*(?P<block>.*?)(?=^\s*-\s*\*\*|$)",
         re.MULTILINE | re.DOTALL
     )
     for match in pattern.finditer(ai_text):
         title = match.group("title").strip()
-        content = match.group("content").strip()
-        # Buscar en 'content' la línea de Summary y Description (case-insensitive)
-        summary_match = re.search(r"(?i)Summary:\s*(.+)", content)
-        description_match = re.search(r"(?i)Description:\s*(.+)", content, re.DOTALL)
+        block = match.group("block").strip()
+        # Buscar en el bloque las líneas que contengan "Summary:" y "Description:" (ignorando mayúsculas/minúsculas)
+        summary_match = re.search(r"(?i)^\s*-\s*Summary:\s*(?P<summary>.+)", block, re.MULTILINE)
+        description_match = re.search(r"(?i)^\s*-\s*Description:\s*(?P<description>.+)", block, re.MULTILINE | re.DOTALL)
         if summary_match and description_match:
-            rec_summary = summary_match.group(1).strip()
-            rec_description = description_match.group(1).strip()
+            rec_summary = summary_match.group("summary").strip()
+            rec_description = description_match.group("description").strip()
             # Combina el título con el summary para formar el resumen del ticket
-            full_summary = f"{title}: {rec_summary}"
+            combined_summary = f"{title}: {rec_summary}"
             recommendations.append({
-                "summary": full_summary,
+                "summary": combined_summary,
                 "description": rec_description
             })
         else:
