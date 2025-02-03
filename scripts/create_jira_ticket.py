@@ -62,46 +62,66 @@ def parse_recommendations(ai_text):
     Parsea el texto devuelto por la IA (cuando log_type == 'success') y extrae una lista de recomendaciones.
     Se espera que cada bloque de recomendación tenga el siguiente formato (o similar):
     
-      - **Título de la Recomendación**: 
+      - **Título de la Recomendación**: [texto opcional en la misma línea]
           - **Summary**: <Texto breve que resume la recomendación.>
           - **Description**: <Descripción detallada de la recomendación.>
     
     Retorna una lista de diccionarios con la forma:
-      [{"summary": <Título combinado con el resumen>, "description": <Descripción>}, ...]
+      [{"summary": "<Título>: <Summary>", "description": "<Description>"}, ...]
     """
+    import re
 
     recommendations = []
-    # Dividir el texto en bloques basados en líneas que comienzan con un guión
-    blocks = re.split(r"\n\s*-\s+", ai_text.strip())
-    for block in blocks:
-        block = block.strip()
-        if not block:
+    current_title = None
+    current_summary = None
+    current_description = None
+
+    # Separamos el texto en líneas
+    lines = ai_text.splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line:
             continue
 
-        # Extraer el título de la recomendación del bloque. Se espera que el bloque comience con **Título**:
-        title_match = re.match(r"\*\*(.+?)\*\*:\s*(.*)", block, re.DOTALL)
-        if not title_match:
-            print("WARNING: Could not extract title from block:", block)
-            continue
-        title = title_match.group(1).strip()
-        rest = title_match.group(2).strip()
-
-        # Buscar la sub-sección Summary
-        summary_match = re.search(r"-\s*\*\*Summary\*\*:\s*(.+?)(?=\n-\s*\*\*|$)", rest, re.DOTALL | re.IGNORECASE)
-        # Buscar la sub-sección Description
-        description_match = re.search(r"-\s*\*\*Description\*\*:\s*(.+)", rest, re.DOTALL | re.IGNORECASE)
-
-        if summary_match and description_match:
-            summary_text = summary_match.group(1).strip()
-            description_text = description_match.group(1).strip()
-            # Combinar el título con el resumen para formar el resumen final del ticket
-            full_summary = f"{title}: {summary_text}"
-            recommendations.append({
-                "summary": full_summary,
-                "description": description_text
-            })
+        # Si la línea comienza con "- **", es el inicio de una nueva recomendación
+        if line.startswith("- **"):
+            # Si ya tenemos datos de una recomendación previa, la agregamos si cuenta con summary y description
+            if current_title is not None and current_summary and current_description:
+                full_summary = f"{current_title}: {current_summary}"
+                recommendations.append({
+                    "summary": full_summary,
+                    "description": current_description
+                })
+            # Reiniciamos los valores para la nueva recomendación
+            current_title = None
+            current_summary = None
+            current_description = None
+            # Extraemos el título usando regex (se espera que esté entre ** y seguido de dos puntos)
+            m = re.match(r"-\s*\*\*(.+?)\*\*\s*:?\s*(.*)", line)
+            if m:
+                current_title = m.group(1).strip()
+                current_summary = m.group(2).strip() if m.group(2) else ""
+            else:
+                print("WARNING: Could not extract title from line:", line)
+        elif re.match(r"(?i)-\s*\*\*summary\*\*:", line):
+            # Actualizamos o asignamos el resumen de la recomendación
+            current_summary = line.split(":", 1)[1].strip()
+        elif re.match(r"(?i)-\s*\*\*description\*\*:", line):
+            # Actualizamos o asignamos la descripción de la recomendación
+            current_description = line.split(":", 1)[1].strip()
         else:
-            print("WARNING: Could not extract summary/description from block:", block)
+            # Si ya se está recogiendo la descripción, se asume que las líneas siguientes forman parte de ella
+            if current_description is not None:
+                current_description += " " + line
+
+    # Agregar el último bloque si se completó correctamente
+    if current_title is not None and current_summary and current_description:
+        full_summary = f"{current_title}: {current_summary}"
+        recommendations.append({
+            "summary": full_summary,
+            "description": current_description
+        })
+
     print(f"DEBUG: Parsed {len(recommendations)} recommendation(s).")
     return recommendations
 
@@ -123,9 +143,11 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
     print(f"DEBUG: sanitized_summary='{sanitized_summary}'")
     jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
     states_str = ", ".join(jql_states)
+    # IMPORTANTE: Convertir "Tarea" a "Task" para la consulta JQL si es necesario
+    jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
     jql_query = (
         f'project = "{project_key}" '
-        f'AND issuetype = "{issue_type}" '
+        f'AND issuetype = "{jql_issue_type}" '
         f'AND status IN ({states_str})'
     )
     print(f"DEBUG: JQL -> {jql_query}")
@@ -181,7 +203,7 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
                 print(f"WARNING: Ambiguous AI response '{ai_result}' for {issue_key}; continuing.")
                 continue
         except Exception as e:
-            print(f"WARNING: IA call failed for {issue_key}: {e}")
+            print(f"WARNING: Failed to analyze similarity with AI for {issue_key}: {e}")
             if summary_sim >= 0.8 or desc_sim >= 0.8:
                 print(f"INFO: Fallback local: similarity >= 0.8 for {issue_key}; marking as duplicate.")
                 return issue_key
@@ -200,9 +222,11 @@ def check_existing_tickets_ia_only(jira, project_key, summary, description, issu
     sanitized_summary = sanitize_summary(summary)
     jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
     states_str = ", ".join(jql_states)
+    # Convertir "Tarea" a "Task" para la consulta JQL si es necesario
+    jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
     jql_query = (
         f'project = "{project_key}" '
-        f'AND issuetype = "{issue_type}" '
+        f'AND issuetype = "{jql_issue_type}" '
         f'AND summary ~ "{sanitized_summary}" '
         f'AND status IN ({states_str})'
     )
@@ -413,7 +437,7 @@ def validate_issue_type(jira_url, jira_user, jira_api_token, project_key, issue_
     auth = (jira_user, jira_api_token)
     response = requests.get(url, headers=headers, auth=auth)
     if response.status_code == 200:
-        valid_types = [issue["name"] for issue in response.json()["projects"][0]["issuetypes"]]
+        valid_types = [it["name"] for it in response.json()["projects"][0]["issuetypes"]]
         print(f"DEBUG: Valid issue types -> {valid_types}")
         if issue_type not in valid_types:
             raise ValueError(f"Invalid issue type: '{issue_type}'. Valid types: {valid_types}")
@@ -607,16 +631,14 @@ def main():
             print(f"ERROR: {e}")
             return
         print("DEBUG: Checking for existing tickets (failure)...")
-        existing_ticket_key = check_existing_tickets_local_and_ia_summary_desc(
+        existing_ticket_key = check_existing_tickets(
             jira, args.jira_project_key, summary, description, issue_type
         )
         if existing_ticket_key:
             print(f"INFO: Ticket already exists: {existing_ticket_key}. Skipping creation.")
             return
         print("DEBUG: Creating ticket for failure in Jira...")
-        ticket_key = create_jira_ticket(
-            jira, args.jira_project_key, summary, description, issue_type
-        )
+        ticket_key = create_jira_ticket(jira, args.jira_project_key, summary, description, issue_type)
         if ticket_key:
             print(f"INFO: JIRA Ticket Created: {ticket_key}")
         else:
@@ -649,9 +671,7 @@ def main():
             if dup_key:
                 print(f"INFO: Recommendation #{i} already exists in ticket {dup_key}. Skipping creation.")
             else:
-                new_key = create_jira_ticket(
-                    jira, args.jira_project_key, r_summary, r_desc, issue_type
-                )
+                new_key = create_jira_ticket(jira, args.jira_project_key, r_summary, r_desc, issue_type)
                 if new_key:
                     print(f"INFO: Created ticket for recommendation #{i}: {new_key}")
                 else:
