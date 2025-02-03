@@ -62,27 +62,46 @@ def parse_recommendations(ai_text):
     Parsea el texto devuelto por la IA (cuando log_type == 'success') y extrae una lista de recomendaciones.
     Se espera que cada bloque de recomendación tenga el siguiente formato (o similar):
     
-      - **Título de la Recomendación:**
-        Contenido de la recomendación, que puede abarcar varias líneas.
+      - **Título de la Recomendación**: 
+          - **Summary**: <Texto breve que resume la recomendación.>
+          - **Description**: <Descripción detallada de la recomendación.>
     
-    Retorna una lista de diccionarios: [{"summary": <título>, "description": <contenido>}, ...].
+    Retorna una lista de diccionarios con la forma:
+      [{"summary": <Título combinado con el resumen>, "description": <Descripción>}, ...]
     """
+
     recommendations = []
-    # El patrón busca un guión seguido de espacios, luego un texto entre doble asteriscos hasta dos puntos,
-    # seguido de contenido hasta que se encuentre otro guión y doble asteriscos o hasta el final del texto.
-    pattern = re.compile(r"(?ms)-\s*\*\*(?P<title>.+?):\*\*\s*(?P<content>.*?)(?=-\s*\*\*|\Z)")
-    
-    for match in pattern.finditer(ai_text):
-        title = match.group("title").strip()
-        content = match.group("content").strip()
-        if title and content:
+    # Dividir el texto en bloques basados en líneas que comienzan con un guión
+    blocks = re.split(r"\n\s*-\s+", ai_text.strip())
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        # Extraer el título de la recomendación del bloque. Se espera que el bloque comience con **Título**:
+        title_match = re.match(r"\*\*(.+?)\*\*:\s*(.*)", block, re.DOTALL)
+        if not title_match:
+            print("WARNING: Could not extract title from block:", block)
+            continue
+        title = title_match.group(1).strip()
+        rest = title_match.group(2).strip()
+
+        # Buscar la sub-sección Summary
+        summary_match = re.search(r"-\s*\*\*Summary\*\*:\s*(.+?)(?=\n-\s*\*\*|$)", rest, re.DOTALL | re.IGNORECASE)
+        # Buscar la sub-sección Description
+        description_match = re.search(r"-\s*\*\*Description\*\*:\s*(.+)", rest, re.DOTALL | re.IGNORECASE)
+
+        if summary_match and description_match:
+            summary_text = summary_match.group(1).strip()
+            description_text = description_match.group(1).strip()
+            # Combinar el título con el resumen para formar el resumen final del ticket
+            full_summary = f"{title}: {summary_text}"
             recommendations.append({
-                "summary": title,
-                "description": content
+                "summary": full_summary,
+                "description": description_text
             })
         else:
-            print("WARNING: Could not parse a recommendation block:", match.group(0))
-    
+            print("WARNING: Could not extract summary/description from block:", block)
     print(f"DEBUG: Parsed {len(recommendations)} recommendation(s).")
     return recommendations
 
