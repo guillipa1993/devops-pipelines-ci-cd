@@ -66,80 +66,63 @@ def parse_recommendations(ai_text):
           - **Summary**: <Texto breve que resume la recomendación.>
           - **Description**: <Descripción detallada de la recomendación.>
     
-    Si no se encuentran las etiquetas "Summary:" o "Description:" en el sub-bloque, se utilizará
-    el texto completo del sub-bloque como resumen y se dejará la descripción vacía.
+    Si no se encuentran las etiquetas "Summary:" o "Description:" en el sub-bloque, se procederá de la siguiente forma:
+      - Se toma la primera línea (después del encabezado) como Summary.
+      - El resto del bloque (si lo hay) se utiliza como Description.
+      - Si no se encuentra Description, se deja vacía.
     
     Retorna una lista de diccionarios con la forma:
       [{"summary": "<Título>: <Summary>", "description": "<Description>"}, ...]
     """
-    import re
-
     recommendations = []
-    # Dividir el texto en bloques basados en líneas que comienzan con un guión
+    # Dividir el texto en bloques basados en líneas que comienzan con un guión (cada bloque representa una recomendación)
     blocks = re.split(r"\n\s*-\s+", ai_text.strip())
     for block in blocks:
         block = block.strip()
         if not block:
             continue
 
-        # La primera línea se espera que sea el encabezado con el título entre ** **
-        lines = block.splitlines()
-        header_line = lines[0].strip()
-        header_match = re.match(r"\*\*(.+?)\*\*\s*:?\s*(.*)", header_line, re.DOTALL)
+        # Intentar extraer el encabezado: se espera que inicie con **Título**
+        header_match = re.match(r"\*\*(.+?)\*\*\s*:?\s*(.*)", block, re.DOTALL)
         if header_match:
-            header_title = header_match.group(1).strip()
-            header_remaining = header_match.group(2).strip()  # Texto adicional en el encabezado, si lo hay
+            title = header_match.group(1).strip()
+            remaining_text = header_match.group(2).strip()
         else:
-            # Si no se encuentra el formato esperado, se usa la línea completa
-            header_title = header_line
-            header_remaining = ""
+            # Si no se encuentra el formato esperado, se usa el bloque completo como título
+            title = block
+            remaining_text = ""
 
-        # Si no hay líneas adicionales en el bloque, usamos el texto del encabezado (si existe)
-        if len(lines) == 1:
-            if header_remaining:
-                recommendations.append({
-                    "summary": f"{header_title}: {header_remaining}",
-                    "description": ""
-                })
-            else:
-                recommendations.append({
-                    "summary": header_title,
-                    "description": ""
-                })
-            continue
-
-        # Procesar las líneas restantes como sub-bullets
-        for sub_line in lines[1:]:
-            sub_line = sub_line.strip()
-            if sub_line.startswith("-"):
-                sub_line = sub_line[1:].strip()
-            if not sub_line:
-                continue
-
-            # Si el sub-bullet contiene las etiquetas "Summary:" y "Description:" (no sensibles a mayúsculas)
-            summary_match = re.search(r"(?i)Summary:\s*(.+?)(?=\s*-\s*\*\*|$)", sub_line, re.DOTALL)
-            description_match = re.search(r"(?i)Description:\s*(.+)", sub_line, re.DOTALL)
+        # Si el bloque consta de una única línea (sin sub-bullets), usar el texto restante como Summary y dejar Description vacío
+        lines = remaining_text.splitlines()
+        if len(lines) == 0:
+            summary_text = ""
+            description_text = ""
+        elif len(lines) == 1:
+            summary_text = lines[0].strip()
+            description_text = ""
+        else:
+            # Buscar explícitamente las etiquetas "Summary:" y "Description:" en el texto restante
+            summary_match = re.search(r"(?i)Summary:\s*(.+?)(?=\n|$)", remaining_text, re.DOTALL)
+            description_match = re.search(r"(?i)Description:\s*(.+)", remaining_text, re.DOTALL)
             if summary_match:
-                sub_summary = summary_match.group(1).strip()
+                summary_text = summary_match.group(1).strip()
             else:
-                sub_summary = sub_line  # Se usa todo el texto como resumen si no se encuentra "Summary:"
+                # Si no se encuentra la etiqueta, tomar la primera línea
+                summary_text = lines[0].strip()
             if description_match:
-                sub_description = description_match.group(1).strip()
+                description_text = description_match.group(1).strip()
             else:
-                sub_description = ""
+                # Si no se encuentra la etiqueta "Description:", usar el resto del bloque (saltando la primera línea) como descripción
+                if len(lines) > 1:
+                    description_text = "\n".join(lines[1:]).strip()
+                else:
+                    description_text = ""
+        full_summary = f"{title}: {summary_text}" if summary_text else title
 
-            # Si no se encontraron sub-bullets en este bloque, se usa el encabezado y el texto adicional
-            if not sub_summary and header_remaining:
-                sub_summary = header_remaining
-
-            # Combinar el título de bloque con el sub-summary para formar el resumen final
-            full_summary = f"{header_title}: {sub_summary}" if sub_summary else header_title
-
-            recommendations.append({
-                "summary": full_summary,
-                "description": sub_description
-            })
-
+        recommendations.append({
+            "summary": full_summary,
+            "description": description_text
+        })
     print(f"DEBUG: Parsed {len(recommendations)} recommendation(s).")
     return recommendations
 
@@ -148,7 +131,7 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
     """
     Verifica duplicados combinando comparaciones locales (título y descripción)
     con IA de manera escalonada:
-      - Si la similitud local en summary y description es muy alta (>= 0.9) => duplicado inmediato.
+      - Si la similitud local en summary y descripción es muy alta (>= 0.9) => duplicado inmediato.
       - Si ambas son muy bajas (< 0.3) => se descarta el candidato.
       - En rango intermedio, se pregunta a la IA.
     Devuelve la key del primer ticket duplicado o None si no se encontró ninguno.
@@ -161,7 +144,6 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
     print(f"DEBUG: sanitized_summary='{sanitized_summary}'")
     jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
     states_str = ", ".join(jql_states)
-    # IMPORTANTE: Convertir "Tarea" a "Task" para la consulta JQL si es necesario
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
     jql_query = (
         f'project = "{project_key}" '
@@ -240,7 +222,6 @@ def check_existing_tickets_ia_only(jira, project_key, summary, description, issu
     sanitized_summary = sanitize_summary(summary)
     jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
     states_str = ", ".join(jql_states)
-    # Convertir "Tarea" a "Task" para la consulta JQL si es necesario
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
     jql_query = (
         f'project = "{project_key}" '
@@ -286,7 +267,7 @@ def check_existing_tickets_ia_only(jira, project_key, summary, description, issu
                 print(f"WARNING: Ambiguous AI response '{ai_result}' for {issue.key}. Continuing.")
                 continue
         except Exception as e:
-            print(f"WARNING: Failed to analyze similarity with IA for {issue.key}: {e}")
+            print(f"WARNING: Failed to analyze similarity with AI for {issue.key}: {e}")
             continue
     print("DEBUG: No duplicate ticket found after IA comparisons.")
     return None
@@ -301,17 +282,10 @@ def check_existing_tickets(jira, project_key, summary, description, issue_type):
     LOCAL_SIMILARITY_THRESHOLD = 0.75
     LOCAL_FALLBACK_THRESHOLD = 0.70
 
-    # 1. Sanitizar el resumen para JQL
     sanitized_summary = sanitize_summary(summary)
-
-    # 2. Preparar los estados que se desean incluir en la búsqueda
     jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
     states_str = ", ".join(jql_states)
-
-    # IMPORTANTE: Para la consulta JQL, si el issue_type es "Tarea", usamos "Task" (en inglés)
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
-
-    # 3. Construir la consulta JQL usando el issue type transformado
     jql_query = (
         f'project = "{project_key}" '
         f'AND issuetype = "{jql_issue_type}" '
@@ -327,7 +301,6 @@ def check_existing_tickets(jira, project_key, summary, description, issue_type):
         print(f"ERROR: Failed to execute JQL query: {e}")
         return None
 
-    # 4. Analizar cada ticket candidato
     for issue in issues:
         existing_description = issue.fields.description or ""
         print(f"DEBUG: Analyzing Issue {issue.key} with local similarity check...")
@@ -368,7 +341,7 @@ def check_existing_tickets(jira, project_key, summary, description, issue_type):
                 print(f"DEBUG: AI says 'no' for {issue.key}. Continuing with next candidate.")
                 continue
             else:
-                print(f"WARNING: AI gave ambiguous response '{ai_result}' for {issue.key}.")
+                print(f"WARNING: Ambiguous AI response '{ai_result}' for {issue.key}.")
                 if local_similarity >= LOCAL_FALLBACK_THRESHOLD:
                     print(f"WARNING: Fallback local: similarity {local_similarity:.2f} => Marking {issue.key} as duplicate.")
                     return issue.key
@@ -479,16 +452,18 @@ def generate_prompt(log_type, language):
         )
         issue_type = "Error"
     else:
+        # Para el caso "success", se solicita que las recomendaciones sean accionables, detalladas y específicas.
         details = (
-            "You are a technical writer creating one or more recommendations in a concise Jira Cloud ticket from logs. "
-            "Please list separate recommendations as bullet points. Each bullet should have a short summary and a brief description. "
-            "Keep the format short and professional, using minimal Markdown. "
-            "Focus on these sections:\n\n"
-            "1) **Summary** ✅: A single-sentence overview of the successful outcome.\n"
-            "2) **Success Details** 🚀: Important tasks or milestones achieved.\n"
-            "3) **Recommendations** 💡: Suggested optimizations or scalability measures.\n"
-            "4) **Impact** 🌟: Positive effects or benefits of this success.\n\n"
-            "Avoid triple backticks unless strictly necessary, and keep the use of emojis minimal but clear."
+            "You are a technical writer tasked with creating actionable recommendations based on build logs. "
+            "Please list separate recommendations as bullet points. Each recommendation must include:\n"
+            "  - A **title** (enclosed in **double asterisks**), which briefly names the improvement.\n"
+            "  - A **Summary**: A one-sentence overview of the recommended improvement.\n"
+            "  - A **Description**: A detailed, practical explanation of the improvement, including specific code-related suggestions (e.g., refactoring, optimization, best practices) that can be applied.\n\n"
+            "Ensure that each recommendation is clear, detailed, and actionable. Do not leave the description empty.\n"
+            "Example:\n"
+            "- **Improve Variable Quoting**:\n"
+            "  - **Summary**: Quote all variable references.\n"
+            "  - **Description**: Enclose variables in double quotes to prevent word splitting and globbing, which can lead to errors in shell scripts.\n"
         )
         issue_type = "Tarea"
     prompt = (
@@ -533,11 +508,14 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
         print("ERROR: No relevant logs found for analysis.")
         return []
     
-    # Prompt especial para generar recomendaciones
+    # Prompt especial para generar recomendaciones accionables y detalladas.
     prompt = (
         f"You are a helpful assistant. The build logs indicate a successful build. "
-        f"Please list separate recommendations as bullet points. Each bullet should have a short summary and a brief description. "
-        f"Write in {report_language}. Avoid triple backticks.\n\nLogs:\n{logs_content}"
+        f"Please generate separate, actionable recommendations as bullet points. Each recommendation should include:\n"
+        f"  - A **title** (in bold) that succinctly names the improvement.\n"
+        f"  - A **Summary**: a one-sentence overview of the recommended change.\n"
+        f"  - A **Description**: a detailed explanation with specific, code-related, and practical improvement suggestions.\n\n"
+        f"Write in {report_language}. Avoid triple backticks. Use clear, technical language and provide actionable details.\n\nLogs:\n{logs_content}"
     )
     print("DEBUG: Sending prompt for recommendations to OpenAI...")
     try:
@@ -553,8 +531,10 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
         ai_text = response.choices[0].message.content.strip()
         print("DEBUG: AI returned text for recommendations:\n", ai_text)
         recs = parse_recommendations(ai_text)
-        print(f"DEBUG: Parsed {len(recs)} recommendation(s).")
-        return recs
+        # Filtrar recomendaciones que tengan descripción no vacía
+        filtered_recs = [rec for rec in recs if rec["description"].strip()]
+        print(f"DEBUG: Parsed {len(filtered_recs)} recommendation(s) with non-empty descriptions.")
+        return filtered_recs
     except Exception as e:
         print(f"ERROR: Failed to analyze logs for recommendations: {e}")
         return []
