@@ -4,6 +4,7 @@ import argparse
 import tarfile
 import requests
 import re
+import json
 from jira import JIRA
 from openai import OpenAI
 from datetime import datetime
@@ -27,57 +28,28 @@ def connect_to_jira(jira_url, jira_user, jira_api_token):
 
 # ============ FUNCIONES DE SANITIZACIÓN Y SIMILITUD ============
 def sanitize_summary(summary):
-    """
-    Limpia el resumen para eliminar caracteres que puedan causar problemas en el JQL.
-    """
     print(f"DEBUG: Sanitizing summary: '{summary}'")
     sanitized = "".join(c for c in summary if c.isalnum() or c.isspace())
     print(f"DEBUG: Resulting sanitized summary: '{sanitized}'")
     return sanitized
 
 def preprocess_text(text):
-    """
-    Quita puntuación y espacios extra, lleva a minúsculas.
-    Se usa para comparar similitud con SequenceMatcher.
-    """
-    #print("DEBUG: Preprocessing text for similarity comparison...")
     text_no_punct = re.sub(r'[^\w\s]', '', text)
-    lowered = text_no_punct.strip().lower()
-    return lowered
+    return text_no_punct.strip().lower()
 
 def calculate_similarity(text1, text2):
-    """
-    Calcula la similitud usando SequenceMatcher, retornando un valor entre 0 y 1.
-    """
-    #print("DEBUG: Calculating local similarity with SequenceMatcher...")
     t1 = preprocess_text(text1)
     t2 = preprocess_text(text2)
-    ratio = SequenceMatcher(None, t1, t2).ratio()
-    #print(f"DEBUG: Similarity ratio = {ratio:.2f}")
-    return ratio
+    return SequenceMatcher(None, t1, t2).ratio()
 
 # ============ PARSEO DE RECOMENDACIONES ============
 def parse_recommendations(ai_text):
-    """
-    Parsea el texto devuelto por la IA y extrae una lista de recomendaciones.
-    Se espera que cada bloque tenga el siguiente formato (o similar):
-    
-      - *Título de la Recomendación*: [texto opcional]
-          - *Summary*: <Texto breve que resume la recomendación.>
-          - *Description*: <Descripción detallada de la recomendación.>
-    
-    Si no se encuentran las etiquetas "Summary:" o "Description:", se toma la primera línea como Summary y el resto (si existe) como Description.
-    Retorna una lista de diccionarios:
-      [{"summary": "<Título>: <Summary>", "description": "<Description>"}, ...]
-    """
     recommendations = []
     blocks = re.split(r"\n\s*-\s+", ai_text.strip())
     for block in blocks:
         block = block.strip()
         if not block:
             continue
-
-        # Se usa re.match con DOTALL para capturar todo el bloque
         header_match = re.match(r"\*\*(.+?)\*\*\s*:?\s*(.*)", block, re.DOTALL)
         if header_match:
             title = header_match.group(1).strip()
@@ -85,27 +57,19 @@ def parse_recommendations(ai_text):
         else:
             title = block
             remaining_text = ""
-
-        # Extraer Summary y Description
         summary_match = re.search(r"(?i)Summary:\s*(.+?)(?=\n\s*-\s*\*Description\*|$)", remaining_text, re.DOTALL)
         description_match = re.search(r"(?i)Description:\s*(.+)", remaining_text, re.DOTALL)
         if summary_match:
             summary_text = summary_match.group(1).strip()
         else:
-            # Si no se encuentra la etiqueta, tomar la primera línea
             lines = remaining_text.splitlines()
             summary_text = lines[0].strip() if lines else ""
         if description_match:
             description_text = description_match.group(1).strip()
         else:
-            # Si no se encuentra "Description:", tomar el resto del bloque (excepto la primera línea) si hay más de una línea
             lines = remaining_text.splitlines()
-            if len(lines) > 1:
-                description_text = "\n".join(lines[1:]).strip()
-            else:
-                description_text = ""
+            description_text = "\n".join(lines[1:]).strip() if len(lines) > 1 else ""
         full_summary = f"{title}: {summary_text}" if summary_text else title
-
         recommendations.append({
             "summary": full_summary,
             "description": description_text
@@ -116,29 +80,33 @@ def parse_recommendations(ai_text):
 # ============ FORMATEO FINAL DEL CONTENIDO DEL TICKET ============
 def format_ticket_content(project_name, rec_summary, rec_description, ticket_category):
     """
-    Llama a la IA para formatear el contenido final del ticket, generando un título y una descripción detallada.
-    - project_name: nombre del proyecto (prefijo)
-    - rec_summary: el resumen parseado (título base)
-    - rec_description: la descripción parseada
-    - ticket_category: "Improvement" o "Bug"
+    Llama a la IA para que genere un JSON con dos claves:
+      - title: Conciso, que incluya el nombre del proyecto como prefijo, un emoticono adecuado y una frase resumida.
+      - description: Texto técnico y detallado (con ejemplos de código y pasos a reproducir) en formato libre.
     
-    El output tendrá el formato:
-      Title: <final title>
-      Description: <final detailed description>
+    Se usa un prompt para que la IA devuelva un JSON válido.
     """
+    # Ejemplo de prompt. Puedes ajustar los emoticonos y el contenido según tus pautas.
     prompt = (
-        f"You are a professional technical writer formatting Jira tickets for developers. "
-        f"Given the following recommendation details, create a final ticket with a concise title and a detailed description. "
-        f"The title should start with the project name as a prefix, include an appropriate emoticon based on the ticket category "
-        f"(for example, use '🚀' for improvements and '🐞' for bugs), and be a single sentence summarizing the change. "
-        f"The description should provide detailed, technical information, including examples of code, file names, line numbers if applicable, "
-        f"and clear instructions on how to fix or implement the improvement. Do not include redundant labels like 'Summary:' or 'Description:' in the output. "
-        f"Use single asterisks (*) for bold formatting.\n\n"
+        "You are a professional technical writer formatting Jira tickets for developers in JSON format. "
+        "Generate a valid JSON object with two keys: 'title' and 'description'.\n\n"
+        "Requirements:\n"
+        "- The 'title' must start with the project name as a prefix, followed by a colon, a space, then an appropriate emoticon based on the ticket category (e.g., '🚀' for improvements, '🐞' for bugs, '💡' for suggestions), and then a concise, single-sentence summary of the change.\n"
+        "- The 'description' must be a detailed technical description that includes all necessary details, such as examples of code (use triple backticks without language specification), file names, line numbers if applicable, steps to reproduce and fix the issue, and any additional notes. Use single asterisks (*) for bold formatting and include several emoticons (e.g., '📝', '🚀', '⚠️') to make the ticket friendly.\n\n"
+        "Do not include any labels like 'Summary:' or 'Description:' in the output. Output only valid JSON.\n\n"
         f"Project: {project_name}\n"
         f"Recommendation Title: {rec_summary}\n"
         f"Recommendation Details: {rec_description}\n"
         f"Ticket Category: {ticket_category}\n\n"
-        f"Output format:\nTitle: <final title>\nDescription: <final detailed description>"
+        "Output format example:\n"
+        '{\n'
+        '  "title": "scikit-learn: 🚀 Your concise title here",\n'
+        '  "description": "Your detailed technical description here, including code blocks like:\n'
+        "```\n"
+        "# example code\n"
+        "print('Hello World')\n"
+        "```\"\n'
+        '}\n'
     )
     try:
         response = client.chat.completions.create(
@@ -151,14 +119,14 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
             temperature=0.3
         )
         ai_output = response.choices[0].message.content.strip()
-        title_match = re.search(r"Title:\s*(.+)", ai_output)
-        description_match = re.search(r"Description:\s*(.+)", ai_output, re.DOTALL)
-        if title_match and description_match:
-            final_title = title_match.group(1).strip()
-            final_description = description_match.group(1).strip()
+        # Intentamos parsear la salida como JSON.
+        try:
+            ticket_data = json.loads(ai_output)
+            final_title = ticket_data.get("title", f"{project_name}: {rec_summary}")
+            final_description = ticket_data.get("description", rec_description)
             return final_title, final_description
-        else:
-            print("WARNING: Formatted ticket output format not recognized. Using original values.")
+        except json.JSONDecodeError:
+            print("WARNING: AI output could not be parsed as JSON. Using fallback formatting.")
             return f"{project_name}: {rec_summary}", rec_description
     except Exception as e:
         print(f"WARNING: Failed to format ticket content with AI: {e}")
@@ -207,15 +175,13 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system",
-                     "content": "You are an assistant specialized in analyzing text similarity. Respond only 'yes' or 'no'."},
-                    {"role": "user",
-                     "content": (
-                         "We have two issues:\n\n"
-                         f"Existing issue:\nSummary: {existing_summary}\nDescription: {existing_description}\n\n"
-                         f"New issue:\nSummary: {new_summary}\nDescription: {new_description}\n\n"
-                         "Do they represent essentially the same issue? Respond 'yes' or 'no'."
-                     )}
+                    {"role": "system", "content": "You are an assistant specialized in analyzing text similarity. Respond only 'yes' or 'no'."},
+                    {"role": "user", "content": (
+                        "We have two issues:\n\n"
+                        f"Existing issue:\nSummary: {existing_summary}\nDescription: {existing_description}\n\n"
+                        f"New issue:\nSummary: {new_summary}\nDescription: {new_description}\n\n"
+                        "Do they represent essentially the same issue? Respond 'yes' or 'no'."
+                    )}
                 ],
                 max_tokens=200,
                 temperature=0.3
@@ -243,10 +209,6 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
     return None
 
 def check_existing_tickets_ia_only(jira, project_key, summary, description, issue_type):
-    """
-    Verifica si existe un ticket con un resumen parecido y luego llama a la IA para comparar
-    las descripciones en detalle. Retorna la key del primer ticket duplicado o None.
-    """
     print("DEBUG: Checking for existing tickets with IA as primary comparator...")
     sanitized_summary = sanitize_summary(summary)
     jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
@@ -270,14 +232,12 @@ def check_existing_tickets_ia_only(jira, project_key, summary, description, issu
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system",
-                     "content": "You are an assistant specialized in analyzing text similarity. Respond only 'yes' or 'no'."},
-                    {"role": "user",
-                     "content": (
-                         "Compare the following two descriptions in terms of meaning, ignoring language differences.\n\n"
-                         f"Existing Description:\n{existing_description}\n\n"
-                         f"New Description:\n{description}"
-                     )}
+                    {"role": "system", "content": "You are an assistant specialized in analyzing text similarity. Respond only 'yes' or 'no'."},
+                    {"role": "user", "content": (
+                        "Compare the following two descriptions in terms of meaning, ignoring language differences.\n\n"
+                        f"Existing Description:\n{existing_description}\n\n"
+                        f"New Description:\n{description}"
+                    )}
                 ],
                 max_tokens=200,
                 temperature=0.3
@@ -300,11 +260,6 @@ def check_existing_tickets_ia_only(jira, project_key, summary, description, issu
     return None
 
 def check_existing_tickets(jira, project_key, summary, description, issue_type):
-    """
-    Verifica si existe un ticket con un resumen o descripción similar en Jira,
-    combinando una comparación local y el uso de IA.
-    Retorna la key del primer ticket duplicado o None si no se encontró ninguno.
-    """
     print("DEBUG: Checking for existing tickets (local + IA approach)...")
     LOCAL_SIMILARITY_THRESHOLD = 0.75
     LOCAL_FALLBACK_THRESHOLD = 0.70
@@ -341,18 +296,16 @@ def check_existing_tickets(jira, project_key, summary, description, issue_type):
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system",
-                     "content": (
-                         "You are an assistant specialized in analyzing text similarity. "
-                         "Respond only 'yes' or 'no' to indicate whether the two descriptions match in meaning."
-                     )},
-                    {"role": "user",
-                     "content": (
-                         "Compare these two descriptions in terms of meaning, ignoring language differences. "
-                         "If they describe the same or very similar issue, respond with 'yes'. Otherwise, respond with 'no'.\n\n"
-                         f"Existing description:\n{existing_description}\n\n"
-                         f"New description:\n{description}"
-                     )}
+                    {"role": "system", "content": (
+                        "You are an assistant specialized in analyzing text similarity. "
+                        "Respond only 'yes' or 'no' to indicate whether the two descriptions match in meaning."
+                    )},
+                    {"role": "user", "content": (
+                        "Compare these two descriptions in terms of meaning, ignoring language differences. "
+                        "If they describe the same or very similar issue, respond with 'yes'. Otherwise, respond with 'no'.\n\n"
+                        f"Existing description:\n{existing_description}\n\n"
+                        f"New description:\n{description}"
+                    )}
                 ],
                 max_tokens=200,
                 temperature=0.3
@@ -441,8 +394,7 @@ def validate_logs_directory(log_dir):
 
 def clean_log_content(content):
     lines = content.splitlines()
-    cleaned_lines = [line for line in lines if line.strip()]
-    return "\n".join(cleaned_lines)
+    return "\n".join(line for line in lines if line.strip())
 
 # ============ VALIDACIÓN DE TIPO DE INCIDENCIA ============
 def validate_issue_type(jira_url, jira_user, jira_api_token, project_key, issue_type):
@@ -498,9 +450,7 @@ def unify_double_to_single_asterisks(description):
 def sanitize_title(title):
     print(f"DEBUG: Sanitizing title '{title}'...")
     title = re.sub(r"[\*`]+", "", title)
-    title = title.strip()
-    print(f"DEBUG: Title after sanitize -> '{title}'")
-    return title
+    return title.strip()
 
 # ============ MÉTODO PARA ANALIZAR LOGS EN CASO DE ÉXITO (RECOMENDACIONES) ============
 def analyze_logs_for_recommendations(log_dir, report_language, project_name):
@@ -615,9 +565,7 @@ def main():
         exit(1)
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
     if args.log_type == "failure":
-        summary, description, issue_type = analyze_logs_with_ai(
-            args.log_dir, args.log_type, args.report_language, args.project_name
-        )
+        summary, description, issue_type = analyze_logs_with_ai(args.log_dir, args.log_type, args.report_language, args.project_name)
         if not summary or not description or not issue_type:
             print("ERROR: Log analysis failed or invalid issue type. No ticket will be created.")
             return
@@ -638,16 +586,12 @@ def main():
             print(f"INFO: JIRA Ticket Created: {ticket_key}")
         else:
             print("WARNING: Falling back to creating ticket via API...")
-            ticket_key = create_jira_ticket_via_requests(
-                args.jira_url, jira_user_email, jira_api_token, args.jira_project_key,
-                summary, description, issue_type
-            )
+            ticket_key = create_jira_ticket_via_requests(args.jira_url, jira_user_email, jira_api_token, args.jira_project_key, summary, description, issue_type)
             if ticket_key:
                 print(f"INFO: JIRA Ticket Created via API: {ticket_key}")
             else:
                 print("ERROR: Failed to create JIRA ticket.")
     else:
-        # Caso "success": generar recomendaciones y crear tickets para cada mejora
         recommendations = analyze_logs_for_recommendations(args.log_dir, args.report_language, args.project_name)
         if not recommendations:
             print("INFO: No recommendations generated by the AI.")
@@ -658,23 +602,17 @@ def main():
             r_desc = rec["description"]
             issue_type = "Tarea"
             print(f"DEBUG: Processing recommendation #{i} -> Summary: '{r_summary}'")
-            # Primero se verifica si ya existe un ticket similar
             dup_key = check_existing_tickets_local_and_ia_summary_desc(jira, args.jira_project_key, r_summary, r_desc, issue_type)
             if dup_key:
                 print(f"INFO: Recommendation #{i} already exists in ticket {dup_key}. Skipping creation.")
             else:
-                # Formatear el contenido final del ticket
                 final_title, final_description = format_ticket_content(args.project_name, r_summary, r_desc, "Improvement")
-                # Crear el ticket con el contenido formateado
                 new_key = create_jira_ticket(jira, args.jira_project_key, final_title, final_description, issue_type)
                 if new_key:
                     print(f"INFO: Created ticket for recommendation #{i}: {new_key}")
                 else:
                     print(f"WARNING: Failed to create ticket for recommendation #{i} via library, attempting fallback...")
-                    fallback_key = create_jira_ticket_via_requests(
-                        args.jira_url, jira_user_email, jira_api_token, args.jira_project_key,
-                        final_title, final_description, issue_type
-                    )
+                    fallback_key = create_jira_ticket_via_requests(args.jira_url, jira_user_email, jira_api_token, args.jira_project_key, final_title, final_description, issue_type)
                     if fallback_key:
                         print(f"INFO: Created ticket for recommendation #{i} via API: {fallback_key}")
                     else:
