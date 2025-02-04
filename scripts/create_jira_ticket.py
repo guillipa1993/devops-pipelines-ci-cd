@@ -101,7 +101,7 @@ def parse_recommendations(ai_text):
             summary_text = lines[0].strip()
             description_text = ""
         else:
-            # Buscar explícitamente las etiquetas "Summary:" y "Description:" en el texto restante
+            # Buscar las etiquetas "Summary:" y "Description:" (no sensibles a mayúsculas)
             summary_match = re.search(r"(?i)Summary:\s*(.+?)(?=\n|$)", remaining_text, re.DOTALL)
             description_match = re.search(r"(?i)Description:\s*(.+)", remaining_text, re.DOTALL)
             if summary_match:
@@ -452,27 +452,18 @@ def generate_prompt(log_type, language):
         )
         issue_type = "Error"
     else:
-        # Para el caso "success": Se exige que las recomendaciones sean accionables, detalladas y específicas.
+        # Para el caso "success": se exige que las recomendaciones sean accionables, detalladas y específicas.
         details = (
-            "You are a technical writer tasked with creating actionable recommendations based on build logs. "
-            "Please generate separate recommendations as bullet points. Each recommendation must include:\n"
-            "  - A **title** (in bold) that succinctly names the improvement.\n"
-            "  - A **Summary**: a one-sentence overview of the recommended change.\n"
-            "  - A **Description**: a detailed explanation with specific, code-related, and practical improvement suggestions. Ensure the description is not empty.\n\n"
-            "Example format:\n"
-            "- **Improve Variable Quoting**:\n"
-            "  - **Summary**: Quote all variable references.\n"
-            "  - **Description**: Enclose variable names in double quotes (e.g., use `\"$VAR\"` instead of `$VAR`) to prevent word splitting and globbing.\n\n"
-            "Write in {language} using clear, technical language."
+            f"You are a helpful assistant. The build logs indicate a successful build. "
+            f"Please generate separate, actionable recommendations as bullet points. Each recommendation should include:\n"
+            f"  - A *title* (in bold) that succinctly names the improvement.\n"
+            f"  - A *Summary*: a one-sentence overview of the recommended change.\n"
+            f"  - A *Description*: a detailed explanation with specific, code-related, and practical improvement suggestions. The description must not be empty.\n\n"
+            f"Write in {language} using clear and technical language. Avoid triple backticks."
         )
         issue_type = "Tarea"
-    prompt = (
-        f"{details}\n\n"
-        f"Be concise, professional, and compatible with Jira Cloud's Markdown. "
-        f"Write the ticket in {language}."
-    )
     print(f"DEBUG: Prompt generated. Issue type = {issue_type}")
-    return prompt, issue_type
+    return details, issue_type
 
 # ============ FUNCIÓN PARA UNIFICAR ASTERISCOS ============
 def unify_double_to_single_asterisks(description):
@@ -508,14 +499,9 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
         print("ERROR: No relevant logs found for analysis.")
         return []
     
-    prompt = (
-        f"You are a helpful assistant. The build logs indicate a successful build. "
-        f"Please generate separate, actionable recommendations as bullet points. Each recommendation should include:\n"
-        f"  - A *title* (in bold) that succinctly names the improvement.\n"
-        f"  - A *Summary*: a one-sentence overview of the recommended change.\n"
-        f"  - A *Description*: a detailed explanation with specific, code-related, and practical improvement suggestions. The description must not be empty.\n\n"
-        f"Write in {report_language} using clear and technical language. Avoid triple backticks.\n\nLogs:\n{logs_content}"
-    )
+    # Utilizar el prompt generado por generate_prompt para "success" y añadir los logs
+    prompt_base, _ = generate_prompt("success", report_language)
+    prompt = f"{prompt_base}\n\nLogs:\n{logs_content}"
     print("DEBUG: Sending prompt for recommendations to OpenAI...")
     try:
         response = client.chat.completions.create(
