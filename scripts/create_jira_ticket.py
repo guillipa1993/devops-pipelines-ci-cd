@@ -75,7 +75,7 @@ def parse_recommendations(ai_text):
       [{"summary": "<Título>: <Summary>", "description": "<Description>"}, ...]
     """
     recommendations = []
-    # Dividir el texto en bloques basados en líneas que comienzan con un guión (cada bloque representa una recomendación)
+    # Dividir el texto en bloques basados en líneas que comienzan con un guión
     blocks = re.split(r"\n\s*-\s+", ai_text.strip())
     for block in blocks:
         block = block.strip()
@@ -168,12 +168,12 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
         desc_sim = calculate_similarity(new_description, existing_description)
         print(f"DEBUG: description_sim with {issue_key} = {desc_sim:.2f}")
         if summary_sim < LOCAL_SIM_LOW and desc_sim < LOCAL_SIM_LOW:
-            print(f"DEBUG: Both summary_sim and desc_sim < {LOCAL_SIM_LOW:.2f}; ignoring {issue_key}.")
+            print(f"DEBUG: Both summary_sim and description_sim < {LOCAL_SIM_LOW:.2f}; ignoring {issue_key}.")
             continue
         if summary_sim >= LOCAL_SIM_HIGH and desc_sim >= LOCAL_SIM_HIGH:
-            print(f"INFO: Found duplicate ticket {issue_key} with high local similarity (summary_sim={summary_sim:.2f}, desc_sim={desc_sim:.2f}).")
+            print(f"INFO: Found duplicate ticket {issue_key} with high local similarity (summary_sim={summary_sim:.2f}, description_sim={desc_sim:.2f}).")
             return issue_key
-        print(f"DEBUG: Intermediate range for {issue_key} (summary_sim={summary_sim:.2f}, desc_sim={desc_sim:.2f}). Asking IA...")
+        print(f"DEBUG: Intermediate range for {issue_key} (summary_sim={summary_sim:.2f}, description_sim={desc_sim:.2f}). Asking IA...")
         try:
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -192,7 +192,7 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
                 temperature=0.3
             )
             ai_result = response.choices[0].message.content.strip().lower()
-            #print(f"DEBUG: AI result for {issue_key}: '{ai_result}'")
+            print(f"DEBUG: AI result for {issue_key}: '{ai_result}'")
             if ai_result.startswith("yes"):
                 print(f"INFO: Found duplicate ticket (IA confirms) -> {issue_key}")
                 return issue_key
@@ -452,18 +452,18 @@ def generate_prompt(log_type, language):
         )
         issue_type = "Error"
     else:
-        # Para el caso "success", se solicita que las recomendaciones sean accionables, detalladas y específicas.
+        # Para el caso "success": Se exige que las recomendaciones sean accionables, detalladas y específicas.
         details = (
             "You are a technical writer tasked with creating actionable recommendations based on build logs. "
-            "Please list separate recommendations as bullet points. Each recommendation must include:\n"
-            "  - A **title** (enclosed in **double asterisks**), which briefly names the improvement.\n"
-            "  - A **Summary**: A one-sentence overview of the recommended improvement.\n"
-            "  - A **Description**: A detailed, practical explanation of the improvement, including specific code-related suggestions (e.g., refactoring, optimization, best practices) that can be applied.\n\n"
-            "Ensure that each recommendation is clear, detailed, and actionable. Do not leave the description empty.\n"
-            "Example:\n"
+            "Please generate separate recommendations as bullet points. Each recommendation must include:\n"
+            "  - A **title** (in bold) that succinctly names the improvement.\n"
+            "  - A **Summary**: a one-sentence overview of the recommended change.\n"
+            "  - A **Description**: a detailed explanation with specific, code-related, and practical improvement suggestions. Ensure the description is not empty.\n\n"
+            "Example format:\n"
             "- **Improve Variable Quoting**:\n"
             "  - **Summary**: Quote all variable references.\n"
-            "  - **Description**: Enclose variables in double quotes to prevent word splitting and globbing, which can lead to errors in shell scripts.\n"
+            "  - **Description**: Enclose variable names in double quotes (e.g., use `\"$VAR\"` instead of `$VAR`) to prevent word splitting and globbing.\n\n"
+            "Write in {language} using clear, technical language."
         )
         issue_type = "Tarea"
     prompt = (
@@ -508,14 +508,13 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
         print("ERROR: No relevant logs found for analysis.")
         return []
     
-    # Prompt especial para generar recomendaciones accionables y detalladas.
     prompt = (
         f"You are a helpful assistant. The build logs indicate a successful build. "
         f"Please generate separate, actionable recommendations as bullet points. Each recommendation should include:\n"
-        f"  - A **title** (in bold) that succinctly names the improvement.\n"
-        f"  - A **Summary**: a one-sentence overview of the recommended change.\n"
-        f"  - A **Description**: a detailed explanation with specific, code-related, and practical improvement suggestions.\n\n"
-        f"Write in {report_language}. Avoid triple backticks. Use clear, technical language and provide actionable details.\n\nLogs:\n{logs_content}"
+        f"  - A *title* (in bold) that succinctly names the improvement.\n"
+        f"  - A *Summary*: a one-sentence overview of the recommended change.\n"
+        f"  - A *Description*: a detailed explanation with specific, code-related, and practical improvement suggestions. The description must not be empty.\n\n"
+        f"Write in {report_language} using clear and technical language. Avoid triple backticks.\n\nLogs:\n{logs_content}"
     )
     print("DEBUG: Sending prompt for recommendations to OpenAI...")
     try:
