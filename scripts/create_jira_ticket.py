@@ -59,23 +59,18 @@ def calculate_similarity(text1, text2):
 # ============ PARSEO DE RECOMENDACIONES ============
 def parse_recommendations(ai_text):
     """
-    Parsea el texto devuelto por la IA (cuando log_type == 'success') y extrae una lista de recomendaciones.
-    Se espera que cada bloque de recomendación tenga el siguiente formato (o similar):
+    Parsea el texto devuelto por la IA y extrae una lista de recomendaciones.
+    Se espera que cada bloque tenga el siguiente formato (o similar):
     
-      - **Título de la Recomendación**: [texto opcional]
-          - **Summary**: <Texto breve que resume la recomendación.>
-          - **Description**: <Descripción detallada de la recomendación.>
+      - *Título de la Recomendación*: [texto opcional]
+          - *Summary*: <Texto breve que resume la recomendación.>
+          - *Description*: <Descripción detallada de la recomendación.>
     
-    Si no se encuentran las etiquetas "Summary:" o "Description:" en el sub-bloque, se procederá de la siguiente forma:
-      - Se toma la primera línea (después del encabezado) como Summary.
-      - El resto del bloque (si lo hay) se utiliza como Description.
-      - Si no se encuentra Description, se deja vacía.
-    
-    Retorna una lista de diccionarios con la forma:
+    Si no se encuentran las etiquetas "Summary:" o "Description:", se toma la primera línea como Summary y el resto (si existe) como Description.
+    Retorna una lista de diccionarios:
       [{"summary": "<Título>: <Summary>", "description": "<Description>"}, ...]
     """
     recommendations = []
-    # Dividir el texto en bloques basados en líneas que comienzan con un guión
     blocks = re.split(r"\n\s*-\s+", ai_text.strip())
     for block in blocks:
         block = block.strip()
@@ -91,9 +86,8 @@ def parse_recommendations(ai_text):
             title = block
             remaining_text = ""
 
-        # Si el bloque contiene sub-bullets, intentar extraer Summary y Description
-        # Se modifican las expresiones para que "Summary" se capture hasta la etiqueta "Description" o final del bloque.
-        summary_match = re.search(r"(?i)Summary:\s*(.+?)(?=\n\s*-\s*\*\*Description\*\*|$)", remaining_text, re.DOTALL)
+        # Extraer Summary y Description
+        summary_match = re.search(r"(?i)Summary:\s*(.+?)(?=\n\s*-\s*\*Description\*|$)", remaining_text, re.DOTALL)
         description_match = re.search(r"(?i)Description:\s*(.+)", remaining_text, re.DOTALL)
         if summary_match:
             summary_text = summary_match.group(1).strip()
@@ -119,16 +113,59 @@ def parse_recommendations(ai_text):
     print(f"DEBUG: Parsed {len(recommendations)} recommendation(s).")
     return recommendations
 
-# ============ BÚSQUEDA DE TICKETS EXISTENTES (COMBINANDO LOCAL + IA) ============
+# ============ FORMATEO FINAL DEL CONTENIDO DEL TICKET ============
+def format_ticket_content(project_name, rec_summary, rec_description, ticket_category):
+    """
+    Llama a la IA para formatear el contenido final del ticket, generando un título y una descripción detallada.
+    - project_name: nombre del proyecto (prefijo)
+    - rec_summary: el resumen parseado (título base)
+    - rec_description: la descripción parseada
+    - ticket_category: "Improvement" o "Bug"
+    
+    El output tendrá el formato:
+      Title: <final title>
+      Description: <final detailed description>
+    """
+    prompt = (
+        f"You are a professional technical writer formatting Jira tickets for developers. "
+        f"Given the following recommendation details, create a final ticket with a concise title and a detailed description. "
+        f"The title should start with the project name as a prefix, include an appropriate emoticon based on the ticket category "
+        f"(for example, use '🚀' for improvements and '🐞' for bugs), and be a single sentence summarizing the change. "
+        f"The description should provide detailed, technical information, including examples of code, file names, line numbers if applicable, "
+        f"and clear instructions on how to fix or implement the improvement. Do not include redundant labels like 'Summary:' or 'Description:' in the output. "
+        f"Use single asterisks (*) for bold formatting.\n\n"
+        f"Project: {project_name}\n"
+        f"Recommendation Title: {rec_summary}\n"
+        f"Recommendation Details: {rec_description}\n"
+        f"Ticket Category: {ticket_category}\n\n"
+        f"Output format:\nTitle: <final title>\nDescription: <final detailed description>"
+    )
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a professional technical writer."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=800,
+            temperature=0.3
+        )
+        ai_output = response.choices[0].message.content.strip()
+        title_match = re.search(r"Title:\s*(.+)", ai_output)
+        description_match = re.search(r"Description:\s*(.+)", ai_output, re.DOTALL)
+        if title_match and description_match:
+            final_title = title_match.group(1).strip()
+            final_description = description_match.group(1).strip()
+            return final_title, final_description
+        else:
+            print("WARNING: Formatted ticket output format not recognized. Using original values.")
+            return f"{project_name}: {rec_summary}", rec_description
+    except Exception as e:
+        print(f"WARNING: Failed to format ticket content with AI: {e}")
+        return f"{project_name}: {rec_summary}", rec_description
+
+# ============ BÚSQUEDA DE TICKETS EXISTENTES (LOCAL + IA) ============
 def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summary, new_description, issue_type):
-    """
-    Verifica duplicados combinando comparaciones locales (título y descripción)
-    con IA de manera escalonada:
-      - Si la similitud local en summary y descripción es muy alta (>= 0.9) => duplicado inmediato.
-      - Si ambas son muy bajas (< 0.3) => se descarta el candidato.
-      - En rango intermedio, se pregunta a la IA.
-    Devuelve la key del primer ticket duplicado o None si no se encontró ninguno.
-    """
     print("DEBUG: Checking for existing tickets (local + IA, summary + description)")
     LOCAL_SIM_LOW = 0.3
     LOCAL_SIM_HIGH = 0.9
@@ -139,8 +176,7 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
     states_str = ", ".join(jql_states)
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
     jql_query = (
-        f'project = "{project_key}" '
-        f'AND issuetype = "{jql_issue_type}" '
+        f'project = "{project_key}" AND issuetype = "{jql_issue_type}" '
         f'AND status IN ({states_str})'
     )
     print(f"DEBUG: JQL -> {jql_query}")
@@ -217,10 +253,8 @@ def check_existing_tickets_ia_only(jira, project_key, summary, description, issu
     states_str = ", ".join(jql_states)
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
     jql_query = (
-        f'project = "{project_key}" '
-        f'AND issuetype = "{jql_issue_type}" '
-        f'AND summary ~ "{sanitized_summary}" '
-        f'AND status IN ({states_str})'
+        f'project = "{project_key}" AND issuetype = "{jql_issue_type}" '
+        f'AND summary ~ "{sanitized_summary}" AND status IN ({states_str})'
     )
     print(f"DEBUG: JQL -> {jql_query}")
     try:
@@ -280,10 +314,8 @@ def check_existing_tickets(jira, project_key, summary, description, issue_type):
     states_str = ", ".join(jql_states)
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
     jql_query = (
-        f'project = "{project_key}" '
-        f'AND issuetype = "{jql_issue_type}" '
-        f'AND summary ~ "{sanitized_summary}" '
-        f'AND status IN ({states_str})'
+        f'project = "{project_key}" AND issuetype = "{jql_issue_type}" '
+        f'AND summary ~ "{sanitized_summary}" AND status IN ({states_str})'
     )
     print(f"DEBUG: JQL Query -> {jql_query}")
 
@@ -343,7 +375,6 @@ def check_existing_tickets(jira, project_key, summary, description, issue_type):
             if local_similarity >= LOCAL_SIMILARITY_THRESHOLD:
                 print(f"INFO: Fallback local (similarity {local_similarity:.2f}) => {issue.key}")
                 return issue.key
-
     print("DEBUG: No duplicate ticket found after checking all candidates.")
     return None
 
@@ -436,16 +467,15 @@ def generate_prompt(log_type, language):
             "You are a technical writer creating a concise Jira Cloud ticket from logs. "
             "Keep the format short and professional, using minimal Markdown. "
             "Focus on these sections:\n\n"
-            "1) **Summary** ❗: A single-sentence overview of the main issue.\n"
-            "2) **Root Cause Analysis** 🔍: Briefly state the cause. Include log snippets if crucial.\n"
-            "3) **Proposed Solutions** 🛠️: List concrete steps to fix the issue, using bullets or short paragraphs.\n"
-            "4) **Preventive Measures** ⛑️: Suggest ways to avoid recurrence. Keep it succinct.\n"
-            "5) **Impact Analysis** ⚠️: What happens if it's not addressed?\n\n"
+            "1) *Summary* ❗: A single-sentence overview of the main issue.\n"
+            "2) *Root Cause Analysis* 🔍: Briefly state the cause. Include log snippets if crucial.\n"
+            "3) *Proposed Solutions* 🛠️: List concrete steps to fix the issue, using bullets or short paragraphs.\n"
+            "4) *Preventive Measures* ⛑️: Suggest ways to avoid recurrence. Keep it succinct.\n"
+            "5) *Impact Analysis* ⚠️: What happens if it's not addressed?\n\n"
             "Avoid triple backticks unless strictly necessary, and keep the use of emojis minimal but clear."
         )
         issue_type = "Error"
     else:
-        # Para "success": se exige que las recomendaciones sean accionables, detalladas y específicas.
         details = (
             f"You are a helpful assistant. The build logs indicate a successful build. "
             f"Please generate separate, actionable recommendations as bullet points. Each recommendation should include:\n"
@@ -492,7 +522,6 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
         print("ERROR: No relevant logs found for analysis.")
         return []
     
-    # Utilizar el prompt generado para "success" según lo solicitado.
     prompt_base, _ = generate_prompt("success", report_language)
     prompt = f"{prompt_base}\n\nLogs:\n{logs_content}"
     print("DEBUG: Sending prompt for recommendations to OpenAI...")
@@ -504,12 +533,11 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
                 {"role": "user", "content": prompt}
             ],
             max_tokens=1000,
-            temperature=0.3  # Se reduce la temperatura para mayor determinismo
+            temperature=0.3
         )
         ai_text = response.choices[0].message.content.strip()
         print("DEBUG: AI returned text for recommendations:\n", ai_text)
         recs = parse_recommendations(ai_text)
-        # Filtrar recomendaciones que tengan descripción no vacía
         filtered_recs = [rec for rec in recs if rec["description"].strip()]
         print(f"DEBUG: Parsed {len(filtered_recs)} recommendation(s) with non-empty descriptions.")
         return filtered_recs
@@ -556,17 +584,10 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
         print(f"DEBUG: AI returned summary of length {len(summary)} chars.")
         lines = summary.splitlines()
         first_line = lines[0] if lines else "No Title"
-        cleaned_title_line = (
-            first_line
-            .replace("```markdown", "")
-            .replace("```", "")
-            .strip()
-        )
-        cleaned_title_line = sanitize_title(cleaned_title_line)
+        cleaned_title_line = sanitize_title(first_line.replace("```markdown", "").replace("```", "").strip())
         label = "Error" if log_type == "failure" else "Success"
         summary_title = f"{project_name}: {label} - {cleaned_title_line}"
-        description_plain = summary.replace("\t", " ")
-        description_plain = unify_double_to_single_asterisks(description_plain)
+        description_plain = unify_double_to_single_asterisks(summary.replace("\t", " "))
         print(f"DEBUG: Final summary title -> {summary_title}")
         print(f"DEBUG: Description length -> {len(description_plain)} chars.")
         return summary_title, description_plain, issue_type
@@ -607,9 +628,7 @@ def main():
             print(f"ERROR: {e}")
             return
         print("DEBUG: Checking for existing tickets (failure)...")
-        existing_ticket_key = check_existing_tickets(
-            jira, args.jira_project_key, summary, description, issue_type
-        )
+        existing_ticket_key = check_existing_tickets(jira, args.jira_project_key, summary, description, issue_type)
         if existing_ticket_key:
             print(f"INFO: Ticket already exists: {existing_ticket_key}. Skipping creation.")
             return
@@ -629,9 +648,7 @@ def main():
                 print("ERROR: Failed to create JIRA ticket.")
     else:
         # Caso "success": generar recomendaciones y crear tickets para cada mejora
-        recommendations = analyze_logs_for_recommendations(
-            args.log_dir, args.report_language, args.project_name
-        )
+        recommendations = analyze_logs_for_recommendations(args.log_dir, args.report_language, args.project_name)
         if not recommendations:
             print("INFO: No recommendations generated by the AI.")
             return
@@ -641,20 +658,22 @@ def main():
             r_desc = rec["description"]
             issue_type = "Tarea"
             print(f"DEBUG: Processing recommendation #{i} -> Summary: '{r_summary}'")
-            dup_key = check_existing_tickets_local_and_ia_summary_desc(
-                jira, args.jira_project_key, r_summary, r_desc, issue_type
-            )
+            # Primero se verifica si ya existe un ticket similar
+            dup_key = check_existing_tickets_local_and_ia_summary_desc(jira, args.jira_project_key, r_summary, r_desc, issue_type)
             if dup_key:
                 print(f"INFO: Recommendation #{i} already exists in ticket {dup_key}. Skipping creation.")
             else:
-                new_key = create_jira_ticket(jira, args.jira_project_key, r_summary, r_desc, issue_type)
+                # Formatear el contenido final del ticket
+                final_title, final_description = format_ticket_content(args.project_name, r_summary, r_desc, "Improvement")
+                # Crear el ticket con el contenido formateado
+                new_key = create_jira_ticket(jira, args.jira_project_key, final_title, final_description, issue_type)
                 if new_key:
                     print(f"INFO: Created ticket for recommendation #{i}: {new_key}")
                 else:
                     print(f"WARNING: Failed to create ticket for recommendation #{i} via library, attempting fallback...")
                     fallback_key = create_jira_ticket_via_requests(
                         args.jira_url, jira_user_email, jira_api_token, args.jira_project_key,
-                        r_summary, r_desc, issue_type
+                        final_title, final_description, issue_type
                     )
                     if fallback_key:
                         print(f"INFO: Created ticket for recommendation #{i} via API: {fallback_key}")
