@@ -82,41 +82,34 @@ def parse_recommendations(ai_text):
         if not block:
             continue
 
-        # Intentar extraer el encabezado: se espera que inicie con **Título**
+        # Se usa re.match con DOTALL para capturar todo el bloque
         header_match = re.match(r"\*\*(.+?)\*\*\s*:?\s*(.*)", block, re.DOTALL)
         if header_match:
             title = header_match.group(1).strip()
             remaining_text = header_match.group(2).strip()
         else:
-            # Si no se encuentra el formato esperado, se usa el bloque completo como título
             title = block
             remaining_text = ""
 
-        # Si el bloque consta de una única línea (sin sub-bullets), usar el texto restante como Summary y dejar Description vacío
-        lines = remaining_text.splitlines()
-        if len(lines) == 0:
-            summary_text = ""
-            description_text = ""
-        elif len(lines) == 1:
-            summary_text = lines[0].strip()
-            description_text = ""
+        # Si el bloque contiene sub-bullets, intentar extraer Summary y Description
+        # Se modifican las expresiones para que "Summary" se capture hasta la etiqueta "Description" o final del bloque.
+        summary_match = re.search(r"(?i)Summary:\s*(.+?)(?=\n\s*-\s*\*\*Description\*\*|$)", remaining_text, re.DOTALL)
+        description_match = re.search(r"(?i)Description:\s*(.+)", remaining_text, re.DOTALL)
+        if summary_match:
+            summary_text = summary_match.group(1).strip()
         else:
-            # Buscar las etiquetas "Summary:" y "Description:" (no sensibles a mayúsculas)
-            summary_match = re.search(r"(?i)Summary:\s*(.+?)(?=\n|$)", remaining_text, re.DOTALL)
-            description_match = re.search(r"(?i)Description:\s*(.+)", remaining_text, re.DOTALL)
-            if summary_match:
-                summary_text = summary_match.group(1).strip()
+            # Si no se encuentra la etiqueta, tomar la primera línea
+            lines = remaining_text.splitlines()
+            summary_text = lines[0].strip() if lines else ""
+        if description_match:
+            description_text = description_match.group(1).strip()
+        else:
+            # Si no se encuentra "Description:", tomar el resto del bloque (excepto la primera línea) si hay más de una línea
+            lines = remaining_text.splitlines()
+            if len(lines) > 1:
+                description_text = "\n".join(lines[1:]).strip()
             else:
-                # Si no se encuentra la etiqueta, tomar la primera línea
-                summary_text = lines[0].strip()
-            if description_match:
-                description_text = description_match.group(1).strip()
-            else:
-                # Si no se encuentra la etiqueta "Description:", usar el resto del bloque (saltando la primera línea) como descripción
-                if len(lines) > 1:
-                    description_text = "\n".join(lines[1:]).strip()
-                else:
-                    description_text = ""
+                description_text = ""
         full_summary = f"{title}: {summary_text}" if summary_text else title
 
         recommendations.append({
@@ -452,7 +445,7 @@ def generate_prompt(log_type, language):
         )
         issue_type = "Error"
     else:
-        # Para el caso "success": se exige que las recomendaciones sean accionables, detalladas y específicas.
+        # Para "success": se exige que las recomendaciones sean accionables, detalladas y específicas.
         details = (
             f"You are a helpful assistant. The build logs indicate a successful build. "
             f"Please generate separate, actionable recommendations as bullet points. Each recommendation should include:\n"
@@ -499,7 +492,7 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
         print("ERROR: No relevant logs found for analysis.")
         return []
     
-    # Utilizar el prompt generado por generate_prompt para "success" y añadir los logs
+    # Utilizar el prompt generado para "success" según lo solicitado.
     prompt_base, _ = generate_prompt("success", report_language)
     prompt = f"{prompt_base}\n\nLogs:\n{logs_content}"
     print("DEBUG: Sending prompt for recommendations to OpenAI...")
@@ -511,7 +504,7 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
                 {"role": "user", "content": prompt}
             ],
             max_tokens=1000,
-            temperature=0.5
+            temperature=0.3  # Se reduce la temperatura para mayor determinismo
         )
         ai_text = response.choices[0].message.content.strip()
         print("DEBUG: AI returned text for recommendations:\n", ai_text)
