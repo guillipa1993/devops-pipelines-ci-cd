@@ -40,7 +40,7 @@ def preprocess_text(text):
     Quita puntuación y espacios extra, lleva a minúsculas.
     Se usa para comparar similitud con SequenceMatcher.
     """
-    print("DEBUG: Preprocessing text for similarity comparison...")
+    #print("DEBUG: Preprocessing text for similarity comparison...")
     text_no_punct = re.sub(r'[^\w\s]', '', text)
     lowered = text_no_punct.strip().lower()
     return lowered
@@ -49,11 +49,11 @@ def calculate_similarity(text1, text2):
     """
     Calcula la similitud usando SequenceMatcher, retornando un valor entre 0 y 1.
     """
-    print("DEBUG: Calculating local similarity with SequenceMatcher...")
+    #print("DEBUG: Calculating local similarity with SequenceMatcher...")
     t1 = preprocess_text(text1)
     t2 = preprocess_text(text2)
     ratio = SequenceMatcher(None, t1, t2).ratio()
-    print(f"DEBUG: Similarity ratio = {ratio:.2f}")
+    #print(f"DEBUG: Similarity ratio = {ratio:.2f}")
     return ratio
 
 # ============ PARSEO DE RECOMENDACIONES ============
@@ -166,7 +166,7 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
         summary_sim = calculate_similarity(new_summary, existing_summary)
         print(f"DEBUG: summary_sim with {issue_key} = {summary_sim:.2f}")
         desc_sim = calculate_similarity(new_description, existing_description)
-        print(f"DEBUG: desc_sim with {issue_key} = {desc_sim:.2f}")
+        print(f"DEBUG: description_sim with {issue_key} = {desc_sim:.2f}")
         if summary_sim < LOCAL_SIM_LOW and desc_sim < LOCAL_SIM_LOW:
             print(f"DEBUG: Both summary_sim and desc_sim < {LOCAL_SIM_LOW:.2f}; ignoring {issue_key}.")
             continue
@@ -192,7 +192,7 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
                 temperature=0.3
             )
             ai_result = response.choices[0].message.content.strip().lower()
-            print(f"DEBUG: AI result for {issue_key}: '{ai_result}'")
+            #print(f"DEBUG: AI result for {issue_key}: '{ai_result}'")
             if ai_result.startswith("yes"):
                 print(f"INFO: Found duplicate ticket (IA confirms) -> {issue_key}")
                 return issue_key
