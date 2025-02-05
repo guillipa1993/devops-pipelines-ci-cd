@@ -47,11 +47,15 @@ def calculate_similarity(text1, text2):
 # ============ PARSEO DE RECOMENDACIONES ============
 def parse_recommendations(ai_text):
     recommendations = []
+    # Debug: imprimir la salida cruda de la IA
+    print("DEBUG: Raw AI output for recommendations:\n", ai_text)
     blocks = re.split(r"\n\s*-\s+", ai_text.strip())
     for block in blocks:
         block = block.strip()
         if not block:
             continue
+        # Imprimir el bloque completo para depuración
+        print("DEBUG: Processing block:\n", block)
         header_match = re.match(r"\*\*(.+?)\*\*\s*:?\s*(.*)", block, re.DOTALL)
         if header_match:
             title = header_match.group(1).strip()
@@ -59,6 +63,7 @@ def parse_recommendations(ai_text):
         else:
             title = block
             remaining_text = ""
+        # Extraer Summary y Description con patrones (se espera que la IA use "Summary:" y "Description:" exactamente)
         summary_match = re.search(r"(?i)Summary:\s*(.+?)(?=\n\s*-\s*\*Description\*|$)", remaining_text, re.DOTALL)
         description_match = re.search(r"(?i)Description:\s*(.+)", remaining_text, re.DOTALL)
         if summary_match:
@@ -74,6 +79,8 @@ def parse_recommendations(ai_text):
                 description_text = "\n".join(lines[1:]).strip()
             else:
                 description_text = ""
+        # Debug: imprimir lo extraído de este bloque
+        print(f"DEBUG: Extracted - Title: '{title}' | Summary: '{summary_text}' | Description: '{description_text}'")
         full_summary = f"{title}: {summary_text}" if summary_text else title
         recommendations.append({
             "summary": full_summary,
@@ -88,17 +95,19 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
     Llama a la IA para formatear el contenido final del ticket.
     Se espera que la IA devuelva un JSON con:
       - "title": una única oración que comience con el nombre del proyecto, incluya un emoticono adecuado y resuma la mejora.
-      - "description": un contenido formateado en Atlassian Document Format (ADF), que incluya párrafos, listas y bloques de código (usando triple backticks sin lenguaje).
+      - "description": un contenido formateado en Atlassian Document Format (ADF), que incluya párrafos, listas y bloques de código.
+    Nota: Cuando se formateen bloques de código, usa triple backticks sin especificar lenguaje.
     """
     prompt = (
         "You are a professional technical writer formatting Jira tickets for developers. "
         "Given the following recommendation details, produce a JSON object with two keys: 'title' and 'description'.\n\n"
         "The 'title' must be a single concise sentence that starts with the project name as a prefix and includes an appropriate emoticon based on the ticket category "
-        "(use '🚀' for improvements, '🐞' for bugs, '💡' for suggestions, etc.).\n\n"
+        "(for example, use '🚀' for improvements, '🐞' for bugs, '💡' for suggestions, etc.).\n\n"
         "The 'description' must be formatted in Atlassian Document Format (ADF). It should be a JSON object with:\n"
         "  - \"type\": \"doc\",\n"
         "  - \"version\": 1,\n"
-        "  - \"content\": an array of nodes (e.g. paragraphs, code blocks, bullet lists) with detailed technical information, code examples (use triple backticks without a language specifier), file names, and clear instructions.\n\n"
+        "  - \"content\": an array of nodes (e.g. paragraphs, code blocks, bullet lists) with detailed technical information, including code examples. "
+        "When formatting code blocks, use triple backticks without a language specifier.\n\n"
         "Do not include redundant labels like 'Summary:' or 'Description:' in the output.\n\n"
         f"Project: {project_name}\n"
         f"Recommendation Title: {rec_summary}\n"
@@ -106,6 +115,7 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
         f"Ticket Category: {ticket_category}\n\n"
         "Return only a valid JSON object."
     )
+    print("DEBUG: format_ticket_content prompt:\n", prompt)
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -117,7 +127,7 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
             temperature=0.3
         )
         ai_output = response.choices[0].message.content.strip()
-        # Intentamos parsear el JSON devuelto
+        print("DEBUG: Raw AI output from format_ticket_content:\n", ai_output)
         ticket_json = json.loads(ai_output)
         final_title = ticket_json.get("title", f"{project_name}: {rec_summary}")
         final_description = ticket_json.get("description", rec_description)
@@ -131,6 +141,7 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
     print("DEBUG: Checking for existing tickets (local + IA, summary + description)")
     LOCAL_SIM_LOW = 0.3
     LOCAL_SIM_HIGH = 0.9
+
     sanitized_summary = sanitize_summary(new_summary)
     print(f"DEBUG: sanitized_summary='{sanitized_summary}'")
     jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
@@ -212,7 +223,7 @@ def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project
             "issuetype": {"name": issue_type}
         }
     }
-    print(f"DEBUG: Payload -> {payload}")
+    print(f"DEBUG: Payload -> {json.dumps(payload, indent=2)}")
     response = requests.post(url, json=payload, headers=headers, auth=auth)
     if response.status_code == 201:
         print("DEBUG: Ticket created successfully via API.")
@@ -231,7 +242,7 @@ def create_jira_ticket(jira, project_key, summary, description, issue_type):
             'description': description,
             'issuetype': {'name': issue_type}
         }
-        print(f"DEBUG: Issue fields -> {issue_dict}")
+        print(f"DEBUG: Issue fields -> {json.dumps(issue_dict, indent=2)}")
         issue = jira.create_issue(fields=issue_dict)
         print("DEBUG: Ticket created successfully via JIRA library.")
         return issue.key
@@ -358,9 +369,9 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
         ai_text = response.choices[0].message.content.strip()
         print("DEBUG: AI returned text for recommendations:\n", ai_text)
         recs = parse_recommendations(ai_text)
-        filtered_recs = [rec for rec in recs if rec["description"].strip()]
-        print(f"DEBUG: Parsed {len(filtered_recs)} recommendation(s) with non-empty descriptions.")
-        return filtered_recs
+        # NO filtramos recomendaciones con descripción vacía para evitar descartar resultados
+        print(f"DEBUG: Returning {len(recs)} recommendation(s) (including those with empty descriptions).")
+        return recs
     except Exception as e:
         print(f"ERROR: Failed to analyze logs for recommendations: {e}")
         return []
