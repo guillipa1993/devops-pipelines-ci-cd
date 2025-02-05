@@ -81,33 +81,34 @@ def parse_recommendations(ai_text):
 def format_ticket_content(project_name, rec_summary, rec_description, ticket_category):
     """
     Llama a la IA para que genere un JSON con dos claves:
-      - title: Conciso, que incluya el nombre del proyecto como prefijo, un emoticono adecuado y una frase resumida.
-      - description: Texto técnico y detallado (con ejemplos de código y pasos a reproducir) en formato libre.
-    
-    Se usa un prompt para que la IA devuelva un JSON válido.
+      - title: que incluya el nombre del proyecto como prefijo, un emoticono adecuado según la categoría 
+               (por ejemplo, 🚀 para mejoras, 🐞 para bugs, 💡 para sugerencias) y un resumen conciso.
+      - description: un texto técnico detallado que incluya ejemplos de código (los bloques de código se muestran
+                     entre triple backticks sin especificar el lenguaje), pasos a reproducir, y otros detalles,
+                     usando asteriscos simples (*) para negrita y varios emoticonos para hacerlo más amigable.
+                     
+    La IA debe devolver un JSON válido.
     """
-    # Ejemplo de prompt. Puedes ajustar los emoticonos y el contenido según tus pautas.
-    prompt = (
-        "You are a professional technical writer formatting Jira tickets for developers in JSON format. "
-        "Generate a valid JSON object with two keys: 'title' and 'description'.\n\n"
-        "Requirements:\n"
-        "- The 'title' must start with the project name as a prefix, followed by a colon, a space, then an appropriate emoticon based on the ticket category (e.g., '🚀' for improvements, '🐞' for bugs, '💡' for suggestions), and then a concise, single-sentence summary of the change.\n"
-        "- The 'description' must be a detailed technical description that includes all necessary details, such as examples of code (use triple backticks without language specification), file names, line numbers if applicable, steps to reproduce and fix the issue, and any additional notes. Use single asterisks (*) for bold formatting and include several emoticons (e.g., '📝', '🚀', '⚠️') to make the ticket friendly.\n\n"
-        "Do not include any labels like 'Summary:' or 'Description:' in the output. Output only valid JSON.\n\n"
-        f"Project: {project_name}\n"
-        f"Recommendation Title: {rec_summary}\n"
-        f"Recommendation Details: {rec_description}\n"
-        f"Ticket Category: {ticket_category}\n\n"
-        "Output format example:\n"
-        '{\n'
-        '  "title": "scikit-learn: 🚀 Your concise title here",\n'
-        '  "description": "Your detailed technical description here, including code blocks like:\n'
-        "```\n"
-        "# example code\n"
-        "print('Hello World')\n"
-        "```\"\n'
-        '}\n'
-    )
+    prompt = f"""You are a professional technical writer formatting Jira tickets for developers in JSON format.
+Given the following recommendation details, create a final ticket with a concise title and a detailed description.
+The title must start with the project name as a prefix, followed by an appropriate emoticon based on the ticket category 
+(e.g., use 🚀 for improvements, 🐞 for bugs, 💡 for suggestions), and then a concise, single-sentence summary of the change.
+The description must be a detailed technical description that includes all necessary details, such as examples of code 
+(using triple backticks without specifying a language), file names, line numbers if applicable, steps to reproduce and fix the issue, 
+and any additional notes. Use single asterisks (*) for bold formatting, and include several emoticons (e.g., 📝, 🚀, ⚠️) to make the ticket friendly.
+Do not include any labels like 'Summary:' or 'Description:' in the output. Output only valid JSON.
+
+Project: {project_name}
+Recommendation Title: {rec_summary}
+Recommendation Details: {rec_description}
+Ticket Category: {ticket_category}
+
+Output format example:
+{{
+  "title": "{project_name}: 🚀 Your concise title here",
+  "description": "Your detailed technical description here, including code blocks like:\n```\n# example code\nprint('Hello World')\n```"
+}}
+"""
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -119,8 +120,8 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
             temperature=0.3
         )
         ai_output = response.choices[0].message.content.strip()
-        # Intentamos parsear la salida como JSON.
         try:
+            import json
             ticket_data = json.loads(ai_output)
             final_title = ticket_data.get("title", f"{project_name}: {rec_summary}")
             final_description = ticket_data.get("description", rec_description)
