@@ -218,7 +218,10 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
 
 # ============ CREACIÓN DE TICKETS ============
 def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project_key, summary, description, issue_type):
-    print("DEBUG: Creating Jira ticket via REST API (requests)...")
+    # Si la descripción es un diccionario, se convierte a cadena
+    if isinstance(description, dict):
+        description = json.dumps(description, ensure_ascii=False)
+        print("DEBUG: Converted description to string using json.dumps() for API request")
     url = f"{jira_url}/rest/api/3/issue"
     headers = {"Content-Type": "application/json"}
     auth = (jira_user, jira_api_token)
@@ -230,7 +233,7 @@ def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project
             "issuetype": {"name": issue_type}
         }
     }
-    print(f"DEBUG: Payload -> {json.dumps(payload, indent=2)}")
+    print(f"DEBUG: Payload -> {payload}")
     response = requests.post(url, json=payload, headers=headers, auth=auth)
     if response.status_code == 201:
         print("DEBUG: Ticket created successfully via API.")
@@ -241,7 +244,10 @@ def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project
         return None
 
 def create_jira_ticket(jira, project_key, summary, description, issue_type):
-    print("DEBUG: Creating Jira ticket via JIRA library...")
+    # Si la descripción es un diccionario (por ejemplo, ADF JSON), se convierte a cadena
+    if isinstance(description, dict):
+        description = json.dumps(description, ensure_ascii=False)
+        print("DEBUG: Converted description to string using json.dumps()")
     try:
         issue_dict = {
             'project': {'key': project_key},
@@ -249,7 +255,7 @@ def create_jira_ticket(jira, project_key, summary, description, issue_type):
             'description': description,
             'issuetype': {'name': issue_type}
         }
-        print(f"DEBUG: Issue fields -> {json.dumps(issue_dict, indent=2)}")
+        print(f"DEBUG: Issue fields -> {issue_dict}")
         issue = jira.create_issue(fields=issue_dict)
         print("DEBUG: Ticket created successfully via JIRA library.")
         return issue.key
