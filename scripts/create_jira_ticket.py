@@ -86,23 +86,24 @@ def parse_recommendations(ai_text):
 def format_ticket_content(project_name, rec_summary, rec_description, ticket_category):
     """
     Llama a la IA para formatear el contenido final del ticket.
-    Se espera que la IA devuelva un objeto JSON con dos claves: "title" y "description".
-    - El "title" debe comenzar con el nombre del proyecto, incluir un emoticono apropiado según la categoría (por ejemplo, 🚀 para mejoras, 🐞 para errores, 💡 para sugerencias) y ser una oración concisa.
-    - La "description" debe estar formateada en Atlassian Document Format (ADF) (con "type": "doc", "version": 1 y una propiedad "content" con párrafos, bloques de código, listas, etc.).
+    Se espera que la IA devuelva un JSON con:
+      - "title": una única oración que comience con el nombre del proyecto, incluya un emoticono adecuado y resuma la mejora.
+      - "description": un contenido formateado en Atlassian Document Format (ADF), que incluya párrafos, listas y bloques de código (usando triple backticks sin lenguaje).
     """
     prompt = (
         "You are a professional technical writer formatting Jira tickets for developers. "
-        "Given the following recommendation details, produce a JSON object with two keys: 'title' and 'description'. "
-        "The 'title' should be a single concise sentence that starts with the project name as a prefix and includes an appropriate emoticon based on the ticket category "
-        "(use '🚀' for improvements, '🐞' for bugs, and '💡' for suggestions). "
-        "The 'description' must be formatted in Atlassian Document Format (ADF) with the following structure:\n"
-        "{\n  \"type\": \"doc\",\n  \"version\": 1,\n  \"content\": [ ... ]\n}\n"
-        "Include detailed technical information, such as code examples (using codeBlock nodes without specifying a language if that helps compatibility), "
-        "file names, line numbers, and clear instructions for implementation or troubleshooting. Do not include redundant labels like 'Summary:' or 'Description:'.\n\n"
+        "Given the following recommendation details, produce a JSON object with two keys: 'title' and 'description'.\n\n"
+        "The 'title' must be a single concise sentence that starts with the project name as a prefix and includes an appropriate emoticon based on the ticket category "
+        "(use '🚀' for improvements, '🐞' for bugs, '💡' for suggestions, etc.).\n\n"
+        "The 'description' must be formatted in Atlassian Document Format (ADF). It should be a JSON object with:\n"
+        "  - \"type\": \"doc\",\n"
+        "  - \"version\": 1,\n"
+        "  - \"content\": an array of nodes (e.g. paragraphs, code blocks, bullet lists) with detailed technical information, code examples (use triple backticks without a language specifier), file names, and clear instructions.\n\n"
+        "Do not include redundant labels like 'Summary:' or 'Description:' in the output.\n\n"
         f"Project: {project_name}\n"
         f"Recommendation Title: {rec_summary}\n"
         f"Recommendation Details: {rec_description}\n"
-        f"Ticket Category: {ticket_category}\n"
+        f"Ticket Category: {ticket_category}\n\n"
         "Return only a valid JSON object."
     )
     try:
@@ -135,9 +136,7 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
     jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
     states_str = ", ".join(jql_states)
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
-    jql_query = (
-        f'project = "{project_key}" AND issuetype = "{jql_issue_type}" AND status IN ({states_str})'
-    )
+    jql_query = f'project = "{project_key}" AND issuetype = "{jql_issue_type}" AND status IN ({states_str})'
     print(f"DEBUG: JQL -> {jql_query}")
     try:
         issues = jira.search_issues(jql_query)
@@ -436,9 +435,7 @@ def main():
         exit(1)
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
     if args.log_type == "failure":
-        summary, description, issue_type = analyze_logs_with_ai(
-            args.log_dir, args.log_type, args.report_language, args.project_name
-        )
+        summary, description, issue_type = analyze_logs_with_ai(args.log_dir, args.log_type, args.report_language, args.project_name)
         if not summary or not description or not issue_type:
             print("ERROR: Log analysis failed or invalid issue type. No ticket will be created.")
             return
@@ -459,16 +456,12 @@ def main():
             print(f"INFO: JIRA Ticket Created: {ticket_key}")
         else:
             print("WARNING: Falling back to creating ticket via API...")
-            ticket_key = create_jira_ticket_via_requests(
-                args.jira_url, jira_user_email, jira_api_token, args.jira_project_key,
-                summary, description, issue_type
-            )
+            ticket_key = create_jira_ticket_via_requests(args.jira_url, jira_user_email, jira_api_token, args.jira_project_key, summary, description, issue_type)
             if ticket_key:
                 print(f"INFO: JIRA Ticket Created via API: {ticket_key}")
             else:
                 print("ERROR: Failed to create JIRA ticket.")
     else:
-        # Caso "success": generar recomendaciones y crear tickets para cada mejora
         recommendations = analyze_logs_for_recommendations(args.log_dir, args.report_language, args.project_name)
         if not recommendations:
             print("INFO: No recommendations generated by the AI.")
@@ -483,16 +476,14 @@ def main():
             if dup_key:
                 print(f"INFO: Recommendation #{i} already exists in ticket {dup_key}. Skipping creation.")
             else:
+                # Formatear el contenido final del ticket usando la IA para obtener un JSON con title y description
                 final_title, final_description = format_ticket_content(args.project_name, r_summary, r_desc, "Improvement")
                 new_key = create_jira_ticket(jira, args.jira_project_key, final_title, final_description, issue_type)
                 if new_key:
                     print(f"INFO: Created ticket for recommendation #{i}: {new_key}")
                 else:
                     print(f"WARNING: Failed to create ticket for recommendation #{i} via library, attempting fallback...")
-                    fallback_key = create_jira_ticket_via_requests(
-                        args.jira_url, jira_user_email, jira_api_token, args.jira_project_key,
-                        final_title, final_description, issue_type
-                    )
+                    fallback_key = create_jira_ticket_via_requests(args.jira_url, jira_user_email, jira_api_token, args.jira_project_key, final_title, final_description, issue_type)
                     if fallback_key:
                         print(f"INFO: Created ticket for recommendation #{i} via API: {fallback_key}")
                     else:
