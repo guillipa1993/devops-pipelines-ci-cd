@@ -217,11 +217,39 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
     return None
 
 # ============ CREACIÓN DE TICKETS ============
+def create_jira_ticket(jira, project_key, summary, description, issue_type):
+    # Si la descripción NO es una cadena, se convierte a string (JSON)
+    if not isinstance(description, str):
+        try:
+            description = json.dumps(description, ensure_ascii=False)
+            print("DEBUG: Converted description to string using json.dumps()")
+        except Exception as e:
+            print(f"WARNING: Failed to convert description to string: {e}")
+            description = ""
+    try:
+        issue_dict = {
+            'project': {'key': project_key},
+            'summary': summary,
+            'description': description,
+            'issuetype': {'name': issue_type}
+        }
+        print(f"DEBUG: Issue fields -> {issue_dict}")
+        issue = jira.create_issue(fields=issue_dict)
+        print("DEBUG: Ticket created successfully via JIRA library.")
+        return issue.key
+    except Exception as e:
+        print(f"ERROR: Could not create ticket via JIRA library: {e}")
+        return None
+
 def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project_key, summary, description, issue_type):
-    # Si la descripción es un diccionario, se convierte a cadena
-    if isinstance(description, dict):
-        description = json.dumps(description, ensure_ascii=False)
-        print("DEBUG: Converted description to string using json.dumps() for API request")
+    # Si la descripción NO es una cadena, se convierte a string (JSON)
+    if not isinstance(description, str):
+        try:
+            description = json.dumps(description, ensure_ascii=False)
+            print("DEBUG: Converted description to string using json.dumps() for API request")
+        except Exception as e:
+            print(f"WARNING: Failed to convert description to string for API request: {e}")
+            description = ""
     url = f"{jira_url}/rest/api/3/issue"
     headers = {"Content-Type": "application/json"}
     auth = (jira_user, jira_api_token)
@@ -241,26 +269,6 @@ def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project
         return response.json().get("key")
     else:
         print(f"ERROR: Failed to create ticket via API: {response.status_code} - {response.text}")
-        return None
-
-def create_jira_ticket(jira, project_key, summary, description, issue_type):
-    # Si la descripción es un diccionario (por ejemplo, ADF JSON), se convierte a cadena
-    if isinstance(description, dict):
-        description = json.dumps(description, ensure_ascii=False)
-        print("DEBUG: Converted description to string using json.dumps()")
-    try:
-        issue_dict = {
-            'project': {'key': project_key},
-            'summary': summary,
-            'description': description,
-            'issuetype': {'name': issue_type}
-        }
-        print(f"DEBUG: Issue fields -> {issue_dict}")
-        issue = jira.create_issue(fields=issue_dict)
-        print("DEBUG: Ticket created successfully via JIRA library.")
-        return issue.key
-    except Exception as e:
-        print(f"ERROR: Could not create ticket via JIRA library: {e}")
         return None
 
 # ============ VALIDACIÓN DE LOGS ============
