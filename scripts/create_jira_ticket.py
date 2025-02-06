@@ -44,6 +44,39 @@ def calculate_similarity(text1, text2):
     ratio = SequenceMatcher(None, t1, t2).ratio()
     return ratio
 
+# ============ FUNCIÓN PARA CONVERTIR ADF A TEXTO PLANO ============
+def convert_adf_to_plain_text(adf):
+    """
+    Recorre la estructura ADF y extrae el contenido de texto de cada nodo.
+    Devuelve un string formateado en Markdown.
+    """
+    def process_node(node):
+        node_type = node.get("type", "")
+        if node_type == "text":
+            return node.get("text", "")
+        elif node_type == "paragraph":
+            texts = [process_node(child) for child in node.get("content", [])]
+            return " ".join(texts)
+        elif node_type == "bulletList":
+            items = []
+            for item in node.get("content", []):
+                # Cada item de lista
+                item_texts = [process_node(child) for child in item.get("content", [])]
+                items.append("- " + " ".join(item_texts))
+            return "\n".join(items)
+        elif node_type == "codeBlock":
+            code_texts = [process_node(child) for child in node.get("content", [])]
+            # Utilizamos triple backticks sin especificar lenguaje
+            return "```\n" + "\n".join(code_texts) + "\n```"
+        elif "content" in node:
+            return " ".join(process_node(child) for child in node["content"])
+        else:
+            return ""
+    if adf.get("content"):
+        paragraphs = [process_node(node) for node in adf["content"]]
+        return "\n\n".join(paragraphs)
+    return ""
+
 # ============ PARSEO DE RECOMENDACIONES ============
 def parse_recommendations(ai_text):
     recommendations = []
@@ -91,7 +124,7 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
     Llama a la IA para formatear el contenido final del ticket.
     Se espera que la IA devuelva un JSON con dos claves:
       - "title": Una oración concisa que comience con el nombre del proyecto y contenga un emoticono adecuado.
-      - "description": Un contenido formateado en Atlassian Document Format (ADF); se requiere que use triple backticks para bloques de código (sin especificar lenguaje).
+      - "description": Un contenido formateado en Atlassian Document Format (ADF); se usarán triple backticks para bloques de código sin lenguaje.
     """
     prompt = (
         "You are a professional technical writer formatting Jira tickets for developers. "
@@ -123,13 +156,11 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
         )
         ai_output = response.choices[0].message.content.strip()
         print("DEBUG: Raw AI output from format_ticket_content:\n", ai_output)
-        # Eliminar delimitadores Markdown (triple backticks) si están presentes
+        # Quitar delimitadores Markdown (triple backticks) si existen
         if ai_output.startswith("```"):
             lines = ai_output.splitlines()
-            # Si la primera línea contiene ``` o ```json, quitarla
             if lines[0].strip().startswith("```"):
                 lines = lines[1:]
-            # Si la última línea es solo triple backticks, quitarlas también
             if lines and lines[-1].strip().startswith("```"):
                 lines = lines[:-1]
             ai_output = "\n".join(lines).strip()
@@ -144,6 +175,20 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
     except Exception as e:
         print(f"WARNING: Failed to format ticket content with AI: {e}")
         return f"{project_name}: {rec_summary}", rec_description
+
+# ============ FUNCIÓN PARA CONVERTIR DESCRIPCIÓN A TEXTO LEGIBLE ============
+def adf_to_plain_text(description):
+    """
+    Convierte un objeto ADF (en formato dict) a un string legible en formato Markdown.
+    Si description ya es una cadena, se devuelve tal cual.
+    """
+    if isinstance(description, str):
+        return description
+    try:
+        return convert_adf_to_plain_text(description)
+    except Exception as e:
+        print(f"WARNING: Failed to convert ADF to plain text: {e}")
+        return json.dumps(description, ensure_ascii=False)
 
 # ============ BÚSQUEDA DE TICKETS EXISTENTES (LOCAL + IA) ============
 def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summary, new_description, issue_type):
@@ -218,13 +263,13 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
 
 # ============ CREACIÓN DE TICKETS ============
 def create_jira_ticket(jira, project_key, summary, description, issue_type):
-    # Si la descripción NO es una cadena, se convierte a string (JSON)
+    # Si la descripción NO es una cadena, convertirla a texto plano usando adf_to_plain_text
     if not isinstance(description, str):
         try:
-            description = json.dumps(description, ensure_ascii=False)
-            print("DEBUG: Converted description to string using json.dumps()")
+            description = adf_to_plain_text(description)
+            print("DEBUG: Converted description using adf_to_plain_text()")
         except Exception as e:
-            print(f"WARNING: Failed to convert description to string: {e}")
+            print(f"WARNING: Failed to convert description: {e}")
             description = ""
     try:
         issue_dict = {
@@ -242,13 +287,12 @@ def create_jira_ticket(jira, project_key, summary, description, issue_type):
         return None
 
 def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project_key, summary, description, issue_type):
-    # Si la descripción NO es una cadena, se convierte a string (JSON)
     if not isinstance(description, str):
         try:
-            description = json.dumps(description, ensure_ascii=False)
-            print("DEBUG: Converted description to string using json.dumps() for API request")
+            description = adf_to_plain_text(description)
+            print("DEBUG: Converted description using adf_to_plain_text() for API request")
         except Exception as e:
-            print(f"WARNING: Failed to convert description to string for API request: {e}")
+            print(f"WARNING: Failed to convert description for API request: {e}")
             description = ""
     url = f"{jira_url}/rest/api/3/issue"
     headers = {"Content-Type": "application/json"}
@@ -398,7 +442,7 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
 
 # ============ MÉTODO PARA ANALIZAR LOGS EN CASO DE ERROR ============
 def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
-    print(f"DEBUG: analyze_logs_with_ai(log_dir={log_dir}, log_type={log_type}, language={report_language}, project={project_name})")
+    print(f"DEBUG: analyze_logs_with_ai(log_dir={log_dir}, log_type={log_type}, language='{report_language}', project='{project_name}')")
     log_files = validate_logs_directory(log_dir)
     combined_logs = []
     max_lines = 300
@@ -507,16 +551,17 @@ def main():
             if dup_key:
                 print(f"INFO: Recommendation #{i} already exists in ticket {dup_key}. Skipping creation.")
             else:
-                # Formatear el contenido final del ticket usando la IA para obtener un JSON con title y description
                 final_title, final_description = format_ticket_content(args.project_name, r_summary, r_desc, "Improvement")
+                # Convertir la descripción ADF (si es dict) a texto plano para Jira
+                plain_description = adf_to_plain_text(final_description)
                 print("DEBUG: Final title:", final_title)
-                print("DEBUG: Final description (ADF JSON):", json.dumps(final_description, indent=2))
-                new_key = create_jira_ticket(jira, args.jira_project_key, final_title, final_description, issue_type)
+                print("DEBUG: Final description (converted to plain text):", plain_description)
+                new_key = create_jira_ticket(jira, args.jira_project_key, final_title, plain_description, issue_type)
                 if new_key:
                     print(f"INFO: Created ticket for recommendation #{i}: {new_key}")
                 else:
                     print(f"WARNING: Failed to create ticket for recommendation #{i} via library, attempting fallback...")
-                    fallback_key = create_jira_ticket_via_requests(args.jira_url, jira_user_email, jira_api_token, args.jira_project_key, final_title, final_description, issue_type)
+                    fallback_key = create_jira_ticket_via_requests(args.jira_url, jira_user_email, jira_api_token, args.jira_project_key, final_title, plain_description, issue_type)
                     if fallback_key:
                         print(f"INFO: Created ticket for recommendation #{i} via API: {fallback_key}")
                     else:
