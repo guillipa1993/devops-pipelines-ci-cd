@@ -47,10 +47,13 @@ def calculate_similarity(text1, text2):
 # ============ FUNCIÓN PARA CONVERTIR ADF A TEXTO PLANO ============
 def convert_adf_to_plain_text(adf):
     """
-    Recorre la estructura ADF y extrae el contenido de texto de cada nodo.
-    Devuelve un string formateado en Markdown.
+    Recorre la estructura ADF y extrae el contenido de texto de cada nodo,
+    devolviendo un string formateado en Markdown.
     """
     def process_node(node):
+        # Si el nodo tiene una clave "text" pero no "type", lo asumimos como un nodo de texto simple.
+        if "text" in node and "type" not in node:
+            return node["text"]
         node_type = node.get("type", "")
         if node_type == "text":
             return node.get("text", "")
@@ -60,15 +63,14 @@ def convert_adf_to_plain_text(adf):
         elif node_type == "bulletList":
             items = []
             for item in node.get("content", []):
-                # Cada item de lista
                 item_texts = [process_node(child) for child in item.get("content", [])]
                 items.append("- " + " ".join(item_texts))
             return "\n".join(items)
         elif node_type == "codeBlock":
             code_texts = [process_node(child) for child in node.get("content", [])]
-            # Utilizamos triple backticks sin especificar lenguaje
             return "```\n" + "\n".join(code_texts) + "\n```"
         elif "content" in node:
+            # En caso de que el nodo tenga "content" pero no se haya manejado en los casos anteriores
             return " ".join(process_node(child) for child in node["content"])
         else:
             return ""
@@ -76,6 +78,19 @@ def convert_adf_to_plain_text(adf):
         paragraphs = [process_node(node) for node in adf["content"]]
         return "\n\n".join(paragraphs)
     return ""
+
+def adf_to_plain_text(description):
+    """
+    Convierte un objeto ADF (dict) a un string legible en formato Markdown.
+    Si 'description' ya es una cadena, se devuelve tal cual.
+    """
+    if isinstance(description, str):
+        return description
+    try:
+        return convert_adf_to_plain_text(description)
+    except Exception as e:
+        print(f"WARNING: Failed to convert ADF to plain text: {e}")
+        return json.dumps(description, ensure_ascii=False)
 
 # ============ PARSEO DE RECOMENDACIONES ============
 def parse_recommendations(ai_text):
@@ -124,7 +139,7 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
     Llama a la IA para formatear el contenido final del ticket.
     Se espera que la IA devuelva un JSON con dos claves:
       - "title": Una oración concisa que comience con el nombre del proyecto y contenga un emoticono adecuado.
-      - "description": Un contenido formateado en Atlassian Document Format (ADF); se usarán triple backticks para bloques de código sin lenguaje.
+      - "description": Un contenido formateado en Atlassian Document Format (ADF); se usarán triple backticks para bloques de código sin especificar lenguaje.
     """
     prompt = (
         "You are a professional technical writer formatting Jira tickets for developers. "
@@ -179,8 +194,8 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
 # ============ FUNCIÓN PARA CONVERTIR DESCRIPCIÓN A TEXTO LEGIBLE ============
 def adf_to_plain_text(description):
     """
-    Convierte un objeto ADF (en formato dict) a un string legible en formato Markdown.
-    Si description ya es una cadena, se devuelve tal cual.
+    Convierte un objeto ADF (dict) a un string legible en formato Markdown.
+    Si 'description' ya es una cadena, se devuelve tal cual.
     """
     if isinstance(description, str):
         return description
@@ -552,7 +567,7 @@ def main():
                 print(f"INFO: Recommendation #{i} already exists in ticket {dup_key}. Skipping creation.")
             else:
                 final_title, final_description = format_ticket_content(args.project_name, r_summary, r_desc, "Improvement")
-                # Convertir la descripción ADF (si es dict) a texto plano para Jira
+                # Convertir la descripción ADF (si es dict) a texto plano legible
                 plain_description = adf_to_plain_text(final_description)
                 print("DEBUG: Final title:", final_title)
                 print("DEBUG: Final description (converted to plain text):", plain_description)
