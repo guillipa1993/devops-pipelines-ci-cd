@@ -536,7 +536,9 @@ def main():
             print(f"ERROR: {e}")
             return
         print("DEBUG: Checking for existing tickets (failure)...")
-        existing_ticket_key = check_existing_tickets(jira, args.jira_project_key, summary, description, issue_type)
+        existing_ticket_key = check_existing_tickets_local_and_ia_summary_desc(
+                                    jira, args.jira_project_key, summary, description, issue_type
+                                )
         if existing_ticket_key:
             print(f"INFO: Ticket already exists: {existing_ticket_key}. Skipping creation.")
             return
