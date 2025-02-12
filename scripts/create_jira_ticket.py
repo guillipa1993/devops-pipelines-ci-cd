@@ -387,14 +387,20 @@ def generate_prompt(log_type, language):
         )
         issue_type = "Error"
     else:
-        details = (
-            f"You are a helpful assistant. The build logs indicate a successful build. "
-            f"Please generate separate, actionable recommendations as bullet points. Each recommendation should include:\n"
-            f"  - A *title* (in bold) that succinctly names the improvement.\n"
-            f"  - A *Summary*: a one-sentence overview of the recommended change.\n"
-            f"  - A *Description*: a detailed explanation with specific, code-related, and practical improvement suggestions. The description must not be empty.\n\n"
-            f"Write in {language} using clear and technical language. Avoid triple backticks."
-        )
+        details = f"""
+You are a code reviewer and linter specialized in Python. 
+Below are the combined logs from a successful build, which may include minor warnings, best practices, or style suggestions. 
+Analyze them thoroughly and propose *specific code improvements or refactors* with the following format:
+  
+- Title (bold)
+- Summary (1 line)
+- Description (detailed explanation, referencing actual lines or snippets where possible, and showing small code examples)
+
+Your suggestions should be strictly derived from any warnings, messages, or potential optimization hints seen in the logs. 
+Only propose changes that have a clear technical rationale (PEP 8 violations, known performance bottlenecks, improved readability, etc.). 
+Avoid generic placeholders. 
+Write in {language} using clear and concise technical language.
+"""
         issue_type = "Tarea"
     print(f"DEBUG: Prompt generated. Issue type = {issue_type}")
     return details, issue_type
