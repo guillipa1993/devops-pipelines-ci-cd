@@ -22,7 +22,9 @@ def validate_logs_directory(log_dir):
     log_files = [
         os.path.join(log_dir, f)
         for f in os.listdir(log_dir)
-        if os.path.isfile(os.path.join(log_dir, f)) and f.endswith(".log") and "python-vulnerabilities.log" not in f
+        if os.path.isfile(os.path.join(log_dir, f))
+           and f.endswith(".log")
+           and "python-vulnerabilities.log" not in f
     ]
     if not log_files:
         raise FileNotFoundError(f"ERROR: No valid .log files found in the directory '{log_dir}'.")
@@ -58,27 +60,27 @@ def generate_prompt(log_type):
             "You are an expert log analysis assistant. The provided log type is 'failure'. "
             "Your primary goal is to identify, explain, and resolve issues found in the logs. "
             "Ensure the analysis includes: "
-            "1. Root Cause Analysis: Pinpoint the specific reasons for the failure, supported by detailed patterns, events, or anomalies in the logs. Use 🔍 🛠️ for emphasis. "
-            "2. Actionable Fixes: Provide clear, step-by-step recommendations to resolve each issue. Include exact file names, line numbers, and code examples where applicable. 💡 🔧 "
-            "3. Preventive Measures: Suggest changes to configurations, dependencies, or workflows to avoid similar failures in the future. Include specific tools or updates to implement. ⚡ 🔒 "
-            "4. Critical Issue Highlighting: Clearly identify any urgent or blocking issues that need immediate resolution. Use emoticons like 💣 🔥 📛 to indicate severity and urgency. "
-            "5. Impact Analysis: Briefly explain the potential consequences of not addressing the failure, such as degraded performance, security risks, or system downtime. 🚫 ⚠️ "
+            "1. Root Cause Analysis (🔍🛠️): Pinpoint specific reasons for the failure, referencing patterns or anomalies. "
+            "2. Actionable Fixes (💡🔧): Provide step-by-step recommendations to resolve each issue, with code where relevant. "
+            "3. Preventive Measures (⚡🔒): Suggest changes to configurations, dependencies, or workflows to avoid repeats. "
+            "4. Critical Issue Highlighting (💣🔥): Indicate urgent or blocking issues. "
+            "5. Impact Analysis (🚫⚠️): Potential consequences if unaddressed."
         )
     else:
         return (
             "You are an expert log analysis assistant. The provided log type is 'success'. "
-            "Your primary goal is to confirm the success of the process and provide insights to sustain or improve its quality. "
+            "Your primary goal is to confirm the success of the process and provide insights to sustain or improve it. "
             "Ensure the analysis includes: "
-            "1. Confirmation of Success: Clearly state that the process completed successfully with no critical issues or warnings. Highlight key components that contributed to the success. ✅ 🌟 "
-            "2. Opportunities for Optimization: Suggest areas where performance can be improved or steps can be simplified without compromising the success. Examples include faster workflows, better resource utilization, or enhanced configurations. 🚀 💡 "
-            "3. Scalability Recommendations: Identify how this success can be extended to support larger workloads, more users, or additional use cases. 📈 🛡️ "
-            "4. Sustainability Suggestions: Propose measures to maintain this level of success, such as regular monitoring, best practices, or updated tools and dependencies. 🌿 ✨ "
-            "5. Positive Feedback: Acknowledge the team's efforts and highlight outstanding practices or results achieved. 🎉 🙌 "
+            "1. Confirmation of Success (✅🌟): Clearly state completion without critical issues. "
+            "2. Opportunities for Optimization (🚀💡): Suggest improvements or simplifications. "
+            "3. Scalability Recommendations (📈🛡️): Show how to extend this success to larger scales. "
+            "4. Sustainability Suggestions (🌿✨): Propose maintaining current success, e.g. best practices. "
+            "5. Positive Feedback (🎉🙌): Acknowledge good practices or results achieved."
         )
 
 def analyze_logs(log_files, output_dir, log_type):
     """
-    Analiza los logs utilizando la API de OpenAI.
+    Analiza los logs utilizando la API de OpenAI, generando un análisis por cada fragmento.
     """
     analysis_created = False
     total_files = len(log_files)
@@ -87,13 +89,15 @@ def analyze_logs(log_files, output_dir, log_type):
         print(f"\n[{file_idx}/{total_files}] Analyzing file: {log_file}", flush=True)
         with open(log_file, 'r') as f:
             log_content = f.read()
-            relevant_content = (
-                extract_relevant_lines(log_content, keyword="error")
-                if log_type == "failure"
-                else clean_log_content(log_content)
-            )
 
-            # Dividir el contenido en fragmentos de hasta 15,000 caracteres (tokens aproximados)
+            # ADDED: Si es log de error, extraemos las partes cercanas a 'error'.
+            # Si no, limpiamos. Ajustable según preferencia.
+            if log_type == "failure":
+                relevant_content = extract_relevant_lines(log_content, keyword="error")
+            else:
+                relevant_content = clean_log_content(log_content)
+
+            # Dividir el contenido en fragmentos de hasta ~30k caracteres
             max_chunk_size = 30000
             log_fragments = [relevant_content[i:i + max_chunk_size] for i in range(0, len(relevant_content), max_chunk_size)]
             total_fragments = len(log_fragments)
@@ -121,7 +125,8 @@ def analyze_logs(log_files, output_dir, log_type):
                     else:
                         print(f"   WARNING: No analysis returned for fragment {idx}.", flush=True)
 
-                    time.sleep(10)  # Ajustar tiempo de espera dinámico si es necesario
+                    # Espera breve para no sobrecargar la API (ajusta si hace falta)
+                    time.sleep(5)
                 except Exception as e:
                     print(f"Unexpected error while analyzing fragment {idx}: {e}", flush=True)
                     break
@@ -134,7 +139,7 @@ def save_analysis(log_file, analysis, fragment_idx, output_dir, log_type):
     Guarda el análisis en un archivo en el directorio proporcionado.
     """
     if not os.path.exists(output_dir):
-        os.makedirs(output_dir)  # Crea el directorio si no existe
+        os.makedirs(output_dir)
 
     analysis_file_path = os.path.join(
         output_dir, f"{os.path.basename(log_file)}_{log_type}_fragment_{fragment_idx}_analysis.txt"
@@ -151,11 +156,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
-        # Validar el directorio de logs
         log_files = validate_logs_directory(args.log_dir)
         print(f"Found {len(log_files)} log files in '{args.log_dir}'.", flush=True)
 
-        # Analizar los logs
         analyze_logs(log_files, args.output_dir, args.log_type)
 
         print("Log analysis completed successfully.", flush=True)
