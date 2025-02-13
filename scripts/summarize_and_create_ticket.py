@@ -119,7 +119,7 @@ def summarize_logs_with_openai(log_dir, log_type, language):
     for idx, fragment in enumerate(content_fragments, 1):
         role_content = generate_prompt(log_type, language)
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": role_content},
                 {"role": "user", "content": fragment}

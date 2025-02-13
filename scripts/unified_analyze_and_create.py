@@ -11,6 +11,9 @@ from openai import OpenAI
 from datetime import datetime
 from difflib import SequenceMatcher
 
+# ============ AJUSTE: Variable global para seleccionar modelo ============
+MODEL_NAME = "gpt-4o"  # Cambia aquí el nombre del modelo que quieras usar (p.ej. "gpt-4o", "gpt-4o-mini", etc.)
+
 # ============ CONFIGURACIÓN OPENAI ============
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
@@ -218,7 +221,7 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=MODEL_NAME,  # <-- Aquí usamos la variable global
             messages=[
                 {"role": "system", "content": "You are a professional technical writer."},
                 {"role": "user", "content": prompt}
@@ -308,7 +311,7 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
         print(f"DEBUG: Intermediate range for {issue_key}. Asking IA for final check...")
         try:
             response = client.chat.completions.create(
-                model="gpt-4o",
+                model=MODEL_NAME,
                 messages=[
                     {"role": "system", "content": "You are an assistant specialized in analyzing text similarity. Respond only 'yes' or 'no'."},
                     {"role": "user", "content": (
@@ -412,6 +415,8 @@ def validate_logs_directory(log_dir):
     log_files = []
     for file in os.listdir(log_dir):
         file_path = os.path.join(log_dir, file)
+        # NOTA: dejamos la lógica para .tar.gz, pero se asume que no la usarás
+        # (Si existiera un .tar.gz, se extraería, pero no es obligatorio).
         if file.endswith(".tar.gz"):
             print(f"DEBUG: Extracting tar.gz -> {file_path}")
             with tarfile.open(file_path, "r:gz") as tar:
@@ -525,7 +530,7 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=MODEL_NAME,  # <--- variable global
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": prompt}
@@ -572,7 +577,7 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=MODEL_NAME,  # <--- variable global
             messages=[
                 {"role": "system", "content": (
                     "You are a helpful assistant generating concise Jira tickets. "

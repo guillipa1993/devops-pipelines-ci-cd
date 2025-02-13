@@ -434,25 +434,9 @@ jobs:
       run-id: ${{ github.run_id }}
       log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
 
-  summarize_and_create_ticket:
-    name: Summarize and Create Ticket
-    needs: [ci_pipeline, analyze_logs]
-    if: always()
-    uses: ./.github/workflows/summarize-and-create-ticket.yml
-    secrets:
-      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
-      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-    with:
-      project-name: ${{ github.event.repository.name }}
-      run-id: ${{ github.run_id }}
-      report-language: ${{ inputs.report-language }}
-      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
-      repo: ${{ github.repository }}
-
   create_jira_ticket:
     name: Summarize and Create Jira Ticket
-    needs: [ci_pipeline, analyze_logs]
+    needs: [ci_pipeline, check-code-format, code-analysis, python-lint, snyk_python]
     if: always()
     uses: ./.github/workflows/create-jira-ticket.yml
     secrets:
@@ -469,3 +453,19 @@ jobs:
       repo: ${{ github.repository }}
       jira-project-key: ${{inputs.jira-project-key }}
       jira-url: ${{inputs.jira-url }}
+      
+  summarize_and_create_ticket:
+    name: Summarize and Create Ticket
+    needs: [ci_pipeline, analyze_logs]
+    if: always()
+    uses: ./.github/workflows/summarize-and-create-ticket.yml
+    secrets:
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    with:
+      project-name: ${{ github.event.repository.name }}
+      run-id: ${{ github.run_id }}
+      report-language: ${{ inputs.report-language }}
+      log-type: ${{ needs.ci_pipeline.outputs.error-detected }}
+      repo: ${{ github.repository }}
