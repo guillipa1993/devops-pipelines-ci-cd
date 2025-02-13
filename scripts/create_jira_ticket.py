@@ -5,7 +5,7 @@ import tarfile
 import requests
 import re
 import json
-import random  # ADDED: para variar íconos aleatoriamente
+import random
 from jira import JIRA
 from openai import OpenAI
 from datetime import datetime
@@ -34,7 +34,8 @@ def sanitize_summary(summary):
     Elimina caracteres problemáticos y, además, trunca el summary si supera 255 caracteres.
     """
     print(f"DEBUG: Sanitizing summary: '{summary}'")
-    sanitized = "".join(c for c in summary if c.isalnum() or c.isspace() or c in "-_:,./()[]{}")  # algo más permisivo
+    # Permitimos algunos signos para no recortar todo
+    sanitized = "".join(c for c in summary if c.isalnum() or c.isspace() or c in "-_:,./()[]{}")
     if len(sanitized) > 255:
         print("DEBUG: summary too long, truncating to 255 chars.")
         sanitized = sanitized[:255]
@@ -52,23 +53,20 @@ def calculate_similarity(text1, text2):
     ratio = SequenceMatcher(None, t1, t2).ratio()
     return ratio
 
-# ============ CONVERSIÓN DE BLOQUES DE CÓDIGO ============
+# ============ CONVERSIÓN DE BLOQUES DE CÓDIGO (ADF -> Wiki) ============
 
 def convert_adf_to_wiki(adf):
     """
-    Convierte un ADF simplificado a wiki markup de Jira. 
-    Si hay codeBlock, se transforma a {code}...{code}. 
-    Listas -> * bullets, etc.
+    Convierte un ADF simplificado a wiki markup de Jira:
+      - codeBlock -> {code}...{code}
+      - bulletList -> '* ' items
+      - paragraphs -> saltos de línea
     """
-    # Un método muy simplificado, que recorre "content" y hace transformaciones básicas.
-    # Adaptado a tu Jira que rechaza ADF nativo.
-
     def process_node(node):
         node_type = node.get("type", "")
         content = node.get("content", [])
 
         if node_type == "paragraph":
-            # concatenar texto
             paragraph_text = ""
             for child in content:
                 if child.get("type") == "text":
@@ -78,11 +76,9 @@ def convert_adf_to_wiki(adf):
         elif node_type == "bulletList":
             lines = []
             for item in content:
-                # cada item es listItem -> process child
                 item_text = ""
                 for child in item.get("content", []):
                     if child.get("type") == "paragraph":
-                        # paragraph con "text"
                         for subchild in child.get("content", []):
                             if subchild.get("type") == "text":
                                 item_text += subchild.get("text", "")
@@ -90,25 +86,23 @@ def convert_adf_to_wiki(adf):
             return "\n".join(lines) + "\n\n"
 
         elif node_type == "codeBlock":
-            # Transformar a {code}...{code}
             code_text = ""
             for child in content:
                 if child.get("type") == "text":
                     code_text += child.get("text", "")
             return f"{{code}}\n{code_text}\n{{code}}\n\n"
 
-        # si es "text" suelto
         elif node_type == "text":
             return node.get("text", "")
 
-        # si es algo no contemplado, iteramos su content
+        # Cualquier otro tipo se procesa recursivamente (fallback)
         result = ""
         for c in content:
             result += process_node(c)
         return result
 
     if not isinstance(adf, dict):
-        return str(adf)  # si no es dict, devolvemos tal cual
+        return str(adf)
     if "content" not in adf:
         return ""
 
@@ -116,11 +110,9 @@ def convert_adf_to_wiki(adf):
     for node in adf["content"]:
         wiki_text += process_node(node)
 
-    # limpiar espacios excesivos
     return wiki_text.strip()
 
 # ============ PARSEO DE RECOMENDACIONES ============
-
 def parse_recommendations(ai_text):
     recommendations = []
     print("DEBUG: Raw AI output for recommendations:\n", ai_text)
@@ -165,7 +157,7 @@ def parse_recommendations(ai_text):
     print(f"DEBUG: Parsed {len(recommendations)} recommendation(s).")
     return recommendations
 
-# ============ VARIAR ÍCONOS ============
+# ============ LISTAS DE ÍCONOS ============
 
 IMPROVEMENT_ICONS = ["🚀", "💡", "🔧", "🤖", "🌟", "📈", "✨"]
 ERROR_ICONS = ["🐞", "🔥", "💥", "🐛", "⛔", "🚫"]
@@ -176,16 +168,34 @@ def choose_improvement_icon():
 def choose_error_icon():
     return random.choice(ERROR_ICONS)
 
+# ============ FILTRAR RECOMENDACIONES NO DESEADAS ============
+
+def should_skip_recommendation(summary, description):
+    """
+    Retorna True si en la recomendación se mencionan herramientas que ya tenemos,
+    o si no aporta contenido real. Ajusta el set de palabras clave según tu preferencia.
+    """
+    # Palabras clave que NO queremos tickets que las sugieran
+    skip_keywords = [
+        "bandit", "npm audit", "nancy", "scan-security-vulnerabilities",
+        "check-code-format", "lint code", "owasp dependency check", "az storage", "azure storage"
+    ]
+    combined = f"{summary}\n{description}".lower()
+
+    for kw in skip_keywords:
+        if kw in combined:
+            print(f"DEBUG: Recommendation references tool '{kw}'. Skipping.")
+            return True
+
+    return False
+
 # ============ FORMATEO FINAL DEL CONTENIDO DEL TICKET ============
 
 def format_ticket_content(project_name, rec_summary, rec_description, ticket_category):
     """
-    En lugar de fiarnos 100% del ADF, creamos un prompt,
-    pero luego convertimos el ADF resultante a wiki markup.
-
-    También elegimos un ícono al azar si es "Improvement" o "Error".
+    Llama a la IA para generar un objeto JSON con 'title' y 'description' en ADF,
+    luego convierte 'description' a wiki markup. Aseguramos que haya un ícono.
     """
-    # Elegir icono al azar según ticket_category
     if ticket_category.lower() in ("improvement", "tarea"):
         icon = choose_improvement_icon()
     else:
@@ -195,7 +205,7 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
         "You are a professional technical writer formatting Jira tickets for developers. "
         "Given the following recommendation details, produce a JSON object with two keys: 'title' and 'description'.\n\n"
         f"- The 'title' must be a single concise sentence that starts with the project name as a prefix and includes "
-        f"an appropriate emoticon for {ticket_category} (you can use any from this list for improvements: {IMPROVEMENT_ICONS}, or for errors: {ERROR_ICONS}).\n\n"
+        f"an appropriate emoticon for {ticket_category} (choose from: {IMPROVEMENT_ICONS + ERROR_ICONS}).\n\n"
         "- The 'description' must be a valid Atlassian Document Format (ADF) object with code blocks using triple backticks.\n"
         "Do not include labels like 'Summary:' or 'Description:' in the output.\n\n"
         f"Project: {project_name}\n"
@@ -219,7 +229,6 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
         ai_output = response.choices[0].message.content.strip()
         print("DEBUG: Raw AI output from format_ticket_content:\n", ai_output)
 
-        # Quitar backticks si la IA los ha añadido
         if ai_output.startswith("```"):
             lines = ai_output.splitlines()
             if lines[0].strip().startswith("```"):
@@ -228,30 +237,31 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
                 lines = lines[:-1]
             ai_output = "\n".join(lines).strip()
 
-        print("DEBUG: AI output after stripping Markdown delimiters:\n", ai_output)
+        print("DEBUG: AI output after stripping code fences:\n", ai_output)
 
-        # Convertimos a JSON
         ticket_json = json.loads(ai_output)
+        final_title = ticket_json.get("title", "")
+        adf_description = ticket_json.get("description", {})
 
-        final_title = ticket_json.get("title", f"{project_name} {icon} {rec_summary}")
-        # TRUNCAR el título a 255 si es muy largo
+        # Verificamos que tenga un ícono. Si no lo tiene, se lo añadimos.
+        if not any(icon_char in final_title for icon_char in (IMPROVEMENT_ICONS + ERROR_ICONS)):
+            # Insertamos en la parte inicial
+            final_title = f"{icon} {final_title}"
+
+        # limitamos a 255
         if len(final_title) > 255:
             final_title = final_title[:255]
 
-        adf_description = ticket_json.get("description", {})
-        # Convertimos ADF a Wiki para Jira
+        # Convertir ADF a wiki
         wiki_text = convert_adf_to_wiki(adf_description)
-
         return final_title, wiki_text
 
     except Exception as e:
         print(f"WARNING: Failed to format ticket content with AI: {e}")
-        # fallback: meter icon y recortamos summary
+        # fallback con icono
         fallback_summary = sanitize_summary(rec_summary)
-        fallback_summary = f"{project_name} {icon} {fallback_summary}"
-        wiki_text = (
-            "Fallback description:\n\n" + rec_description
-        )
+        fallback_summary = f"{choose_improvement_icon()} {fallback_summary}"  # Para improvements
+        wiki_text = f"Fallback description:\n\n{rec_description}"
         return fallback_summary, wiki_text
 
 # ============ BÚSQUEDA DE TICKETS EXISTENTES (LOCAL + IA) ============
@@ -260,8 +270,8 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
     print("DEBUG: Checking for existing tickets (local + IA, summary + description)")
     LOCAL_SIM_LOW = 0.3
     LOCAL_SIM_HIGH = 0.9
-    sanitized_summary = sanitize_summary(new_summary)
-    print(f"DEBUG: sanitized_summary='{sanitized_summary}'")
+    sanitized_sum = sanitize_summary(new_summary)
+    print(f"DEBUG: sanitized_summary='{sanitized_sum}'")
 
     jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
     states_str = ", ".join(jql_states)
@@ -294,7 +304,7 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
             print(f"INFO: Found duplicate ticket {issue_key} (high local similarity).")
             return issue_key
 
-        # IA similarity check
+        # IA check
         print(f"DEBUG: Intermediate range for {issue_key}. Asking IA for final check...")
         try:
             response = client.chat.completions.create(
@@ -324,7 +334,6 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
                 continue
         except Exception as e:
             print(f"WARNING: Failed to analyze similarity with AI for {issue_key}: {e}")
-            # fallback
             if summary_sim >= 0.8 or desc_sim >= 0.8:
                 print(f"INFO: Fallback local: similarity >= 0.8 for {issue_key}; marking as duplicate.")
                 return issue_key
@@ -339,16 +348,18 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
 
 def create_jira_ticket(jira, project_key, summary, description, issue_type):
     """
-    Crea el ticket en Jira, pero la 'description' se pasará como string (wiki).
+    Se crea el ticket con summary y description en wiki (string).
+    No se crea si la descripción está vacía o casi vacía.
     """
-    # Truncamos summary si fuese mayor a 255 (ya lo hace sanitize, pero por si acaso):
     summary = sanitize_summary(summary)
+    if not description.strip():
+        print("DEBUG: description is empty; skipping ticket creation.")
+        return None
 
     try:
         issue_dict = {
             "project": {"key": project_key},
             "summary": summary,
-            # Jira python library -> description como string wiki
             "description": description,
             "issuetype": {"name": issue_type},
         }
@@ -362,9 +373,13 @@ def create_jira_ticket(jira, project_key, summary, description, issue_type):
 
 def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project_key, summary, description, issue_type):
     """
-    Creación vía API REST. 'description' debe ser un string si tu Jira no acepta ADF.
+    Crea ticket via API REST. No se crea si description está vacío.
     """
     summary = sanitize_summary(summary)
+    if not description.strip():
+        print("DEBUG: description is empty; skipping ticket creation via API.")
+        return None
+
     url = f"{jira_url}/rest/api/3/issue"
     headers = {"Content-Type": "application/json"}
     auth = (jira_user, jira_api_token)
@@ -373,7 +388,7 @@ def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project
         "fields": {
             "project": {"key": project_key},
             "summary": summary,
-            "description": description,  # string en wiki/markdown
+            "description": description,
             "issuetype": {"name": issue_type}
         }
     }
@@ -465,7 +480,7 @@ def generate_prompt(log_type, language):
     print(f"DEBUG: Prompt generated. Issue type = {issue_type}")
     return details, issue_type
 
-# ============ FUNCIÓN PARA UNIFICAR ASTERISCOS ============
+# ============ UNIFICAR ASTERISCOS EN DESCRIPCIONES ============
 
 def unify_double_to_single_asterisks(description):
     print("DEBUG: Unifying double asterisks to single...")
@@ -475,16 +490,13 @@ def unify_double_to_single_asterisks(description):
 
 def sanitize_title(title):
     print(f"DEBUG: Sanitizing title '{title}'...")
-    # se quitan backticks y asteriscos
-    title = re.sub(r"[\*`]+", "", title)
-    title = title.strip()
-    # truncar por si supera 255:
+    title = re.sub(r"[\*`]+", "", title).strip()
     if len(title) > 255:
         title = title[:255]
     print(f"DEBUG: Title after sanitize -> '{title}'")
     return title
 
-# ============ MÉTODO PARA ANALIZAR LOGS (SUCCESS) ============
+# ============ ANALIZAR LOGS (SUCCESS) ============
 
 def analyze_logs_for_recommendations(log_dir, report_language, project_name):
     print("DEBUG: analyze_logs_for_recommendations...")
@@ -532,7 +544,7 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
         print(f"ERROR: Failed to analyze logs for recommendations: {e}")
         return []
 
-# ============ MÉTODO PARA ANALIZAR LOGS (ERROR) ============
+# ============ ANALIZAR LOGS (FAILURE) ============
 
 def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
     print(f"DEBUG: analyze_logs_with_ai(log_dir={log_dir}, log_type={log_type}, language='{report_language}', project='{project_name}')")
@@ -579,11 +591,9 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
         first_line = lines[0] if lines else "No Title"
         cleaned_title_line = sanitize_title(first_line.replace("```markdown", "").replace("```", "").strip())
 
-        # Elegir icono de error
         icon = choose_error_icon()
         summary_title = f"{project_name} {icon} {cleaned_title_line}"
 
-        # Unificar asteriscos
         description_plain = unify_double_to_single_asterisks(summary.replace("\t", " "))
         print(f"DEBUG: Final summary title -> {summary_title}")
         print(f"DEBUG: Description length -> {len(description_plain)} chars.")
@@ -618,6 +628,7 @@ def main():
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
 
     if args.log_type == "failure":
+        # Caso de fallo
         summary, description, issue_type = analyze_logs_with_ai(
             args.log_dir, args.log_type, args.report_language, args.project_name
         )
@@ -632,7 +643,6 @@ def main():
             print(f"ERROR: {e}")
             return
 
-        print("DEBUG: Checking for existing tickets (failure)...")
         existing_ticket_key = check_existing_tickets_local_and_ia_summary_desc(
             jira, args.jira_project_key, summary, description, issue_type
         )
@@ -656,7 +666,9 @@ def main():
 
     else:
         # Caso "success"
-        recommendations = analyze_logs_for_recommendations(args.log_dir, args.report_language, args.project_name)
+        recommendations = analyze_logs_for_recommendations(
+            args.log_dir, args.report_language, args.project_name
+        )
         if not recommendations:
             print("INFO: No recommendations generated by the AI.")
             return
@@ -665,6 +677,17 @@ def main():
         for i, rec in enumerate(recommendations, start=1):
             r_summary = rec["summary"]
             r_desc = rec["description"]
+
+            # Si la descripción está realmente vacía, no creamos
+            if not r_desc.strip():
+                print(f"DEBUG: Recommendation #{i} has empty description. Skipping.")
+                continue
+
+            # Filtrar si es algo que ya usamos (por ejemplo Bandit, npm audit, etc)
+            if should_skip_recommendation(r_summary, r_desc):
+                print(f"INFO: Recommendation #{i} references existing tool. Skipping creation.")
+                continue
+
             issue_type = "Tarea"
             print(f"DEBUG: Processing recommendation #{i} -> Summary: '{r_summary}'")
 
@@ -673,26 +696,33 @@ def main():
             )
             if dup_key:
                 print(f"INFO: Recommendation #{i} already exists in ticket {dup_key}. Skipping creation.")
-            else:
-                final_title, wiki_description = format_ticket_content(
-                    args.project_name, r_summary, r_desc, "Improvement"
-                )
-                print("DEBUG: Final title:", final_title)
-                print("DEBUG: Final wiki description:\n", wiki_description)
+                continue
 
-                new_key = create_jira_ticket(jira, args.jira_project_key, final_title, wiki_description, issue_type)
-                if new_key:
-                    print(f"INFO: Created ticket for recommendation #{i}: {new_key}")
+            final_title, wiki_description = format_ticket_content(
+                args.project_name, r_summary, r_desc, "Improvement"
+            )
+            print("DEBUG: Final title:", final_title)
+            print("DEBUG: Final wiki description:\n", wiki_description)
+
+            if not wiki_description.strip():
+                print(f"DEBUG: Recommendation #{i} final wiki description is empty. Skipping ticket creation.")
+                continue
+
+            new_key = create_jira_ticket(
+                jira, args.jira_project_key, final_title, wiki_description, issue_type
+            )
+            if new_key:
+                print(f"INFO: Created ticket for recommendation #{i}: {new_key}")
+            else:
+                print(f"WARNING: Failed to create ticket for recommendation #{i} via library, attempting fallback...")
+                fallback_key = create_jira_ticket_via_requests(
+                    args.jira_url, jira_user_email, jira_api_token,
+                    args.jira_project_key, final_title, wiki_description, issue_type
+                )
+                if fallback_key:
+                    print(f"INFO: Created ticket for recommendation #{i} via API: {fallback_key}")
                 else:
-                    print(f"WARNING: Failed to create ticket for recommendation #{i} via library, attempting fallback...")
-                    fallback_key = create_jira_ticket_via_requests(
-                        args.jira_url, jira_user_email, jira_api_token,
-                        args.jira_project_key, final_title, wiki_description, issue_type
-                    )
-                    if fallback_key:
-                        print(f"INFO: Created ticket for recommendation #{i} via API: {fallback_key}")
-                    else:
-                        print(f"ERROR: Could not create ticket for recommendation #{i}.")
+                    print(f"ERROR: Could not create ticket for recommendation #{i}.")
 
     print("DEBUG: Process finished.")
 
