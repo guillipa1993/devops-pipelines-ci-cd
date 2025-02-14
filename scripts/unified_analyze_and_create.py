@@ -37,14 +37,23 @@ def connect_to_jira(jira_url, jira_user, jira_api_token):
     return jira
 
 # ===================== FUNCIONES DE SANITIZACIÓN =====================
-def sanitize_summary(summary: str) -> str:
-    """Trunca y filtra caracteres raros en el summary."""
-    print(f"DEBUG: Sanitizing summary: '{summary}'")
-    sanitized = "".join(c for c in summary if c.isalnum() or c.isspace() or c in "-_:,./()[]{}")
+def sanitize_summary(summary):
+    """
+    Elimina caracteres problemáticos y saltos de linea,
+    además trunca a 255.
+    """
+    # Sustitución de saltos de línea por espacio
+    summary = summary.replace("\n", " ").replace("\r", " ")
+
+    # Eliminamos (o escapamos) cualquier otro caracter extraño
+    # y dejamos algunos símbolos
+    sanitized = "".join(
+        c for c in summary
+        if c.isalnum() or c.isspace() or c in "-_:,./()[]{}"
+    )
+
     if len(sanitized) > 255:
-        print("DEBUG: summary too long, truncating to 255 chars.")
         sanitized = sanitized[:255]
-    print(f"DEBUG: Resulting sanitized summary: '{sanitized}'")
     return sanitized.strip()
 
 def preprocess_text(text: str) -> str:
@@ -368,32 +377,82 @@ def create_jira_ticket(jira, project_key, summary, description, issue_type):
         print(f"ERROR: Could not create ticket via JIRA library: {e}")
         return None
 
-def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project_key, summary, description, issue_type):
+def create_jira_ticket_via_requests(
+    jira_url, jira_user, jira_api_token,
+    project_key, summary, description, issue_type
+):
     summary = sanitize_summary(summary)
     if not description.strip():
         print("DEBUG: description is empty; skipping ticket creation via API.")
         return None
 
-    url = f"{jira_url}/rest/api/3/issue"
-    headers = {"Content-Type": "application/json"}
-    auth = (jira_user, jira_api_token)
+    # Asegurarnos de que 'description' sea un ADF válido si tu Jira Cloud lo requiere
+    # Si 'description' ya es un ADF dict =>  OK
+    # Si NO, creamos un fallback ADF mínimo
+    if isinstance(description, str):
+        # creamos un doc con un solo párrafo
+        fallback_adf = {
+            "version": 1,
+            "type": "doc",
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [
+                        {
+                            "type": "text",
+                            # Reemplazamos saltos, etc.
+                            "text": description.replace('\n', ' ').replace('\r', ' ')
+                        }
+                    ]
+                }
+            ]
+        }
+        adf_description = fallback_adf
+    elif isinstance(description, dict):
+        # Asumimos que ya viene en formato ADF
+        adf_description = description
+    else:
+        # fallback total
+        fallback_adf = {
+            "version": 1,
+            "type": "doc",
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": str(description)
+                        }
+                    ]
+                }
+            ]
+        }
+        adf_description = fallback_adf
 
     payload = {
         "fields": {
             "project": {"key": project_key},
             "summary": summary,
-            "description": description,
+            "description": adf_description,  # ADF en JSON
             "issuetype": {"name": issue_type}
         }
     }
     print(f"DEBUG: Payload -> {json.dumps(payload, indent=2)}")
+
+    url = f"{jira_url}/rest/api/3/issue"
+    headers = {"Content-Type": "application/json"}
+    auth = (jira_user, jira_api_token)
+
     response = requests.post(url, json=payload, headers=headers, auth=auth)
     if response.status_code == 201:
         print("DEBUG: Ticket created successfully via API.")
         print("Ticket created successfully:", response.json())
         return response.json().get("key")
     else:
-        print(f"ERROR: Failed to create ticket via API: {response.status_code} - {response.text}")
+        print(
+            f"ERROR: Failed to create ticket via API: {response.status_code} - {response.text}"
+        )
         return None
 
 # ===================== VALIDACIÓN DE LOGS =====================
