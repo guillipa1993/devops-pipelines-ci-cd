@@ -126,7 +126,7 @@ jobs:
           done < matching_blobs.txt
 
           echo "Logs downloaded:"
-          ls -la "$GITHUB_WORKSPACE/logs"
+          ls -la "$GITHUB_WORKSPACE/logs" | grep -E '\.(log|sarif)$' || echo "No .log or .sarif files found."
         env:
           AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
           AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}

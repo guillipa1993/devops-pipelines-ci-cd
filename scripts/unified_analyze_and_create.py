@@ -1,28 +1,30 @@
 #!/usr/bin/env python3
 import os
-import argparse
-import requests
+import sys
 import re
 import json
 import random
-import sys
 import math
-from jira import JIRA
-from openai import OpenAI
+import argparse
+import requests
 from datetime import datetime
 from difflib import SequenceMatcher
+from jira import JIRA
+from openai import OpenAI
 
 # ===================== CONFIGURACIÓN GLOBAL =====================
-OPENAI_MODEL = "gpt-4o"  # Cambia aquí el modelo que quieras usar, e.g. "gpt-3.5-turbo" o "gpt-4o"
-MAX_CHAR_PER_REQUEST = 20000  # Límite aproximado de caracteres para no pasarnos de tokens
-BANDIT_JSON_NAME = "bandit-output.json"  # Nombre del log JSON que quieres descartar (opcional)
-MAX_FILE_SIZE_MB = 2.0  # Descarta archivos mayores a 2 MB
+OPENAI_MODEL = "gpt-4o"  # Cambia aquí el modelo que quieras usar
+MAX_CHAR_PER_REQUEST = 20000  # Límite aproximado de caracteres a enviar al prompt
+BANDIT_JSON_NAME = "bandit-output.json"
+MAX_FILE_SIZE_MB = 2.0
+ALLOWED_EXTENSIONS = (".log", ".sarif")  # <-- AÑADIDO: permitimos .log y .sarif
 
 # ===================== CONFIGURACIÓN OPENAI =====================
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     print("ERROR: 'OPENAI_API_KEY' is not set.")
     sys.exit(1)
+
 print("DEBUG: Initializing OpenAI client...")
 client = OpenAI(api_key=api_key)
 
@@ -35,7 +37,7 @@ def connect_to_jira(jira_url, jira_user, jira_api_token):
     return jira
 
 # ===================== FUNCIONES DE SANITIZACIÓN =====================
-def sanitize_summary(summary):
+def sanitize_summary(summary: str) -> str:
     """Trunca y filtra caracteres raros en el summary."""
     print(f"DEBUG: Sanitizing summary: '{summary}'")
     sanitized = "".join(c for c in summary if c.isalnum() or c.isspace() or c in "-_:,./()[]{}")
@@ -45,19 +47,20 @@ def sanitize_summary(summary):
     print(f"DEBUG: Resulting sanitized summary: '{sanitized}'")
     return sanitized.strip()
 
-def preprocess_text(text):
+def preprocess_text(text: str) -> str:
     text_no_punct = re.sub(r'[^\w\s]', '', text)
     lowered = text_no_punct.strip().lower()
     return lowered
 
-def calculate_similarity(text1, text2):
+def calculate_similarity(text1: str, text2: str) -> float:
     t1 = preprocess_text(text1)
     t2 = preprocess_text(text2)
     ratio = SequenceMatcher(None, t1, t2).ratio()
     return ratio
 
 # ===================== CONVERSIÓN A WIKI (ADF -> Jira) =====================
-def convert_adf_to_wiki(adf):
+def convert_adf_to_wiki(adf) -> str:
+    """Convierte un ADF simplificado a wiki markup de Jira."""
     def process_node(node):
         node_type = node.get("type", "")
         content = node.get("content", [])
@@ -105,18 +108,21 @@ def convert_adf_to_wiki(adf):
     wiki_text = ""
     for node in adf["content"]:
         wiki_text += process_node(node)
+
     return wiki_text.strip()
 
 # ===================== PARSEO DE RECOMENDACIONES =====================
-def parse_recommendations(ai_text):
+def parse_recommendations(ai_text: str) -> list:
     recommendations = []
     print("DEBUG: Raw AI output for recommendations:\n", ai_text)
+
     blocks = re.split(r"\n\s*-\s+", ai_text.strip())
     for block in blocks:
         block = block.strip()
         if not block:
             continue
         print("DEBUG: Processing block:\n", block)
+
         header_match = re.match(r"\*\*(.+?)\*\*\s*:?\s*(.*)", block, re.DOTALL)
         if header_match:
             title = header_match.group(1).strip()
@@ -145,10 +151,12 @@ def parse_recommendations(ai_text):
 
         full_summary = f"{title}: {summary_text}" if summary_text else title
         print(f"DEBUG: Extracted - Title: '{title}' | Summary: '{summary_text}' | Description: '{description_text}'")
+
         recommendations.append({
             "summary": full_summary,
             "description": description_text
         })
+
     print(f"DEBUG: Parsed {len(recommendations)} recommendation(s).")
     return recommendations
 
@@ -156,17 +164,18 @@ def parse_recommendations(ai_text):
 IMPROVEMENT_ICONS = ["🚀", "💡", "🔧", "🤖", "🌟", "📈", "✨"]
 ERROR_ICONS = ["🐞", "🔥", "💥", "🐛", "⛔", "🚫"]
 
-def choose_improvement_icon():
+def choose_improvement_icon() -> str:
     return random.choice(IMPROVEMENT_ICONS)
 
-def choose_error_icon():
+def choose_error_icon() -> str:
     return random.choice(ERROR_ICONS)
 
 # ===================== FILTRAR RECOMENDACIONES NO DESEADAS =====================
-def should_skip_recommendation(summary, description):
+def should_skip_recommendation(summary: str, description: str) -> bool:
     skip_keywords = [
         "bandit", "npm audit", "nancy", "scan-security-vulnerabilities",
-        "check-code-format", "lint code", "owasp dependency check", "az storage", "azure storage"
+        "check-code-format", "lint code", "owasp dependency check",
+        "az storage", "azure storage"
     ]
     combined = f"{summary}\n{description}".lower()
     for kw in skip_keywords:
@@ -176,7 +185,11 @@ def should_skip_recommendation(summary, description):
     return False
 
 # ===================== FORMATEO FINAL (IA) =====================
-def format_ticket_content(project_name, rec_summary, rec_description, ticket_category):
+def format_ticket_content(project_name: str, rec_summary: str, rec_description: str, ticket_category: str) -> tuple:
+    """
+    Llama a la IA para intentar formatear (title, description) en JSON con ADF.
+    En caso de error JSON, fallback a un texto simple.
+    """
     if ticket_category.lower() in ("improvement", "tarea"):
         icon = choose_improvement_icon()
     else:
@@ -210,7 +223,7 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
         ai_output = response.choices[0].message.content.strip()
         print("DEBUG: Raw AI output from format_ticket_content:\n", ai_output)
 
-        # Quitar backticks
+        # Intentar quitar backticks en caso de que el JSON venga con fences
         if ai_output.startswith("```"):
             lines = ai_output.splitlines()
             if lines[0].strip().startswith("```"):
@@ -220,12 +233,36 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
             ai_output = "\n".join(lines).strip()
 
         print("DEBUG: AI output after stripping code fences:\n", ai_output)
-        ticket_json = json.loads(ai_output)
 
+        # ======== INTENTO 1: parsear JSON ====
+        try:
+            ticket_json = json.loads(ai_output)
+        except json.JSONDecodeError as e:
+            print(f"WARNING: Primary JSON parse error => {e}")
+            # ======== INTENTO 2: si hay "Unterminated string" u otros problemas, 
+            # intentamos un mini-limpieza adicional (por ejemplo, recortar tras la última llave)
+            cleaned = re.sub(r'```.*?```', '', ai_output, flags=re.DOTALL)  # elimina triple backticks en medio
+            # O con un truncado heurístico:
+            last_brace = cleaned.rfind("}")
+            if last_brace != -1:
+                cleaned = cleaned[: last_brace+1]
+            # reintenta parsear
+            try:
+                ticket_json = json.loads(cleaned)
+                print("DEBUG: Successfully parsed JSON after second attempt cleaning.")
+            except Exception as e2:
+                print(f"WARNING: second parse attempt also failed => {e2}")
+                # fallback total
+                fallback_summary = sanitize_summary(rec_summary)
+                fallback_summary = f"{icon} {fallback_summary}"
+                fallback_desc = f"Fallback description:\n\n{rec_description}"
+                return fallback_summary, fallback_desc
+
+        # Si llegamos aquí => parseado OK
         final_title = ticket_json.get("title", "")
         adf_description = ticket_json.get("description", {})
 
-        # Asegura que tenga ícono
+        # Asegura que tenga ícono en caso de que no viniera
         if not any(ic in final_title for ic in (IMPROVEMENT_ICONS + ERROR_ICONS)):
             final_title = f"{icon} {final_title}"
 
@@ -238,7 +275,7 @@ def format_ticket_content(project_name, rec_summary, rec_description, ticket_cat
     except Exception as e:
         print(f"WARNING: Failed to format ticket content with AI: {e}")
         fallback_summary = sanitize_summary(rec_summary)
-        fallback_summary = f"{choose_improvement_icon()} {fallback_summary}"
+        fallback_summary = f"{icon} {fallback_summary}"
         wiki_text = f"Fallback description:\n\n{rec_description}"
         return fallback_summary, wiki_text
 
@@ -360,7 +397,7 @@ def create_jira_ticket_via_requests(jira_url, jira_user, jira_api_token, project
         return None
 
 # ===================== VALIDACIÓN DE LOGS =====================
-def validate_logs_directory(log_dir):
+def validate_logs_directory(log_dir: str) -> list:
     print(f"DEBUG: Validating logs directory -> {log_dir}")
     if not os.path.exists(log_dir):
         raise FileNotFoundError(f"ERROR: The logs directory '{log_dir}' does not exist.")
@@ -369,18 +406,24 @@ def validate_logs_directory(log_dir):
     for file in os.listdir(log_dir):
         file_path = os.path.join(log_dir, file)
 
-        # Descarta el bandit-output.json o cualquier .json de gran tamaño
+        # Descarta el bandit-output.json
         if file.lower() == BANDIT_JSON_NAME.lower():
             print(f"DEBUG: Skipping {file}, as it's bandit-output.json.")
             continue
 
         # Descarta si pasa cierto tamaño
-        mb_size = (os.path.getsize(file_path) / 1024.0 / 1024.0)
+        mb_size = os.path.getsize(file_path) / 1024.0 / 1024.0
         if mb_size > MAX_FILE_SIZE_MB:
             print(f"DEBUG: Skipping {file} because it's {mb_size:.2f} MB > {MAX_FILE_SIZE_MB:.2f} MB limit.")
             continue
 
-        # Quedarse con .log u otros
+        # AÑADIDO: Si quieres **solo** .log y .sarif, por ejemplo:
+        _, ext = os.path.splitext(file.lower())
+        if ext not in ALLOWED_EXTENSIONS:
+            print(f"DEBUG: Skipping {file} because extension {ext} is not in {ALLOWED_EXTENSIONS}.")
+            continue
+
+        # Lo añadimos a la lista
         if os.path.isfile(file_path):
             log_files.append(file_path)
 
@@ -389,7 +432,7 @@ def validate_logs_directory(log_dir):
     print(f"DEBUG: Found {len(log_files)} log file(s) in total.")
     return log_files
 
-def clean_log_content(content):
+def clean_log_content(content: str) -> str:
     lines = content.splitlines()
     cleaned_lines = [line for line in lines if line.strip()]
     return "\n".join(cleaned_lines)
@@ -410,7 +453,7 @@ def validate_issue_type(jira_url, jira_user, jira_api_token, project_key, issue_
         raise Exception(f"Failed to fetch issue types: {response.status_code} - {response.text}")
 
 # ===================== GENERACIÓN DEL PROMPT =====================
-def generate_prompt(log_type, language):
+def generate_prompt(log_type: str, language: str) -> tuple:
     print(f"DEBUG: Generating prompt for log_type='{log_type}', language='{language}'...")
     if log_type == "failure":
         details = (
@@ -438,23 +481,24 @@ def generate_prompt(log_type, language):
             f"Avoid triple backticks unless needed."
         )
         issue_type = "Tarea"
+
     print(f"DEBUG: Prompt generated. Issue type = {issue_type}")
     return details, issue_type
 
-def unify_double_to_single_asterisks(description):
+def unify_double_to_single_asterisks(description: str) -> str:
     while '**' in description:
         description = description.replace('**', '*')
     return description
 
-def sanitize_title(title):
+def sanitize_title(title: str) -> str:
     title = re.sub(r"[\*`]+", "", title).strip()
     if len(title) > 255:
         title = title[:255]
     return title
 
 # ===================== RECORTAR EL CONTENIDO SI EXCEDE =====================
-def chunk_content_if_needed(combined_logs, max_chars=MAX_CHAR_PER_REQUEST):
-    """ Devuelve una lista de trozos de texto (cada uno <= max_chars). """
+def chunk_content_if_needed(combined_logs: str, max_chars: int = MAX_CHAR_PER_REQUEST) -> list:
+    """Devuelve una lista de trozos de texto (cada uno <= max_chars)."""
     if len(combined_logs) <= max_chars:
         return [combined_logs]
     chunks = []
@@ -467,13 +511,11 @@ def chunk_content_if_needed(combined_logs, max_chars=MAX_CHAR_PER_REQUEST):
     return chunks
 
 # ===================== MÉTODOS DE ANÁLISIS (SUCCESS/FAILURE) =====================
-def analyze_logs_for_recommendations(log_dir, report_language, project_name):
+def analyze_logs_for_recommendations(log_dir: str, report_language: str, project_name: str) -> list:
     print("DEBUG: analyze_logs_for_recommendations... (with chunking)")
 
-    # 1. Filtra y obtiene la lista de logs válidos
     log_files = validate_logs_directory(log_dir)
 
-    # 2. Recorre logs, descarta/hace skip de JSON grandes, etc.
     combined_text = []
     max_lines = 300
     for file in log_files:
@@ -491,11 +533,9 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
         print("ERROR: No relevant logs found for analysis.")
         return []
 
-    # 3. Chunk: si joined_text > ~20k chars, se divide en trozos
     text_chunks = chunk_content_if_needed(joined_text, MAX_CHAR_PER_REQUEST)
     print(f"DEBUG: We have {len(text_chunks)} chunk(s) to send to the AI.")
 
-    # 4. Genera el prompt base
     prompt_base, _ = generate_prompt("success", report_language)
 
     all_recommendations = []
@@ -524,10 +564,9 @@ def analyze_logs_for_recommendations(log_dir, report_language, project_name):
     print(f"DEBUG: Returning {len(all_recommendations)} recommendation(s) total.")
     return all_recommendations
 
-def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
+def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, project_name: str) -> tuple:
     print("DEBUG: analyze_logs_with_ai... (with chunking)")
 
-    # 1. Filtra logs
     log_files = validate_logs_directory(log_dir)
 
     combined_text = []
@@ -552,7 +591,7 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
 
     prompt_base, issue_type = generate_prompt(log_type, report_language)
 
-    # Tomamos solo el primer chunk para la generacion de un ticket (habitual para "failure")
+    # Normalmente solo tomamos el primer trozo para un ticket de error
     chunk = text_chunks[0]
     prompt = f"{prompt_base}\n\nLogs:\n{chunk}"
     print("DEBUG: Sending chunk 1 for failure to OpenAI...")
@@ -589,7 +628,6 @@ def analyze_logs_with_ai(log_dir, log_type, report_language, project_name):
 
 # ===================== MAIN =====================
 def main():
-    import argparse
     parser = argparse.ArgumentParser(description="Analyze logs & create JIRA tickets.")
     parser.add_argument("--jira-url", required=True)
     parser.add_argument("--jira-project-key", required=True)
@@ -609,31 +647,27 @@ def main():
         print("ERROR: Missing env vars JIRA_API_TOKEN or JIRA_USER_EMAIL.")
         sys.exit(1)
 
-    # Conectar a Jira
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
 
     if args.log_type == "failure":
-        # 1. logs => analyze_logs_with_ai
         summary, description, issue_type = analyze_logs_with_ai(
             args.log_dir, args.log_type, args.report_language, args.project_name
         )
         if not summary or not description:
             print("ERROR: No ticket will be created (analysis empty).")
             return
-        # 2. Validar issue type
         try:
             validate_issue_type(args.jira_url, jira_user_email, jira_api_token, args.jira_project_key, issue_type)
         except Exception as e:
             print(f"ERROR: {e}")
             return
-        # 3. Check duplicados
         dup_key = check_existing_tickets_local_and_ia_summary_desc(
             jira, args.jira_project_key, summary, description, issue_type
         )
         if dup_key:
             print(f"INFO: Ticket {dup_key} already exists. Skipping.")
             return
-        # 4. Create
+
         print("DEBUG: Creating failure ticket in Jira...")
         ticket_key = create_jira_ticket(jira, args.jira_project_key, summary, description, issue_type)
         if ticket_key:
@@ -648,8 +682,9 @@ def main():
                 print(f"INFO: JIRA Ticket Created via REST: {fallback_key}")
             else:
                 print("ERROR: Failed to create JIRA ticket.")
+
     else:
-        # log_type == "success"
+        # "success"
         recommendations = analyze_logs_for_recommendations(
             args.log_dir, args.report_language, args.project_name
         )
@@ -659,28 +694,33 @@ def main():
 
         print(f"DEBUG: {len(recommendations)} recommendation(s) total.")
         issue_type = "Tarea"
+
         for i, rec in enumerate(recommendations, start=1):
             r_summary = rec["summary"]
             r_desc = rec["description"]
+
             if not r_desc.strip():
                 print(f"DEBUG: Recommendation #{i} has empty desc. Skipping.")
                 continue
+
             if should_skip_recommendation(r_summary, r_desc):
                 print(f"INFO: Recommendation #{i} references existing tool. Skipping.")
                 continue
-            # Chequear duplicado
+
             dup_key = check_existing_tickets_local_and_ia_summary_desc(
                 jira, args.jira_project_key, r_summary, r_desc, issue_type
             )
             if dup_key:
                 print(f"INFO: Recommendation #{i} => ticket {dup_key} already exists.")
                 continue
-            # Formatear con IA => wiki
-            final_title, wiki_desc = format_ticket_content(args.project_name, r_summary, r_desc, "Improvement")
+
+            final_title, wiki_desc = format_ticket_content(
+                args.project_name, r_summary, r_desc, "Improvement"
+            )
             if not wiki_desc.strip():
                 print(f"DEBUG: recommendation {i} => empty wiki desc. skip.")
                 continue
-            # Crear
+
             new_key = create_jira_ticket(jira, args.jira_project_key, final_title, wiki_desc, issue_type)
             if new_key:
                 print(f"INFO: Created recommendation #{i} => {new_key}")
