@@ -61,6 +61,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+          set -e
+          python -m pip install --upgrade pip
           pip install jira requests openai
           python -c "import openai; print('OpenAI library installed successfully')"
         env:
@@ -68,54 +70,70 @@ jobs:
 
       - name: Download your unified script
         run: |
-          git clone https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+          set -e
+          echo "Cloning devops-pipelines-ci-cd in branch Add-copilot-and-jira..."
+          git clone --depth=1 --branch Add-copilot-and-jira https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+
+          if [ ! -d "devops-pipelines-ci-cd/scripts" ]; then
+            echo "ERROR: Expected directory devops-pipelines-ci-cd/scripts not found." >&2
+            exit 1
+          fi
+
+          echo "List of files in devops-pipelines-ci-cd/scripts/:"
+          ls -R devops-pipelines-ci-cd/scripts/
+
           mkdir -p scripts
           cp devops-pipelines-ci-cd/scripts/unified_analyze_and_create.py scripts/
+
           if [ ! -f "scripts/unified_analyze_and_create.py" ]; then
-            echo "ERROR: No unified script found." >&2
+            echo "ERROR: No unified script found in devops-pipelines-ci-cd/scripts/." >&2
             exit 1
           fi
           echo "Found unified_analyze_and_create.py script."
 
       - name: Download All Logs Matching Pattern
         run: |
-          # Ajusta el patrón según necesites. Por ejemplo:
+          set -e
           REPO_NAME="${{ inputs.project-name }}"
           RUN_ID="${{ inputs.run-id }}"
           LOG_PREFIX="${REPO_NAME}-${RUN_ID}-"
 
-          mkdir -p $GITHUB_WORKSPACE/logs
+          mkdir -p "$GITHUB_WORKSPACE/logs"
 
-          # List all blobs that match "*<prefix>*.log" (o la extensión real que quieras)
           az storage blob list \
-            --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
-            --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
-            --container-name logs \
-            --query "[].{name:name}" -o tsv | grep "${LOG_PREFIX}" | grep '\.log$' > matching_blobs.txt || true
+              --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+              --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+              --container-name logs \
+              --query "[].{name:name}" -o tsv | grep "${LOG_PREFIX}" | grep -E '\.(log|sarif)$' | grep -v '^$' > matching_blobs.txt || true
 
           if [ ! -s matching_blobs.txt ]; then
-            echo "No .log files found for pattern: ${LOG_PREFIX}*.log"
-            exit 0  # -> si no hay logs, no pasa nada
+              echo "No .log or .sarif files found for pattern: ${LOG_PREFIX}*.{log,sarif}"
+              exit 0
           fi
 
-          while IFS= read -r blob_name; do
+          while IFS= read -r blob_name || [ -n "$blob_name" ]; do
             echo "Downloading $blob_name"
+
+            download_path="$GITHUB_WORKSPACE/logs/$blob_name"
+            mkdir -p "$(dirname "$download_path")"
+
             az storage blob download \
               --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
               --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
               --container-name logs \
               --name "$blob_name" \
-              --file "$GITHUB_WORKSPACE/logs/$(basename $blob_name)"
+              --file "$download_path"
           done < matching_blobs.txt
 
           echo "Logs downloaded:"
-          ls -la $GITHUB_WORKSPACE/logs
+          ls -la "$GITHUB_WORKSPACE/logs"
         env:
           AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
           AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
 
       - name: Run unified script to Analyze + Create JIRA Tickets
         run: |
+          set -e
           python scripts/unified_analyze_and_create.py \
             --jira-url "${{ inputs.jira-url }}" \
             --jira-project-key "${{ inputs.jira-project-key }}" \
