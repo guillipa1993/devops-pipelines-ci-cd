@@ -168,15 +168,15 @@ jobs:
       - name: Upload Logs to Azure Storage
         run: |
           echo "Uploading SARIF logs to Azure Storage..."
-
+      
           if [ -f snyk-python.sarif ]; then
             # Tomamos el repo actual y el run_id para nombrar
             repo_name="${GITHUB_REPOSITORY##*/}"
             new_sarif_name="${repo_name}-${GITHUB_RUN_ID}-snyk-python.sarif"
-
+      
             echo "Renaming snyk-python.sarif to $new_sarif_name"
             mv snyk-python.sarif "$new_sarif_name"
-
+      
             az storage blob upload \
               --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
               --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
@@ -186,9 +186,10 @@ jobs:
               --overwrite
           else
             echo "No SARIF log found to upload."
+          fi
         env:
           AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
-          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+          AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}        
 
       - name: Show Snyk Dashboard Link Again
         run: |
