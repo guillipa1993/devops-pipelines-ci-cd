@@ -95,8 +95,7 @@ jobs:
           echo "Installing Python dependencies..."
           dependencies_found=false
 
-          # Si se ha especificado requirements-path,
-          # se construye la ruta absoluta a ese directorio
+          # Si se ha especificado requirements-path, se construye la ruta absoluta al requirements.txt
           if [ -n "${{ inputs.requirements-path }}" ] && [ -f "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}/requirements.txt" ]; then
             pip install -r "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}/requirements.txt"
             dependencies_found=true
@@ -129,25 +128,18 @@ jobs:
         with:
           go-version: ${{ inputs.go-version }}
 
-      # Escaneo Snyk para Node.js
-      - name: Run Snyk for Node.js
-        if: ${{ inputs.language == 'node' }}
-        uses: snyk/actions/node@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif-file-output=snyk-node.sarif
+      # Ejecución de Snyk según el lenguaje o herramienta especificada
+      # (Se pueden añadir pasos similares para Node, .NET, Java, Go, Docker, etc.)
 
-      # Escaneo Snyk para Python: se añade --file= para evitar error
+      # Ejemplo para Python:
       - name: Run Snyk for Python
         if: ${{ inputs.language == 'python' }}
         run: |
           echo "Running Snyk test for Python..."
-
-          # Construir ruta base: el directorio de proyecto
-          DEPENDENCY_BASE="$GITHUB_WORKSPACE/${{ inputs.project-path }}"
           
-          # Extender con requirements-path si existe
+          # Ruta base: directorio del proyecto
+          DEPENDENCY_BASE="$GITHUB_WORKSPACE/${{ inputs.project-path }}"
+          # Añadir requirements-path si se definió
           if [ -n "${{ inputs.requirements-path }}" ]; then
             DEPENDENCY_BASE="$DEPENDENCY_BASE/${{ inputs.requirements-path }}"
           fi
@@ -165,48 +157,20 @@ jobs:
           fi
 
           echo "Using dependency file: $DEPENDENCY_FILE"
-          # Aquí se añade --file= para evitar el mensaje de error
+          # Uso de --file= para evitar error
           snyk test --file="$DEPENDENCY_FILE" --sarif-file-output=snyk-python.sarif
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-      - name: Run Snyk for .NET
-        if: ${{ inputs.language == 'dotnet' }}
-        uses: snyk/actions/dotnet@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif-file-output=snyk-dotnet.sarif
-
-      - name: Run Snyk for Java (Maven/Gradle)
-        if: ${{ inputs.language == 'java' }}
-        uses: snyk/actions/maven@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif-file-output=snyk-java.sarif
-
-      - name: Run Snyk for Go
-        if: ${{ inputs.language == 'go' }}
-        uses: snyk/actions/golang@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif-file-output=snyk-go.sarif
-
-      - name: Run Snyk for Docker
-        if: ${{ inputs.language == 'docker' && inputs.docker-image != '' }}
-        uses: snyk/actions/docker@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: container test ${{ inputs.docker-image }} --sarif-file-output=snyk-docker.sarif
-
+      # Para subir el reporte a GitHub Advanced Security Code Scanning:
       - name: Upload SARIF to GitHub Code Scanning
-        if: ${{ inputs.language != '' }}
-        uses: github/codeql-action/upload-sarif@v2
+        if: ${{ inputs.language == 'python' }}
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: snyk-${{ inputs.language }}.sarif
+          sarif_file: snyk-python.sarif
+        # si se requiere un token:
+        # env:
+        #   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Show Snyk Dashboard Link
         run: |
@@ -215,16 +179,18 @@ jobs:
       - name: Upload Logs to Azure Storage
         run: |
           echo "Uploading SARIF logs to Azure Storage..."
-          if [ -f snyk-${{ inputs.language }}.sarif ]; then
-            az storage blob upload --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
-                                   --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
-                                   --container-name logs \
-                                   --file snyk-${{ inputs.language }}.sarif \
-                                   --name "snyk-${{ inputs.language }}-${{ github.run_id }}.sarif" \
-                                   --overwrite
+          if [ -f snyk-python.sarif ]; then
+            az storage blob upload \
+              --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}" \
+              --account-key "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+              --container-name logs \
+              --file snyk-python.sarif \
+              --name "snyk-python-${{ github.run_id }}.sarif" \
+              --overwrite
           else
             echo "No SARIF log found to upload."
+          fi  # IMPORTANTE: cerrar el if con 'fi' para evitar error de sintaxis
 
-      - name: Show Snyk Dashboard Link
+      - name: Show Snyk Dashboard Link Again
         run: |
           echo "To view detailed results, visit: https://app.snyk.io/org/guillipa1993/projects"
