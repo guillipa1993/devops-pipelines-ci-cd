@@ -61,7 +61,6 @@ jobs:
         run: |
           echo "Installing Snyk CLI..."
           npm install -g snyk
-        shell: bash
 
       - name: Validate project directory
         run: |
@@ -71,14 +70,12 @@ jobs:
             exit 1
           fi
           echo "Project directory validated: $GITHUB_WORKSPACE/${{ inputs.project-path }}"
-        shell: bash
 
       - name: Locate dependency files
         run: |
           echo "Locating dependency files..."
           find "$GITHUB_WORKSPACE/${{ inputs.project-path }}" -type f \( -name "requirements.txt" -o -name "pyproject.toml" \) > dependency_files.txt
           cat dependency_files.txt || echo "No dependency files found."
-        shell: bash
 
       - name: Set up Node.js
         if: ${{ inputs.language == 'node' && inputs.node-version }}
@@ -98,6 +95,8 @@ jobs:
           echo "Installing Python dependencies..."
           dependencies_found=false
 
+          # Si se ha especificado requirements-path,
+          # se construye la ruta absoluta a ese directorio
           if [ -n "${{ inputs.requirements-path }}" ] && [ -f "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}/requirements.txt" ]; then
             pip install -r "$GITHUB_WORKSPACE/${{ inputs.requirements-path }}/requirements.txt"
             dependencies_found=true
@@ -110,7 +109,6 @@ jobs:
             echo "No valid dependency files found for installation."
             exit 1
           fi
-        shell: bash
 
       - name: Set up .NET
         if: ${{ inputs.language == 'dotnet' && inputs.dotnet-version }}
@@ -131,7 +129,7 @@ jobs:
         with:
           go-version: ${{ inputs.go-version }}
 
-      # Ejecución de Snyk según el lenguaje o herramienta especificada
+      # Escaneo Snyk para Node.js
       - name: Run Snyk for Node.js
         if: ${{ inputs.language == 'node' }}
         uses: snyk/actions/node@master
@@ -140,34 +138,37 @@ jobs:
         with:
           args: test $GITHUB_WORKSPACE/${{ inputs.project-path }} --sarif-file-output=snyk-node.sarif
 
+      # Escaneo Snyk para Python: se añade --file= para evitar error
       - name: Run Snyk for Python
         if: ${{ inputs.language == 'python' }}
         run: |
           echo "Running Snyk test for Python..."
-      
-          # Construir ruta del archivo de dependencias combinando project-path y requirements-path
-          DEPENDENCY_PATH="$GITHUB_WORKSPACE/${{ inputs.project-path }}/"
+
+          # Construir ruta base: el directorio de proyecto
+          DEPENDENCY_BASE="$GITHUB_WORKSPACE/${{ inputs.project-path }}"
+          
+          # Extender con requirements-path si existe
           if [ -n "${{ inputs.requirements-path }}" ]; then
-            DEPENDENCY_PATH="$DEPENDENCY_PATH${{ inputs.requirements-path }}"
+            DEPENDENCY_BASE="$DEPENDENCY_BASE/${{ inputs.requirements-path }}"
           fi
-      
-          # Verificar que exista el archivo de dependencias
-          if [ -f "$DEPENDENCY_PATH/requirements.txt" ]; then
-            echo "Found requirements.txt at: $DEPENDENCY_PATH/requirements.txt"
-            DEPENDENCY_FILE="$DEPENDENCY_PATH/requirements.txt"
+
+          # Detectar el archivo principal de dependencias
+          if [ -f "$DEPENDENCY_BASE/requirements.txt" ]; then
+            echo "Found requirements.txt at: $DEPENDENCY_BASE/requirements.txt"
+            DEPENDENCY_FILE="$DEPENDENCY_BASE/requirements.txt"
           elif [ -f "$GITHUB_WORKSPACE/${{ inputs.project-path }}/pyproject.toml" ]; then
             echo "Found pyproject.toml at: $GITHUB_WORKSPACE/${{ inputs.project-path }}/pyproject.toml"
             DEPENDENCY_FILE="$GITHUB_WORKSPACE/${{ inputs.project-path }}/pyproject.toml"
           else
-            echo "No valid dependency file found in path: $DEPENDENCY_PATH or project path."
+            echo "No valid dependency file found in path: $DEPENDENCY_BASE or project path."
             exit 1
           fi
-      
-          # Ejecutar Snyk
+
           echo "Using dependency file: $DEPENDENCY_FILE"
-          snyk test "$DEPENDENCY_FILE" --sarif-file-output=snyk-python.sarif
+          # Aquí se añade --file= para evitar el mensaje de error
+          snyk test --file="$DEPENDENCY_FILE" --sarif-file-output=snyk-python.sarif
         env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}       
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
       - name: Run Snyk for .NET
         if: ${{ inputs.language == 'dotnet' }}
@@ -223,7 +224,6 @@ jobs:
                                    --overwrite
           else
             echo "No SARIF log found to upload."
-        shell: bash
 
       - name: Show Snyk Dashboard Link
         run: |
