@@ -516,15 +516,17 @@ def generate_prompt(log_type: str, language: str) -> tuple:
     print(f"DEBUG: Generating prompt for log_type='{log_type}', language='{language}'...")
     if log_type == "failure":
         details = (
-            "You are a technical writer creating a concise Jira Cloud ticket from logs. "
-            "Keep the format short and professional, using minimal Markdown. "
-            "Focus on these sections:\n\n"
-            "1) *Summary* ❗: A single-sentence overview of the main issue.\n"
-            "2) *Root Cause Analysis* 🔍: Briefly state the cause. Include log snippets if crucial.\n"
-            "3) *Proposed Solutions* 🛠️: List concrete steps to fix the issue, using bullets or short paragraphs.\n"
-            "4) *Preventive Measures* ⛑️: Suggest ways to avoid recurrence.\n"
-            "5) *Impact Analysis* ⚠️: Consequences if it's not addressed.\n\n"
-            "Use minimal triple backticks. Emojis allowed: 🐞, 🔥, etc."
+            f"You are a technical writer creating a concise Jira Cloud ticket from logs. "
+            f"Keep the format short and professional, using minimal Markdown. "
+            f"Use these headings or bullet points (without numeric or lettered sub-lists):\n\n"
+            f"*Summary* ❗ (1 line)\n"
+            f"*Root Cause Analysis* 🔍 (brief explanation)\n"
+            f"*Proposed Solutions* 🛠️ (a few bullet points)\n"
+            f"*Preventive Measures* ⛑️ (another bullet list or short paragraphs)\n"
+            f"*Impact Analysis* ⚠️ (consequences if not resolved)\n\n"
+            f"Use minimal triple backticks for code/log snippets if needed, "
+            f"Use emojis like {ERROR_ICONS} for variety. Write in {language} with concise language. "
+            f"and avoid enumerations like '1. a. i.'."
         )
         issue_type = "Error"
     else:
