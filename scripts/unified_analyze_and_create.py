@@ -652,7 +652,7 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
 
     prompt_base, issue_type = generate_prompt(log_type, report_language)
 
-    # Normalmente solo tomamos el primer trozo para un ticket de error
+    # Use only the first chunk for a failure ticket
     chunk = text_chunks[0]
     prompt = f"{prompt_base}\n\nLogs:\n{chunk}"
     print("DEBUG: Sending chunk 1 for failure to OpenAI...")
@@ -673,13 +673,26 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
         )
         summary = response.choices[0].message.content.strip()
         lines = summary.splitlines()
-        first_line = lines[0] if lines else "No Title"
-        cleaned_title_line = sanitize_title(first_line.replace("```markdown", "").replace("```", "").strip())
-
+        # New title extraction logic:
+        if lines:
+            first_line = lines[0].strip()
+        else:
+            first_line = "No Title"
+        match = re.match(r"(?i)^(?:title|summary)\s*:\s*(.*)$", first_line)
+        if match:
+            extracted_title = match.group(1).strip()
+        else:
+            extracted_title = first_line
+        cleaned_title_line = sanitize_title(extracted_title)
         icon = choose_error_icon()
         summary_title = f"{project_name} {icon} {cleaned_title_line}"
 
-        description_plain = unify_double_to_single_asterisks(summary.replace("\t", " "))
+        # Use the remainder of the text as description; if empty, fallback to full summary
+        remaining_desc = "\n".join(lines[1:]).strip()
+        if not remaining_desc:
+            remaining_desc = summary
+        description_plain = unify_double_to_single_asterisks(remaining_desc.replace("\t", " "))
+        
         print(f"DEBUG: Final summary title -> {summary_title}")
         print(f"DEBUG: Description length -> {len(description_plain)} chars.")
         return summary_title, description_plain, issue_type
