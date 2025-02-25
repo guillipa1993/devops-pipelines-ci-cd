@@ -652,7 +652,7 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
 
     prompt_base, issue_type = generate_prompt(log_type, report_language)
 
-    # Usamos sólo el primer chunk para el ticket de error
+    # Usamos sólo el primer chunk para un ticket de error
     chunk = text_chunks[0]
     prompt = f"{prompt_base}\n\nLogs:\n{chunk}"
     print("DEBUG: Sending chunk 1 for failure to OpenAI...")
@@ -677,21 +677,19 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
         summary = response.choices[0].message.content.strip()
         lines = summary.splitlines()
 
-        # --- NUEVA LÓGICA: buscar 'Title:' o 'title:' en la primera línea ---
+        # --- MODIFICADO: buscar si la primera línea empieza con 'Title:' o 'Summary:' ---
         if lines:
             first_line = lines[0].strip()
         else:
             first_line = "No Title"
 
-        # Ejemplo de regex que busca 'Title:' al inicio (insensible a mayúsculas):
-        match = re.match(r"(?i)^title\s*:\s*(.*)$", first_line)
+        # Regex que matchea 'Title:' o 'Summary:' (insensible a mayúsculas)
+        match = re.match(r"(?i)^(?:title|summary)\s*:\s*(.*)$", first_line)
         if match:
-            # Si encontramos 'Title: ...'
             extracted_title = match.group(1).strip()
-            # Quitamos la línea para que no quede duplicada en la descripción:
+            # Quitamos esa línea del array para que no quede en la descripción
             lines = lines[1:]
         else:
-            # Fallback si no matchea:
             extracted_title = first_line
 
         cleaned_title_line = sanitize_title(extracted_title)
