@@ -17,7 +17,7 @@ OPENAI_MODEL = "gpt-4o"  # Cambia aquí el modelo que quieras usar
 MAX_CHAR_PER_REQUEST = 20000  # Límite aproximado de caracteres a enviar al prompt
 BANDIT_JSON_NAME = "bandit-output.json"
 MAX_FILE_SIZE_MB = 2.0
-ALLOWED_EXTENSIONS = (".log", ".sarif")  # <-- AÑADIDO: permitimos .log y .sarif
+ALLOWED_EXTENSIONS = (".log", ".sarif")  # <-- permitimos .log y .sarif
 
 # ===================== CONFIGURACIÓN OPENAI =====================
 api_key = os.getenv("OPENAI_API_KEY")
@@ -42,16 +42,11 @@ def sanitize_summary(summary):
     Elimina caracteres problemáticos y saltos de linea,
     además trunca a 255.
     """
-    # Sustitución de saltos de línea por espacio
     summary = summary.replace("\n", " ").replace("\r", " ")
-
-    # Eliminamos (o escapamos) cualquier otro caracter extraño
-    # y dejamos algunos símbolos
     sanitized = "".join(
         c for c in summary
         if c.isalnum() or c.isspace() or c in "-_:,./()[]{}"
     )
-
     if len(sanitized) > 255:
         sanitized = sanitized[:255]
     return sanitized.strip()
@@ -243,19 +238,16 @@ def format_ticket_content(project_name: str, rec_summary: str, rec_description: 
 
         print("DEBUG: AI output after stripping code fences:\n", ai_output)
 
-        # ======== INTENTO 1: parsear JSON ====
+        # ======== INTENTO 1: parsear JSON
         try:
             ticket_json = json.loads(ai_output)
         except json.JSONDecodeError as e:
             print(f"WARNING: Primary JSON parse error => {e}")
-            # ======== INTENTO 2: si hay "Unterminated string" u otros problemas, 
-            # intentamos un mini-limpieza adicional (por ejemplo, recortar tras la última llave)
-            cleaned = re.sub(r'```.*?```', '', ai_output, flags=re.DOTALL)  # elimina triple backticks en medio
-            # O con un truncado heurístico:
+            # ======== INTENTO 2: mini-limpieza
+            cleaned = re.sub(r'```.*?```', '', ai_output, flags=re.DOTALL)
             last_brace = cleaned.rfind("}")
             if last_brace != -1:
                 cleaned = cleaned[: last_brace+1]
-            # reintenta parsear
             try:
                 ticket_json = json.loads(cleaned)
                 print("DEBUG: Successfully parsed JSON after second attempt cleaning.")
@@ -271,7 +263,7 @@ def format_ticket_content(project_name: str, rec_summary: str, rec_description: 
         final_title = ticket_json.get("title", "")
         adf_description = ticket_json.get("description", {})
 
-        # Asegura que tenga ícono en caso de que no viniera
+        # Asegura ícono
         if not any(ic in final_title for ic in (IMPROVEMENT_ICONS + ERROR_ICONS)):
             final_title = f"{icon} {final_title}"
 
@@ -290,12 +282,14 @@ def format_ticket_content(project_name: str, rec_summary: str, rec_description: 
 
 # ===================== BÚSQUEDA DE TICKETS (LOCAL+IA) =====================
 def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summary, new_description, issue_type):
+    """
+    Devuelve la clave de un ticket ABIERTO que se considere duplicado (similar).
+    """
     LOCAL_SIM_LOW = 0.3
     LOCAL_SIM_HIGH = 0.9
     sanitized_sum = sanitize_summary(new_summary)
     print(f"DEBUG: sanitized_summary='{sanitized_sum}'")
 
-    # Sólo tickets ABIERTO: "To Do", "In Progress", "Open", "Reopened"
     jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
     states_str = ", ".join(jql_states)
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
@@ -313,20 +307,20 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
         issue_key = issue.key
         existing_summary = issue.fields.summary or ""
         existing_description = issue.fields.description or ""
-        print(f"DEBUG: Analyzing Issue {issue_key}")
 
+        print(f"DEBUG: Analyzing Issue {issue_key}")
         summary_sim = calculate_similarity(new_summary, existing_summary)
-        print(f"DEBUG: summary_sim with {issue_key} = {summary_sim:.2f}")
         desc_sim = calculate_similarity(new_description, existing_description)
+        print(f"DEBUG: summary_sim with {issue_key} = {summary_sim:.2f}")
         print(f"DEBUG: description_sim with {issue_key} = {desc_sim:.2f}")
 
         if summary_sim < LOCAL_SIM_LOW and desc_sim < LOCAL_SIM_LOW:
             continue
+
         if summary_sim >= LOCAL_SIM_HIGH and desc_sim >= LOCAL_SIM_HIGH:
             print(f"INFO: Found duplicate ticket {issue_key} (high local similarity).")
             return issue_key
 
-        # Check con IA
         print(f"DEBUG: Intermediate range for {issue_key}. Asking IA for final check...")
         try:
             response = client.chat.completions.create(
@@ -349,7 +343,6 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
                 print(f"INFO: Found duplicate ticket (IA confirms) -> {issue_key}")
                 return issue_key
         except:
-            # fallback
             if summary_sim >= 0.8 or desc_sim >= 0.8:
                 print(f"INFO: Fallback local: similarity >= 0.8 for {issue_key}; marking as duplicate.")
                 return issue_key
@@ -357,19 +350,85 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
     print("DEBUG: No duplicate ticket found after local+IA approach.")
     return None
 
-# <<< NUEVO >>> - Búsqueda de tickets en estado final (o categoría "Done")
+def check_discarded_tickets_local_and_ia_summary_desc(jira, project_key, new_summary, new_description, issue_type):
+    """
+    Devuelve la clave de un ticket con estado DESCARTADO que sea esencialmente la misma mejora.
+    Ajusta el estado "DESCARTADO" si en tu Jira tiene otro nombre.
+    """
+    LOCAL_SIM_LOW = 0.3
+    LOCAL_SIM_HIGH = 0.9
+    sanitized_sum = sanitize_summary(new_summary)
+    print(f"DEBUG: (Discarded) sanitized_summary='{sanitized_sum}'")
+
+    jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
+    # Ajusta si tu estado se llama de otra forma
+    jql_query = f'project = "{project_key}" AND issuetype = "{jql_issue_type}" AND status = "DESCARTADO"'
+    print(f"DEBUG: (Discarded) JQL -> {jql_query}")
+
+    try:
+        issues = jira.search_issues(jql_query, maxResults=1000)
+        print(f"DEBUG: Found {len(issues)} DESCARTADO issue(s).")
+    except Exception as e:
+        print(f"ERROR: Failed to execute DESCARTADO-tickets JQL query: {e}")
+        return None
+
+    for issue in issues:
+        issue_key = issue.key
+        existing_summary = issue.fields.summary or ""
+        existing_description = issue.fields.description or ""
+
+        print(f"DEBUG: (Discarded) Analyzing Issue {issue_key}")
+        summary_sim = calculate_similarity(new_summary, existing_summary)
+        desc_sim = calculate_similarity(new_description, existing_description)
+        print(f"DEBUG: (Discarded) summary_sim with {issue_key} = {summary_sim:.2f}")
+        print(f"DEBUG: (Discarded) description_sim with {issue_key} = {desc_sim:.2f}")
+
+        if summary_sim < LOCAL_SIM_LOW and desc_sim < LOCAL_SIM_LOW:
+            continue
+
+        if summary_sim >= LOCAL_SIM_HIGH and desc_sim >= LOCAL_SIM_HIGH:
+            print(f"INFO: Found a discarded ticket {issue_key} (high local similarity).")
+            return issue_key
+
+        print(f"DEBUG: (Discarded) Intermediate range for {issue_key}. Asking IA for final check...")
+        try:
+            response = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are an assistant specialized in analyzing text similarity. Respond only 'yes' or 'no'."},
+                    {"role": "user", "content": (
+                        "We have two issues:\n\n"
+                        f"Existing (discarded) issue:\nSummary: {existing_summary}\nDescription: {existing_description}\n\n"
+                        f"New issue:\nSummary: {new_summary}\nDescription: {new_description}\n\n"
+                        "Do they represent essentially the same issue? Respond 'yes' or 'no'."
+                    )}
+                ],
+                max_tokens=200,
+                temperature=0.3
+            )
+            ai_result = response.choices[0].message.content.strip().lower()
+            print(f"DEBUG: (Discarded) AI result for {issue_key}: '{ai_result}'")
+            if ai_result.startswith("yes"):
+                print(f"INFO: Found a discarded ticket (IA confirms) -> {issue_key}")
+                return issue_key
+        except:
+            if summary_sim >= 0.8 or desc_sim >= 0.8:
+                print(f"INFO: (Discarded) Fallback local: similarity >= 0.8 => {issue_key} is same.")
+                return issue_key
+
+    print("DEBUG: No discarded ticket found.")
+    return None
+
 def check_finalized_tickets_local_and_ia_summary_desc(jira, project_key, new_summary, new_description, issue_type):
     """
     Devuelve una lista de tickets finalizados (estado 'Done', 'Finalizada', 'DESCARTADO', etc.)
-    que la IA y/o la comparación local consideren esencialmente el mismo error.
-    Pueden ser 0, 1 o varios.
+    que la IA y/o la comparación local consideren esencialmente el mismo error/tarea.
     """
     LOCAL_SIM_LOW = 0.3
     LOCAL_SIM_HIGH = 0.9
     sanitized_sum = sanitize_summary(new_summary)
     print(f"DEBUG: (Final) sanitized_summary='{sanitized_sum}'")
 
-    # Tickets en categoría Done
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
     jql_query = (
         f'project = "{project_key}" AND issuetype = "{jql_issue_type}" '
@@ -384,30 +443,27 @@ def check_finalized_tickets_local_and_ia_summary_desc(jira, project_key, new_sum
         print(f"DEBUG: Found {len(issues)} finalized issue(s).")
     except Exception as e:
         print(f"ERROR: Failed to execute finalized-tickets JQL query: {e}")
-        return matched_keys  # vacío
+        return matched_keys
 
     for issue in issues:
         issue_key = issue.key
         existing_summary = issue.fields.summary or ""
         existing_description = issue.fields.description or ""
-        print(f"DEBUG: (Final) Analyzing Issue {issue_key}")
 
+        print(f"DEBUG: (Final) Analyzing Issue {issue_key}")
         summary_sim = calculate_similarity(new_summary, existing_summary)
         desc_sim = calculate_similarity(new_description, existing_description)
         print(f"DEBUG: (Final) summary_sim with {issue_key} = {summary_sim:.2f}")
         print(f"DEBUG: (Final) description_sim with {issue_key} = {desc_sim:.2f}")
 
-        # Descarta similitud muy baja
         if summary_sim < LOCAL_SIM_LOW and desc_sim < LOCAL_SIM_LOW:
             continue
 
-        # Si la similitud es muy alta, lo agregamos directamente
         if summary_sim >= LOCAL_SIM_HIGH and desc_sim >= LOCAL_SIM_HIGH:
             print(f"INFO: Found closed/final ticket {issue_key} (high local similarity).")
             matched_keys.append(issue_key)
             continue
 
-        # Chequeo con IA si está en rango intermedio
         print(f"DEBUG: (Final) Intermediate range for {issue_key}. Asking IA for final check...")
         try:
             response = client.chat.completions.create(
@@ -430,9 +486,8 @@ def check_finalized_tickets_local_and_ia_summary_desc(jira, project_key, new_sum
                 print(f"INFO: Found closed/final ticket (IA confirms) -> {issue_key}")
                 matched_keys.append(issue_key)
         except:
-            # fallback local si está muy alto
             if summary_sim >= 0.8 or desc_sim >= 0.8:
-                print(f"INFO: (Final) Fallback local: similarity >= 0.8 for {issue_key}; marking as closed duplicate.")
+                print(f"INFO: (Final) Fallback local: similarity >= 0.8 => {issue_key} closed duplicate.")
                 matched_keys.append(issue_key)
 
     print(f"DEBUG: (Final) Found {len(matched_keys)} ticket(s) with high similarity in final state.")
@@ -468,9 +523,6 @@ def create_jira_ticket_via_requests(
         print("DEBUG: description is empty; skipping ticket creation via API.")
         return None
 
-    # Asegurarnos de que 'description' sea un ADF válido si tu Jira Cloud lo requiere
-    # Si 'description' ya es un ADF dict =>  OK
-    # Si NO, creamos un fallback ADF mínimo
     if isinstance(description, str):
         fallback_adf = {
             "version": 1,
@@ -512,7 +564,7 @@ def create_jira_ticket_via_requests(
         "fields": {
             "project": {"key": project_key},
             "summary": summary,
-            "description": adf_description,  # ADF en JSON
+            "description": adf_description,
             "issuetype": {"name": issue_type}
         }
     }
@@ -528,9 +580,7 @@ def create_jira_ticket_via_requests(
         print("Ticket created successfully:", response.json())
         return response.json().get("key")
     else:
-        print(
-            f"ERROR: Failed to create ticket via API: {response.status_code} - {response.text}"
-        )
+        print(f"ERROR: Failed to create ticket via API: {response.status_code} - {response.text}")
         return None
 
 # ===================== VALIDACIÓN DE LOGS =====================
@@ -543,18 +593,15 @@ def validate_logs_directory(log_dir: str) -> list:
     for file in os.listdir(log_dir):
         file_path = os.path.join(log_dir, file)
 
-        # Descarta el bandit-output.json
         if file.lower() == BANDIT_JSON_NAME.lower():
             print(f"DEBUG: Skipping {file}, as it's bandit-output.json.")
             continue
 
-        # Descarta si pasa cierto tamaño
         mb_size = os.path.getsize(file_path) / 1024.0 / 1024.0
         if mb_size > MAX_FILE_SIZE_MB:
             print(f"DEBUG: Skipping {file} because it's {mb_size:.2f} MB > {MAX_FILE_SIZE_MB:.2f} MB limit.")
             continue
 
-        # AÑADIDO: Solo .log y .sarif
         _, ext = os.path.splitext(file.lower())
         if ext not in ALLOWED_EXTENSIONS:
             print(f"DEBUG: Skipping {file} because extension {ext} is not in {ALLOWED_EXTENSIONS}.")
@@ -648,17 +695,15 @@ def chunk_content_if_needed(combined_logs: str, max_chars: int = MAX_CHAR_PER_RE
         start = end
     return chunks
 
-# <<< NUEVO: multi-idioma >>>
+# <<< multi-idioma >>>
 def get_repeated_incident_comment(duplicates_str: str, language: str) -> str:
-    """Devuelve el comentario en el idioma indicado."""
     lang_lower = language.lower()
-    if "es" in lang_lower:  # Si se detecta "es", "spanish", etc.
+    if "es" in lang_lower:
         return (
             f"Esta incidencia ya ha ocurrido en los tickets {duplicates_str}.\n"
             "Ha vuelto a ocurrir la misma incidencia."
         )
     else:
-        # Por defecto, inglés
         return (
             f"This issue has already occurred in tickets {duplicates_str}.\n"
             "It has happened again."
@@ -720,11 +765,8 @@ def analyze_logs_for_recommendations(log_dir: str, report_language: str, project
 
 def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, project_name: str, branch_name: str = None) -> tuple:
     """
-    Lee los logs del directorio 'log_dir' y, si se trata de un log de fallo ('failure'),
-    pide a la IA que cree un título y una descripción más descriptivos, aprovechando
-    cualquier linea que contenga "ERROR", "Exception" o "Traceback" para enriquecer
-    el título del ticket.
-    Devuelve (summary_title, description_plain, issue_type).
+    Lee logs del directorio 'log_dir'; si es 'failure' crea título y descripción
+    usando IA, incorporando 'branch_name' en el título si está presente.
     """
     print("DEBUG: analyze_logs_with_ai... (with chunking)")
 
@@ -732,7 +774,7 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
 
     combined_text = []
     max_lines = 300
-    error_lines = []  # Para guardar líneas que parezcan relevantes
+    error_lines = []
 
     for file in log_files:
         try:
@@ -741,7 +783,6 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
                 combined_text.extend(lines)
                 print(f"DEBUG: Reading '{file}', took up to {max_lines} lines.")
 
-                # <<< NUEVO: Extraer líneas que contengan errores para darle contexto al prompt >>>
                 for ln in lines:
                     if any(keyword in ln for keyword in ("ERROR", "Exception", "Traceback")):
                         error_lines.append(ln.strip())
@@ -760,16 +801,14 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
 
     prompt_base, issue_type = generate_prompt(log_type, report_language)
 
-    # Prepara un pequeño bloque adicional con posibles errores detectados
     error_context = ""
     if error_lines:
-        few_error_lines = error_lines[:5]  # máximo 5
+        few_error_lines = error_lines[:5]
         error_context = (
             "\n\nHere are some specific error lines found:\n"
             + "\n".join(f"- {l}" for l in few_error_lines)
         )
 
-    # Usamos sólo el primer chunk para el ticket
     chunk = text_chunks[0]
     final_prompt = f"{prompt_base}\n\nLogs:\n{chunk}{error_context}"
     print("DEBUG: Sending first chunk to OpenAI with extra error context...")
@@ -810,11 +849,10 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
         cleaned_title_line = sanitize_title(extracted_title)
         icon = choose_error_icon()
 
-        # Si se proporcionó la rama, la añadimos al final del título para que aparezca
+        # Incorporar rama al final del título si la tenemos
         if branch_name:
             cleaned_title_line += f" [branch: {branch_name}]"
 
-        # Incorporamos el nombre del proyecto y el icono de error
         summary_title = f"{project_name} {icon} {cleaned_title_line}"
 
         remaining_desc = "\n".join(lines).strip()
@@ -859,11 +897,9 @@ def main():
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
 
     if args.log_type == "failure":
+        # == Caso FALLA ==
         summary, description, issue_type = analyze_logs_with_ai(
-            args.log_dir,
-            args.log_type,
-            args.report_language,
-            args.project_name,
+            args.log_dir, args.log_type, args.report_language, args.project_name,
             branch_name=args.branch
         )
         if not summary or not description:
@@ -876,7 +912,7 @@ def main():
             print(f"ERROR: {e}")
             return
 
-        # 1) Chequeamos si hay un ticket abierto parecido
+        # 1) Check duplicado abierto
         dup_key = check_existing_tickets_local_and_ia_summary_desc(
             jira, args.jira_project_key, summary, description, issue_type
         )
@@ -884,17 +920,18 @@ def main():
             print(f"INFO: Ticket {dup_key} already exists (open). Skipping creation.")
             return
 
-        # 2) Buscamos tickets finalizados similares
+        # 2) Check finalizados
         final_dup_keys = check_finalized_tickets_local_and_ia_summary_desc(
             jira, args.jira_project_key, summary, description, issue_type
         )
 
-        # 3) Creamos el nuevo ticket
+        # 3) Crear
         print("DEBUG: Creating failure ticket in Jira...")
         ticket_key = create_jira_ticket(jira, args.jira_project_key, summary, description, issue_type)
         if ticket_key:
             print(f"INFO: JIRA Ticket Created: {ticket_key}")
 
+            # Comentario + enlace a finalizados
             if final_dup_keys:
                 duplicates_str = ", ".join(final_dup_keys)
                 comment_body = get_repeated_incident_comment(duplicates_str, args.report_language)
@@ -904,7 +941,6 @@ def main():
                 except Exception as e:
                     print(f"ERROR: Failed to add comment to {ticket_key}: {e}")
 
-                # Enlaces de tipo "Relates"
                 for old_key in final_dup_keys:
                     try:
                         jira.create_issue_link(
@@ -923,7 +959,6 @@ def main():
             )
             if fallback_key:
                 print(f"INFO: JIRA Ticket Created via REST: {fallback_key}")
-
                 if final_dup_keys:
                     duplicates_str = ", ".join(final_dup_keys)
                     comment_body = get_repeated_incident_comment(duplicates_str, args.report_language)
@@ -937,7 +972,6 @@ def main():
                     else:
                         print(f"INFO: Added comment to new ticket {fallback_key} referencing {duplicates_str}.")
 
-                    # Crear enlaces
                     for old_key in final_dup_keys:
                         link_url = f"{args.jira_url}/rest/api/2/issueLink"
                         link_payload = {
@@ -956,7 +990,7 @@ def main():
                 print("ERROR: Failed to create JIRA ticket.")
 
     else:
-        # "success"
+        # == Caso SUCCESS -> MEJORAS ==
         recommendations = analyze_logs_for_recommendations(
             args.log_dir, args.report_language, args.project_name
         )
@@ -979,20 +1013,31 @@ def main():
                 print(f"INFO: Recommendation #{i} references existing tool. Skipping.")
                 continue
 
+            # Check si existe un ticket abierto igual
             dup_key = check_existing_tickets_local_and_ia_summary_desc(
                 jira, args.jira_project_key, r_summary, r_desc, issue_type
             )
             if dup_key:
-                print(f"INFO: Recommendation #{i} => ticket {dup_key} already exists.")
+                print(f"INFO: Recommendation #{i} => ticket {dup_key} already exists (open). Skip.")
                 continue
 
+            # NUEVO: Check si existe un ticket con estado DESCARTADO similar
+            discard_key = check_discarded_tickets_local_and_ia_summary_desc(
+                jira, args.jira_project_key, r_summary, r_desc, issue_type
+            )
+            if discard_key:
+                print(f"INFO: Recommendation #{i} => ticket {discard_key} is in 'DESCARTADO'. Skip.")
+                continue
+
+            # Formateo final
             final_title, wiki_desc = format_ticket_content(
                 args.project_name, r_summary, r_desc, "Improvement"
             )
             if not wiki_desc.strip():
-                print(f"DEBUG: recommendation {i} => empty wiki desc. skip.")
+                print(f"DEBUG: recommendation #{i} => empty wiki desc. skip.")
                 continue
 
+            # Crear
             new_key = create_jira_ticket(jira, args.jira_project_key, final_title, wiki_desc, issue_type)
             if new_key:
                 print(f"INFO: Created recommendation #{i} => {new_key}")
