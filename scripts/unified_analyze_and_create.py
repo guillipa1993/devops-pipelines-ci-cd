@@ -725,18 +725,33 @@ def analyze_logs_for_recommendations(log_dir: str, report_language: str, project
     return all_recommendations
 
 def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, project_name: str) -> tuple:
+    """
+    Lee los logs del directorio 'log_dir' y, si se trata de un log de fallo ('failure'),
+    pide a la IA que cree un título y una descripción más descriptivos, aprovechando
+    cualquier linea que contenga "ERROR", "Exception" o "Traceback" para enriquecer
+    el título del ticket.
+    Devuelve (summary_title, description_plain, issue_type).
+    """
     print("DEBUG: analyze_logs_with_ai... (with chunking)")
 
     log_files = validate_logs_directory(log_dir)
 
     combined_text = []
     max_lines = 300
+    error_lines = []  # Para guardar líneas que parezcan relevantes
+
     for file in log_files:
         try:
             with open(file, "r", encoding="utf-8") as f:
                 lines = f.read().splitlines()[:max_lines]
                 combined_text.extend(lines)
                 print(f"DEBUG: Reading '{file}', took up to {max_lines} lines.")
+
+                # <<< NUEVO: Extraer líneas que contengan errores para darle contexto al prompt >>>
+                for ln in lines:
+                    if any(keyword in ln for keyword in ("ERROR", "Exception", "Traceback")):
+                        error_lines.append(ln.strip())
+
         except UnicodeDecodeError:
             print(f"WARNING: Could not read file {file}. Skipping.")
             continue
@@ -751,10 +766,21 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
 
     prompt_base, issue_type = generate_prompt(log_type, report_language)
 
-    # Usamos sólo el primer chunk para un ticket de error
+    # Prepara un pequeño bloque adicional con posibles errores detectados
+    error_context = ""
+    if error_lines:
+        # Tomamos hasta 5 líneas para no saturar demasiado
+        few_error_lines = error_lines[:5]
+        error_context = (
+            "\n\nHere are some specific error lines found:\n"
+            + "\n".join(f"- {l}" for l in few_error_lines)
+        )
+
+    # Usamos sólo el primer chunk para el ticket
     chunk = text_chunks[0]
-    prompt = f"{prompt_base}\n\nLogs:\n{chunk}"
-    print("DEBUG: Sending chunk 1 for failure to OpenAI...")
+    # Añadimos el "error_context" al prompt si hay líneas de error
+    final_prompt = f"{prompt_base}\n\nLogs:\n{chunk}{error_context}"
+    print("DEBUG: Sending first chunk to OpenAI with extra error context...")
 
     try:
         response = client.chat.completions.create(
@@ -765,10 +791,11 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
                     "content": (
                         "You are a helpful assistant generating concise Jira tickets. "
                         "Use short, direct statements, some emojis, minimal markdown. "
+                        "Make sure the title references the most relevant error. "
                         "Avoid triple backticks for code unless strictly necessary."
                     )
                 },
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": final_prompt}
             ],
             max_tokens=600,
             temperature=0.4
@@ -776,23 +803,22 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
         summary = response.choices[0].message.content.strip()
         lines = summary.splitlines()
 
-        # --- MODIFICADO: buscar si la primera línea empieza con 'Title:' o 'Summary:' ---
+        # --- Mejorado: buscar si la primera línea empieza con 'Title:' o 'Summary:' ---
         if lines:
             first_line = lines[0].strip()
         else:
             first_line = "No Title"
 
-        # Regex que matchea 'Title:' o 'Summary:' (insensible a mayúsculas)
         match = re.match(r"(?i)^(?:title|summary)\s*:\s*(.*)$", first_line)
         if match:
             extracted_title = match.group(1).strip()
-            # Quitamos esa línea del array para que no quede en la descripción
-            lines = lines[1:]
+            lines = lines[1:]  # quitamos la primera línea para la desc
         else:
             extracted_title = first_line
 
         cleaned_title_line = sanitize_title(extracted_title)
         icon = choose_error_icon()
+        # Incorporamos el nombre del proyecto y un icono de error
         summary_title = f"{project_name} {icon} {cleaned_title_line}"
 
         # El resto de líneas van como descripción
@@ -800,7 +826,9 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
         if not remaining_desc:
             remaining_desc = summary
 
-        description_plain = unify_double_to_single_asterisks(remaining_desc.replace("\t", " "))
+        description_plain = unify_double_to_single_asterisks(
+            remaining_desc.replace("\t", " ")
+        )
 
         print(f"DEBUG: Final summary title -> {summary_title}")
         print(f"DEBUG: Description length -> {len(description_plain)} chars.")
