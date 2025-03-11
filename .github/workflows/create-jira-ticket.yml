@@ -145,7 +145,7 @@ jobs:
             --report-language "${{ inputs.report-language }}" \
             --project-name "${{ inputs.project-name }}" \
             --run-id "${{ inputs.run-id }}" \
-            --repo "${{ inputs.repo }}"
+            --repo "${{ inputs.repo }}" \
             --branch "${{ inputs.branch }}"
         env:
           JIRA_API_TOKEN: ${{ secrets.JIRA_CLOUD_API_TOKEN }}
