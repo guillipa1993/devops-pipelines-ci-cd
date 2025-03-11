@@ -82,6 +82,10 @@ on:
         description: 'URL from Jira Cloud instance'
         required: true
         type: string
+      branch:
+        description: "Branch name from which code is running"
+        required: false
+        type: string
 
 jobs:
   ci_pipeline:
@@ -453,6 +457,7 @@ jobs:
       repo: ${{ github.repository }}
       jira-project-key: ${{inputs.jira-project-key }}
       jira-url: ${{inputs.jira-url }}
+      branch: ${{inputs.branch }}
       
   summarize_and_create_ticket:
     name: Summarize and Create Ticket

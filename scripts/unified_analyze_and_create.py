@@ -371,7 +371,6 @@ def check_finalized_tickets_local_and_ia_summary_desc(jira, project_key, new_sum
 
     # Tickets en categoría Done
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
-    # Podemos filtrar con 'statusCategory = Done' o enumerar estados "Finalizada","DESCARTADO" si prefieres
     jql_query = (
         f'project = "{project_key}" AND issuetype = "{jql_issue_type}" '
         f'AND statusCategory = Done'
@@ -473,7 +472,6 @@ def create_jira_ticket_via_requests(
     # Si 'description' ya es un ADF dict =>  OK
     # Si NO, creamos un fallback ADF mínimo
     if isinstance(description, str):
-        # creamos un doc con un solo párrafo
         fallback_adf = {
             "version": 1,
             "type": "doc",
@@ -483,7 +481,6 @@ def create_jira_ticket_via_requests(
                     "content": [
                         {
                             "type": "text",
-                            # Reemplazamos saltos, etc.
                             "text": description.replace('\n', ' ').replace('\r', ' ')
                         }
                     ]
@@ -492,10 +489,8 @@ def create_jira_ticket_via_requests(
         }
         adf_description = fallback_adf
     elif isinstance(description, dict):
-        # Asumimos que ya viene en formato ADF
         adf_description = description
     else:
-        # fallback total
         fallback_adf = {
             "version": 1,
             "type": "doc",
@@ -559,13 +554,12 @@ def validate_logs_directory(log_dir: str) -> list:
             print(f"DEBUG: Skipping {file} because it's {mb_size:.2f} MB > {MAX_FILE_SIZE_MB:.2f} MB limit.")
             continue
 
-        # AÑADIDO: Si quieres **solo** .log y .sarif, por ejemplo:
+        # AÑADIDO: Solo .log y .sarif
         _, ext = os.path.splitext(file.lower())
         if ext not in ALLOWED_EXTENSIONS:
             print(f"DEBUG: Skipping {file} because extension {ext} is not in {ALLOWED_EXTENSIONS}.")
             continue
 
-        # Lo añadimos a la lista
         if os.path.isfile(file_path):
             log_files.append(file_path)
 
@@ -724,7 +718,7 @@ def analyze_logs_for_recommendations(log_dir: str, report_language: str, project
     print(f"DEBUG: Returning {len(all_recommendations)} recommendation(s) total.")
     return all_recommendations
 
-def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, project_name: str) -> tuple:
+def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, project_name: str, branch_name: str = None) -> tuple:
     """
     Lee los logs del directorio 'log_dir' y, si se trata de un log de fallo ('failure'),
     pide a la IA que cree un título y una descripción más descriptivos, aprovechando
@@ -769,8 +763,7 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
     # Prepara un pequeño bloque adicional con posibles errores detectados
     error_context = ""
     if error_lines:
-        # Tomamos hasta 5 líneas para no saturar demasiado
-        few_error_lines = error_lines[:5]
+        few_error_lines = error_lines[:5]  # máximo 5
         error_context = (
             "\n\nHere are some specific error lines found:\n"
             + "\n".join(f"- {l}" for l in few_error_lines)
@@ -778,7 +771,6 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
 
     # Usamos sólo el primer chunk para el ticket
     chunk = text_chunks[0]
-    # Añadimos el "error_context" al prompt si hay líneas de error
     final_prompt = f"{prompt_base}\n\nLogs:\n{chunk}{error_context}"
     print("DEBUG: Sending first chunk to OpenAI with extra error context...")
 
@@ -803,7 +795,6 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
         summary = response.choices[0].message.content.strip()
         lines = summary.splitlines()
 
-        # --- Mejorado: buscar si la primera línea empieza con 'Title:' o 'Summary:' ---
         if lines:
             first_line = lines[0].strip()
         else:
@@ -812,16 +803,20 @@ def analyze_logs_with_ai(log_dir: str, log_type: str, report_language: str, proj
         match = re.match(r"(?i)^(?:title|summary)\s*:\s*(.*)$", first_line)
         if match:
             extracted_title = match.group(1).strip()
-            lines = lines[1:]  # quitamos la primera línea para la desc
+            lines = lines[1:]
         else:
             extracted_title = first_line
 
         cleaned_title_line = sanitize_title(extracted_title)
         icon = choose_error_icon()
-        # Incorporamos el nombre del proyecto y un icono de error
+
+        # Si se proporcionó la rama, la añadimos al final del título para que aparezca
+        if branch_name:
+            cleaned_title_line += f" [branch: {branch_name}]"
+
+        # Incorporamos el nombre del proyecto y el icono de error
         summary_title = f"{project_name} {icon} {cleaned_title_line}"
 
-        # El resto de líneas van como descripción
         remaining_desc = "\n".join(lines).strip()
         if not remaining_desc:
             remaining_desc = summary
@@ -849,6 +844,8 @@ def main():
     parser.add_argument("--project-name", required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--repo", required=True)
+    parser.add_argument("--branch", required=False, default="", help="Nombre de la rama actual")
+
     args = parser.parse_args()
 
     print("DEBUG: Starting main process with arguments:", args)
@@ -863,17 +860,22 @@ def main():
 
     if args.log_type == "failure":
         summary, description, issue_type = analyze_logs_with_ai(
-            args.log_dir, args.log_type, args.report_language, args.project_name
+            args.log_dir,
+            args.log_type,
+            args.report_language,
+            args.project_name,
+            branch_name=args.branch
         )
         if not summary or not description:
             print("ERROR: No ticket will be created (analysis empty).")
             return
+
         try:
             validate_issue_type(args.jira_url, jira_user_email, jira_api_token, args.jira_project_key, issue_type)
         except Exception as e:
             print(f"ERROR: {e}")
             return
-        
+
         # 1) Chequeamos si hay un ticket abierto parecido
         dup_key = check_existing_tickets_local_and_ia_summary_desc(
             jira, args.jira_project_key, summary, description, issue_type
@@ -882,7 +884,7 @@ def main():
             print(f"INFO: Ticket {dup_key} already exists (open). Skipping creation.")
             return
 
-        # <<< NUEVO >>> 2) Buscamos tickets ya finalizados que puedan ser el mismo error
+        # 2) Buscamos tickets finalizados similares
         final_dup_keys = check_finalized_tickets_local_and_ia_summary_desc(
             jira, args.jira_project_key, summary, description, issue_type
         )
@@ -893,19 +895,16 @@ def main():
         if ticket_key:
             print(f"INFO: JIRA Ticket Created: {ticket_key}")
 
-            # <<< NUEVO >>> 4) Si había tickets finalizados similares, enlazamos y comentamos
             if final_dup_keys:
                 duplicates_str = ", ".join(final_dup_keys)
-                # Usamos la función multi-idioma
                 comment_body = get_repeated_incident_comment(duplicates_str, args.report_language)
-                # Añadimos un comentario en el nuevo ticket
                 try:
                     jira.add_comment(ticket_key, comment_body)
                     print(f"INFO: Added comment referencing final tickets {duplicates_str} in {ticket_key}.")
                 except Exception as e:
                     print(f"ERROR: Failed to add comment to {ticket_key}: {e}")
 
-                # Opcional: crear enlaces de tipo "Relates" en Jira
+                # Enlaces de tipo "Relates"
                 for old_key in final_dup_keys:
                     try:
                         jira.create_issue_link(
@@ -925,11 +924,9 @@ def main():
             if fallback_key:
                 print(f"INFO: JIRA Ticket Created via REST: {fallback_key}")
 
-                # <<< NUEVO >>> Comentario e enlaces si se han encontrado duplicados cerrados
                 if final_dup_keys:
                     duplicates_str = ", ".join(final_dup_keys)
                     comment_body = get_repeated_incident_comment(duplicates_str, args.report_language)
-                    # Para añadir un comentario vía REST:
                     comment_url = f"{args.jira_url}/rest/api/2/issue/{fallback_key}/comment"
                     comment_data = {"body": comment_body}
                     resp_comment = requests.post(
@@ -940,11 +937,11 @@ def main():
                     else:
                         print(f"INFO: Added comment to new ticket {fallback_key} referencing {duplicates_str}.")
 
-                    # Análogamente, crear enlaces:
+                    # Crear enlaces
                     for old_key in final_dup_keys:
                         link_url = f"{args.jira_url}/rest/api/2/issueLink"
                         link_payload = {
-                            "type": {"name": "Relates"},  # O el tipo de enlace que uses
+                            "type": {"name": "Relates"},
                             "inwardIssue": {"key": fallback_key},
                             "outwardIssue": {"key": old_key}
                         }
