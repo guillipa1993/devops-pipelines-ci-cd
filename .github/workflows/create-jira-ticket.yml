@@ -48,7 +48,10 @@ on:
         description: "URL of the Jira Cloud instance"
         required: true
         type: string
-
+      branch : 
+        description: "Branch of the project"
+        required: true
+        type: string
 jobs:
   analyze-and-create:
     runs-on: ubuntu-24.04
@@ -143,6 +146,7 @@ jobs:
             --project-name "${{ inputs.project-name }}" \
             --run-id "${{ inputs.run-id }}" \
             --repo "${{ inputs.repo }}"
+            --branch "${{ inputs.branch }}"
         env:
           JIRA_API_TOKEN: ${{ secrets.JIRA_CLOUD_API_TOKEN }}
           JIRA_USER_EMAIL: ${{ secrets.JIRA_CLOUD_USERNAME }}
