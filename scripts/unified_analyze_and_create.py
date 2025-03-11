@@ -295,6 +295,7 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
     sanitized_sum = sanitize_summary(new_summary)
     print(f"DEBUG: sanitized_summary='{sanitized_sum}'")
 
+    # Sólo tickets ABIERTO: "To Do", "In Progress", "Open", "Reopened"
     jql_states = ['"To Do"', '"In Progress"', '"Open"', '"Reopened"']
     states_str = ", ".join(jql_states)
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
@@ -355,6 +356,88 @@ def check_existing_tickets_local_and_ia_summary_desc(jira, project_key, new_summ
 
     print("DEBUG: No duplicate ticket found after local+IA approach.")
     return None
+
+# <<< NUEVO >>> - Búsqueda de tickets en estado final (o categoría "Done")
+def check_finalized_tickets_local_and_ia_summary_desc(jira, project_key, new_summary, new_description, issue_type):
+    """
+    Devuelve una lista de tickets finalizados (estado 'Done', 'Finalizada', 'DESCARTADO', etc.)
+    que la IA y/o la comparación local consideren esencialmente el mismo error.
+    Pueden ser 0, 1 o varios.
+    """
+    LOCAL_SIM_LOW = 0.3
+    LOCAL_SIM_HIGH = 0.9
+    sanitized_sum = sanitize_summary(new_summary)
+    print(f"DEBUG: (Final) sanitized_summary='{sanitized_sum}'")
+
+    # Tickets en categoría Done
+    jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
+    # Podemos filtrar con 'statusCategory = Done' o enumerar estados "Finalizada","DESCARTADO" si prefieres
+    jql_query = (
+        f'project = "{project_key}" AND issuetype = "{jql_issue_type}" '
+        f'AND statusCategory = Done'
+    )
+    print(f"DEBUG: (Final) JQL -> {jql_query}")
+
+    matched_keys = []
+
+    try:
+        issues = jira.search_issues(jql_query, maxResults=1000)
+        print(f"DEBUG: Found {len(issues)} finalized issue(s).")
+    except Exception as e:
+        print(f"ERROR: Failed to execute finalized-tickets JQL query: {e}")
+        return matched_keys  # vacío
+
+    for issue in issues:
+        issue_key = issue.key
+        existing_summary = issue.fields.summary or ""
+        existing_description = issue.fields.description or ""
+        print(f"DEBUG: (Final) Analyzing Issue {issue_key}")
+
+        summary_sim = calculate_similarity(new_summary, existing_summary)
+        desc_sim = calculate_similarity(new_description, existing_description)
+        print(f"DEBUG: (Final) summary_sim with {issue_key} = {summary_sim:.2f}")
+        print(f"DEBUG: (Final) description_sim with {issue_key} = {desc_sim:.2f}")
+
+        # Descarta similitud muy baja
+        if summary_sim < LOCAL_SIM_LOW and desc_sim < LOCAL_SIM_LOW:
+            continue
+
+        # Si la similitud es muy alta, lo agregamos directamente
+        if summary_sim >= LOCAL_SIM_HIGH and desc_sim >= LOCAL_SIM_HIGH:
+            print(f"INFO: Found closed/final ticket {issue_key} (high local similarity).")
+            matched_keys.append(issue_key)
+            continue
+
+        # Chequeo con IA si está en rango intermedio
+        print(f"DEBUG: (Final) Intermediate range for {issue_key}. Asking IA for final check...")
+        try:
+            response = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are an assistant specialized in analyzing text similarity. Respond only 'yes' or 'no'."},
+                    {"role": "user", "content": (
+                        "We have two issues:\n\n"
+                        f"Existing (closed) issue:\nSummary: {existing_summary}\nDescription: {existing_description}\n\n"
+                        f"New issue:\nSummary: {new_summary}\nDescription: {new_description}\n\n"
+                        "Do they represent essentially the same issue? Respond 'yes' or 'no'."
+                    )}
+                ],
+                max_tokens=200,
+                temperature=0.3
+            )
+            ai_result = response.choices[0].message.content.strip().lower()
+            print(f"DEBUG: (Final) AI result for {issue_key}: '{ai_result}'")
+            if ai_result.startswith("yes"):
+                print(f"INFO: Found closed/final ticket (IA confirms) -> {issue_key}")
+                matched_keys.append(issue_key)
+        except:
+            # fallback local si está muy alto
+            if summary_sim >= 0.8 or desc_sim >= 0.8:
+                print(f"INFO: (Final) Fallback local: similarity >= 0.8 for {issue_key}; marking as closed duplicate.")
+                matched_keys.append(issue_key)
+
+    print(f"DEBUG: (Final) Found {len(matched_keys)} ticket(s) with high similarity in final state.")
+    return matched_keys
 
 # ===================== CREACIÓN DE TICKETS =====================
 def create_jira_ticket(jira, project_key, summary, description, issue_type):
@@ -571,6 +654,22 @@ def chunk_content_if_needed(combined_logs: str, max_chars: int = MAX_CHAR_PER_RE
         start = end
     return chunks
 
+# <<< NUEVO: multi-idioma >>>
+def get_repeated_incident_comment(duplicates_str: str, language: str) -> str:
+    """Devuelve el comentario en el idioma indicado."""
+    lang_lower = language.lower()
+    if "es" in lang_lower:  # Si se detecta "es", "spanish", etc.
+        return (
+            f"Esta incidencia ya ha ocurrido en los tickets {duplicates_str}.\n"
+            "Ha vuelto a ocurrir la misma incidencia."
+        )
+    else:
+        # Por defecto, inglés
+        return (
+            f"This issue has already occurred in tickets {duplicates_str}.\n"
+            "It has happened again."
+        )
+
 # ===================== MÉTODOS DE ANÁLISIS (SUCCESS/FAILURE) =====================
 def analyze_logs_for_recommendations(log_dir: str, report_language: str, project_name: str) -> list:
     print("DEBUG: analyze_logs_for_recommendations... (with chunking)")
@@ -746,17 +845,49 @@ def main():
         except Exception as e:
             print(f"ERROR: {e}")
             return
+        
+        # 1) Chequeamos si hay un ticket abierto parecido
         dup_key = check_existing_tickets_local_and_ia_summary_desc(
             jira, args.jira_project_key, summary, description, issue_type
         )
         if dup_key:
-            print(f"INFO: Ticket {dup_key} already exists. Skipping.")
+            print(f"INFO: Ticket {dup_key} already exists (open). Skipping creation.")
             return
 
+        # <<< NUEVO >>> 2) Buscamos tickets ya finalizados que puedan ser el mismo error
+        final_dup_keys = check_finalized_tickets_local_and_ia_summary_desc(
+            jira, args.jira_project_key, summary, description, issue_type
+        )
+
+        # 3) Creamos el nuevo ticket
         print("DEBUG: Creating failure ticket in Jira...")
         ticket_key = create_jira_ticket(jira, args.jira_project_key, summary, description, issue_type)
         if ticket_key:
             print(f"INFO: JIRA Ticket Created: {ticket_key}")
+
+            # <<< NUEVO >>> 4) Si había tickets finalizados similares, enlazamos y comentamos
+            if final_dup_keys:
+                duplicates_str = ", ".join(final_dup_keys)
+                # Usamos la función multi-idioma
+                comment_body = get_repeated_incident_comment(duplicates_str, args.report_language)
+                # Añadimos un comentario en el nuevo ticket
+                try:
+                    jira.add_comment(ticket_key, comment_body)
+                    print(f"INFO: Added comment referencing final tickets {duplicates_str} in {ticket_key}.")
+                except Exception as e:
+                    print(f"ERROR: Failed to add comment to {ticket_key}: {e}")
+
+                # Opcional: crear enlaces de tipo "Relates" en Jira
+                for old_key in final_dup_keys:
+                    try:
+                        jira.create_issue_link(
+                            type="Relates",
+                            inwardIssue=ticket_key,
+                            outwardIssue=old_key
+                        )
+                        print(f"INFO: Created link between {ticket_key} and {old_key}")
+                    except Exception as e:
+                        print(f"ERROR: Could not create link between {ticket_key} and {old_key}: {e}")
         else:
             print("WARNING: Falling back to create via REST API...")
             fallback_key = create_jira_ticket_via_requests(
@@ -765,6 +896,37 @@ def main():
             )
             if fallback_key:
                 print(f"INFO: JIRA Ticket Created via REST: {fallback_key}")
+
+                # <<< NUEVO >>> Comentario e enlaces si se han encontrado duplicados cerrados
+                if final_dup_keys:
+                    duplicates_str = ", ".join(final_dup_keys)
+                    comment_body = get_repeated_incident_comment(duplicates_str, args.report_language)
+                    # Para añadir un comentario vía REST:
+                    comment_url = f"{args.jira_url}/rest/api/2/issue/{fallback_key}/comment"
+                    comment_data = {"body": comment_body}
+                    resp_comment = requests.post(
+                        comment_url, json=comment_data, auth=(jira_user_email, jira_api_token)
+                    )
+                    if resp_comment.status_code != 201:
+                        print(f"ERROR: Could not add comment to {fallback_key}: {resp_comment.text}")
+                    else:
+                        print(f"INFO: Added comment to new ticket {fallback_key} referencing {duplicates_str}.")
+
+                    # Análogamente, crear enlaces:
+                    for old_key in final_dup_keys:
+                        link_url = f"{args.jira_url}/rest/api/2/issueLink"
+                        link_payload = {
+                            "type": {"name": "Relates"},  # O el tipo de enlace que uses
+                            "inwardIssue": {"key": fallback_key},
+                            "outwardIssue": {"key": old_key}
+                        }
+                        link_resp = requests.post(
+                            link_url, json=link_payload, auth=(jira_user_email, jira_api_token)
+                        )
+                        if link_resp.status_code != 201:
+                            print(f"ERROR: Could not create link {fallback_key} -> {old_key}: {link_resp.text}")
+                        else:
+                            print(f"INFO: Created link between {fallback_key} and {old_key}.")
             else:
                 print("ERROR: Failed to create JIRA ticket.")
 
