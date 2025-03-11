@@ -355,19 +355,22 @@ def check_discarded_tickets_local_and_ia_summary_desc(jira, project_key, new_sum
     Devuelve la clave de un ticket con estado DESCARTADO que sea esencialmente la misma mejora.
     Ajusta el estado "DESCARTADO" si en tu Jira tiene otro nombre.
     """
-    LOCAL_SIM_LOW = 0.3
-    LOCAL_SIM_HIGH = 0.9
+    LOCAL_SIM_LOW = 0.2  # Ajustado para capturar más similitudes
+    LOCAL_SIM_HIGH = 0.85  # Ajustado para ser más flexible
+
     sanitized_sum = sanitize_summary(new_summary)
     print(f"DEBUG: (Discarded) sanitized_summary='{sanitized_sum}'")
 
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
-    # Ajusta si tu estado se llama de otra forma
-    jql_query = f'project = "{project_key}" AND issuetype = "{jql_issue_type}" AND status = "DESCARTADO"'
+    jql_query = (
+        f'project = "{project_key}" AND issuetype = "{jql_issue_type}" '
+        f'AND status IN ("DESCARTADO", "Rejected", "Closed", "Done")'
+    )
     print(f"DEBUG: (Discarded) JQL -> {jql_query}")
 
     try:
         issues = jira.search_issues(jql_query, maxResults=1000)
-        print(f"DEBUG: Found {len(issues)} DESCARTADO issue(s).")
+        print(f"DEBUG: Found {len(issues)} DESCARTADO issue(s): {[issue.key for issue in issues]}")
     except Exception as e:
         print(f"ERROR: Failed to execute DESCARTADO-tickets JQL query: {e}")
         return None
@@ -387,7 +390,7 @@ def check_discarded_tickets_local_and_ia_summary_desc(jira, project_key, new_sum
             continue
 
         if summary_sim >= LOCAL_SIM_HIGH and desc_sim >= LOCAL_SIM_HIGH:
-            print(f"INFO: Found a discarded ticket {issue_key} (high local similarity).")
+            print(f"INFO: Recommendation matches discarded ticket {issue_key}. Skipping creation.")
             return issue_key
 
         print(f"DEBUG: (Discarded) Intermediate range for {issue_key}. Asking IA for final check...")
@@ -409,11 +412,11 @@ def check_discarded_tickets_local_and_ia_summary_desc(jira, project_key, new_sum
             ai_result = response.choices[0].message.content.strip().lower()
             print(f"DEBUG: (Discarded) AI result for {issue_key}: '{ai_result}'")
             if ai_result.startswith("yes"):
-                print(f"INFO: Found a discarded ticket (IA confirms) -> {issue_key}")
+                print(f"INFO: Recommendation matches discarded ticket {issue_key}. Skipping creation.")
                 return issue_key
         except:
-            if summary_sim >= 0.8 or desc_sim >= 0.8:
-                print(f"INFO: (Discarded) Fallback local: similarity >= 0.8 => {issue_key} is same.")
+            if summary_sim >= 0.75 or desc_sim >= 0.75:
+                print(f"INFO: (Discarded) Fallback local: similarity >= 0.75 => {issue_key} is same.")
                 return issue_key
 
     print("DEBUG: No discarded ticket found.")
