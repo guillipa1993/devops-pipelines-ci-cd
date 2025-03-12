@@ -74,8 +74,8 @@ jobs:
       - name: Download your unified script
         run: |
           set -e
-          echo "Cloning devops-pipelines-ci-cd in branch Add-copilot-and-jira..."
-          git clone --depth=1 --branch Add-copilot-and-jira https://github.com/guillipa1993/devops-pipelines-ci-cd.git
+          echo "Cloning devops-pipelines-ci-cd in branch main ..."
+          git clone --depth=1 --branch main https://github.com/guillipa1993/devops-pipelines-ci-cd.git
 
           if [ ! -d "devops-pipelines-ci-cd/scripts" ]; then
             echo "ERROR: Expected directory devops-pipelines-ci-cd/scripts not found." >&2
