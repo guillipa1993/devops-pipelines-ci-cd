@@ -15,7 +15,7 @@ from openai import OpenAI
 from typing import List, Optional, Dict, Any
 
 # ======================================================
-# CONFIGURACIÓN DE LOGGING (Recomendación 2)
+# CONFIGURACIÓN DE LOGGING
 # ======================================================
 logging.basicConfig(
     level=logging.INFO,
@@ -223,7 +223,7 @@ def chunk_content_if_needed(text: str, max_chars: int) -> List[str]:
         start = end
     return chunks
 
-# ===================== (6) Manejo de resultados de OpenAI - safe_load_json =====================
+# ===================== Manejo de resultados de OpenAI =====================
 def safe_load_json(ai_output: str) -> Optional[dict]:
     """
     Intenta parsear 'ai_output' como JSON.
@@ -231,7 +231,6 @@ def safe_load_json(ai_output: str) -> Optional[dict]:
     2. Hace json.loads().
     3. Si falla, retorna None.
     """
-    # Elimina bloque de backticks si empieza/termina con ```
     if ai_output.startswith("```"):
         lines = ai_output.splitlines()
         if lines[0].strip().startswith("```"):
@@ -240,11 +239,9 @@ def safe_load_json(ai_output: str) -> Optional[dict]:
             lines = lines[:-1]
         ai_output = "\n".join(lines).strip()
 
-    # Segundo intento: parsear JSON
     try:
         return json.loads(ai_output)
     except json.JSONDecodeError:
-        # Intento limpiar fragmentos de triple backticks intermedios
         cleaned = re.sub(r'```.*?```', '', ai_output, flags=re.DOTALL)
         last_brace = cleaned.rfind("}")
         if last_brace != -1:
@@ -325,7 +322,7 @@ def format_ticket_content(
         wiki_text = f"Fallback description:\n\n{rec_description}"
         return fallback_summary, wiki_text
 
-# ===================== (3.1) Función unificada para buscar issues similares =====================
+# ===================== FUNCIÓN UNIFICADA PARA BUSCAR ISSUES =====================
 def find_similar_issues(
     jira: JIRA,
     project_key: str,
@@ -352,28 +349,39 @@ def find_similar_issues(
     LOCAL_SIM_LOW = 0.3
     LOCAL_SIM_HIGH = 0.9
 
+    # Construir JQL
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
     jql_query = f'project = "{project_key}" AND issuetype = "{jql_issue_type}"'
     if jql_extra:
         jql_query += f" AND {jql_extra}"
 
+    logger.info("Buscando tickets con la siguiente JQL: %s", jql_query)
     issues = jira.search_issues(jql_query, maxResults=1000)
-    matched_keys = []
 
+    matched_keys = []
     for issue in issues:
         existing_summary = issue.fields.summary or ""
         existing_description = issue.fields.description or ""
         summary_sim = calculate_similarity(new_summary, existing_summary)
         desc_sim = calculate_similarity(new_description, existing_description)
 
+        # Log informativo: con qué ticket se compara y cuál es la similitud
+        logger.info(
+            "Comparando con issue %s => summarySim=%.2f, descSim=%.2f",
+            issue.key, summary_sim, desc_sim
+        )
+
         # Si la similitud es muy baja, se ignora
         if summary_sim < LOCAL_SIM_LOW and desc_sim < LOCAL_SIM_LOW:
             continue
-        if summary_sim >= LOCAL_SIM_HIGH and desc_sim >= LOCAL_SIM_HIGH:
-            return issue.key
 
-        # Si es muy alta o tenemos que verificar con IA, se hace la llamada
-        # a la IA para confirmación de similitud. Manejo de excepciones
+        # Si la similitud local es extremadamente alta,
+        # devolvemos el key (ojo: si tu lógica requiere seguir buscando más, ajusta esto)
+        if summary_sim >= LOCAL_SIM_HIGH and desc_sim >= LOCAL_SIM_HIGH:
+            logger.info("La similitud con %s supera %.1f. Lo consideramos duplicado inmediato.", issue.key, LOCAL_SIM_HIGH)
+            return [issue.key]
+
+        # Caso intermedio: se consulta a la IA
         try:
             response = client.chat.completions.create(
                 model=OPENAI_MODEL,
@@ -397,15 +405,19 @@ def find_similar_issues(
             )
             ai_result = response.choices[0].message.content.strip().lower()
             if ai_result.startswith("yes"):
+                logger.info("IA considera que el nuevo ticket coincide con el issue %s", issue.key)
                 matched_keys.append(issue.key)
-        except Exception:
-            # Si falla la IA, criterio fallback local
+
+        except Exception as e:
+            logger.warning("Fallo la llamada IA al comparar con %s: %s", issue.key, e)
+            # Fallback local si IA falla
             if summary_sim >= 0.8 or desc_sim >= 0.8:
+                logger.info("Fallback local: la similitud con %s >= 0.8. Lo consideramos duplicado.", issue.key)
                 matched_keys.append(issue.key)
 
     return matched_keys
 
-# ===================== (3.2) Unificar creación de tickets (librería + requests) =====================
+# ===================== Unificar creación de tickets (librería + requests) =====================
 def create_jira_ticket(
     jira: JIRA,
     project_key: str,
@@ -451,7 +463,6 @@ def create_jira_ticket_via_requests(
     if not description.strip():
         return None
 
-    # Intentamos usar 'description' como dict ADF, o fallback a párrafo simple
     if isinstance(description, str):
         fallback_adf = {
             "version": 1,
@@ -518,7 +529,7 @@ def create_jira_ticket_unified(
     issue_type: str
 ) -> Optional[str]:
     """
-    (3.2) Función unificada: primero intenta crear con librería de Jira,
+    Función unificada: primero intenta crear con librería de Jira,
     si falla o retorna None, hace fallback con requests.
     """
     key = create_jira_ticket(jira, project_key, summary, description, issue_type)
@@ -788,7 +799,7 @@ def main():
             logger.error("ERROR: %s", e)
             return
 
-        # (3.1) Usar find_similar_issues para buscar tickets abiertos
+        # Buscar tickets abiertos (ToDo, InProgress, etc.)
         jql_states = '"To Do", "In Progress", "Open", "Reopened"'
         existing_issues = find_similar_issues(
             jira, args.jira_project_key,
@@ -796,11 +807,10 @@ def main():
             f"status IN ({jql_states})"
         )
         if existing_issues:
-            # Si al menos uno coincide, consideramos que ya existe
             logger.info(f"INFO: Ticket(s) {existing_issues} parecen ya representar el mismo problema. Skipping.")
             return
 
-        # (3.1) Chequear finalizados
+        # Buscar tickets finalizados
         done_issues = find_similar_issues(
             jira, args.jira_project_key,
             summary, description, issue_type,
@@ -851,7 +861,7 @@ def main():
             if should_skip_recommendation(r_summary, r_desc):
                 continue
 
-            # (3.1) Chequear tickets abiertos
+            # Chequear tickets abiertos
             jql_states = '"To Do", "In Progress", "Open", "Reopened"'
             existing_issues = find_similar_issues(
                 jira, args.jira_project_key,
@@ -861,13 +871,14 @@ def main():
             if existing_issues:
                 continue
 
-            # (3.1) Chequear tickets descartados
+            # Chequear tickets descartados
             discard_issues = find_similar_issues(
                 jira, args.jira_project_key,
                 r_summary, r_desc, issue_type,
                 'status IN ("DESCARTADO")'
             )
             if discard_issues:
+                # Si es similar, no crear nuevo
                 continue
 
             final_title, wiki_desc = format_ticket_content(
@@ -885,7 +896,6 @@ def main():
             else:
                 logger.error(f"Recomendación #{i} => Creación de ticket fallida.")
 
-# Función auxiliar para comentario de repetición de incidentes
 def get_repeated_incident_comment(duplicates_str: str, language: str) -> str:
     """
     Construye un comentario indicando que se encontraron
