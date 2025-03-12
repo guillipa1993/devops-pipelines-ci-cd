@@ -14,7 +14,7 @@ from datetime import datetime
 from difflib import SequenceMatcher
 from jira import JIRA
 from openai import OpenAI
-import openai.error  # <-- para capturar RateLimitError o APIError
+import openai.error  # para capturar RateLimitError o APIError
 from typing import List, Optional, Dict, Any
 
 # ======================================================
@@ -27,7 +27,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ===================== CONFIGURACIÓN GLOBAL =====================
-OPENAI_MODEL = "gpt-4o" 
+OPENAI_MODEL = "gpt-4o"
 MAX_CHAR_PER_REQUEST = 20000
 BANDIT_JSON_NAME = "bandit-output.json"
 MAX_FILE_SIZE_MB = 2.0
@@ -37,6 +37,10 @@ ALLOWED_EXTENSIONS = (".log", ".sarif")
 MAX_RETRIES = 5           # Número máximo de reintentos
 BASE_DELAY = 1.0          # Espera base (segundos) para backoff exponencial
 
+# Límite (aprox) de tokens para conservar en el historial
+# (puedes ajustarlo según tu modelo; GPT-4 soporta hasta ~8k o ~32k tokens, según la versión)
+MAX_CONVERSATION_TOKENS = 6000
+
 # ===================== CONFIGURACIÓN OPENAI =====================
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
@@ -45,40 +49,87 @@ if not api_key:
 
 client = OpenAI(api_key=api_key)
 
-# ------------------------------------------------
-# HISTORIAL DE CONVERSACIÓN (SE MANTIENE EN MEMORIA)
-# ------------------------------------------------
+# --------------------------------------------------------------------
+# (NUEVO) Manejo de historial de conversación
+# --------------------------------------------------------------------
+# Usamos una lista con dicts: [{"role": "system", "content": ...}, {"role": "user", "content": ...}, ...]
 conversation_history: List[Dict[str, str]] = []
-"""
-Ejemplo de estructura de conversation_history:
-[
-  {"role": "system", "content": "You are a helpful assistant."},
-  {"role": "user", "content": "Hola, IA."},
-  {"role": "assistant", "content": "¡Hola! ¿En qué puedo ayudarte?"},
-  ...
-]
-"""
 
-def add_system_message(system_content: str) -> None:
+def init_conversation(system_content: str):
     """
-    Agrega un mensaje 'system' al historial de conversación.
+    Inicializa el historial de conversación con un mensaje de rol 'system'.
     """
-    conversation_history.append({"role": "system", "content": system_content})
+    global conversation_history
+    conversation_history = [
+        {"role": "system", "content": system_content}
+    ]
 
-def add_user_message(user_content: str) -> None:
+def add_user_message(user_content: str):
     """
-    Agrega un mensaje 'user' al historial de conversación.
+    Agrega un nuevo mensaje de usuario al historial.
     """
+    global conversation_history
     conversation_history.append({"role": "user", "content": user_content})
 
-def add_assistant_message(assistant_content: str) -> None:
+def add_assistant_message(assistant_content: str):
     """
-    Agrega un mensaje 'assistant' al historial de conversación.
+    Agrega un nuevo mensaje de assistant al historial.
     """
+    global conversation_history
     conversation_history.append({"role": "assistant", "content": assistant_content})
 
+def estimate_token_count(text: str) -> int:
+    """
+    Estimación muy sencilla del conteo de tokens.
+    Lo ideal sería usar 'tiktoken' para mayor precisión.
+    """
+    # Por simplicidad, contamos las palabras como si fuesen tokens
+    # En la práctica, GPT-4 usa un conteo de tokens más complejo.
+    return len(text.split())
+
+def ensure_history_fits():
+    """
+    Recorta el historial si excede cierto límite de tokens,
+    borrando mensajes antiguos de usuario/assistant, pero
+    conservando el mensaje 'system'.
+    """
+    global conversation_history
+
+    total_tokens = 0
+    for msg in conversation_history:
+        total_tokens += estimate_token_count(msg["content"])
+
+    # Si no excede el límite, no hacemos nada
+    if total_tokens <= MAX_CONVERSATION_TOKENS:
+        return
+
+    logger.info("Historial excede los %d tokens aprox. Recortando mensajes antiguos...", MAX_CONVERSATION_TOKENS)
+
+    # Guardamos el system message y recortamos desde el principio
+    system_msg = conversation_history[0]
+    # Filtramos la lista para eliminar el system message temporalmente
+    msgs_to_trim = conversation_history[1:]
+
+    # Vamos removiendo desde el inicio (más antiguo)
+    trimmed: List[Dict[str, str]] = []
+    for msg in msgs_to_trim:
+        # Antes de agregar este msg, comprobamos si cabe
+        tokens_this = estimate_token_count(msg["content"])
+        if (total_tokens - tokens_this) >= MAX_CONVERSATION_TOKENS:
+            # Si quitamos este mensaje, bajamos total_tokens y no lo agregamos
+            total_tokens -= tokens_this
+            continue
+        else:
+            # Lo agregamos y seguimos
+            trimmed.append(msg)
+
+    # Reconstruimos
+    conversation_history = [system_msg] + trimmed
+
+# --------------------------------------------------------------------
+
 def chat_completions_create_with_retry(
-    messages: List[Dict[str, Any]],
+    messages: List[Dict[str, str]],
     model: str = OPENAI_MODEL,
     temperature: float = 0.3,
     max_tokens: int = 1000,
@@ -86,6 +137,7 @@ def chat_completions_create_with_retry(
     """
     Llama a client.chat.completions.create con reintentos automáticos.
     Aplica backoff exponencial si ocurre un error 429 (RateLimitError).
+    Incluye el historial de conversación completo en 'messages'.
     """
     for attempt in range(MAX_RETRIES):
         try:
@@ -97,7 +149,7 @@ def chat_completions_create_with_retry(
             )
             return response
 
-        except openai.error.RateLimitError:
+        except openai.error.RateLimitError as e:
             # Error específico de límite de OpenAI (429)
             if attempt < MAX_RETRIES - 1:
                 wait_time = BASE_DELAY * (2 ** attempt)
@@ -111,7 +163,7 @@ def chat_completions_create_with_retry(
                 raise
 
         except openai.error.APIError as e:
-            # Otros errores de API que incluyen 429
+            # Otros errores de API que a veces incluyen 429
             if e.http_status == 429 and attempt < MAX_RETRIES - 1:
                 wait_time = BASE_DELAY * (2 ** attempt)
                 logger.warning(
@@ -130,38 +182,6 @@ def chat_completions_create_with_retry(
 
     raise RuntimeError("Agotados los reintentos en chat_completions_create_with_retry.")
 
-def openai_chat_with_history(
-    user_prompt: str,
-    system_prompt: Optional[str] = None,
-    temperature: float = 0.3,
-    max_tokens: int = 1000
-) -> str:
-    """
-    1. Agrega un mensaje 'system' (opcional) y un mensaje 'user' al historial.
-    2. Llama a la API con el historial completo.
-    3. Agrega la respuesta ('assistant') al historial.
-    4. Retorna el texto que devolvió la IA.
-    """
-    # Si se requiere un nuevo system_prompt, lo agregamos
-    if system_prompt:
-        add_system_message(system_prompt)
-
-    # Agregamos el mensaje del usuario
-    add_user_message(user_prompt)
-
-    # Llamamos la API con TODO el historial
-    response = chat_completions_create_with_retry(
-        messages=conversation_history,
-        model=OPENAI_MODEL,
-        temperature=temperature,
-        max_tokens=max_tokens
-    )
-    assistant_reply = response.choices[0].message.content.strip()
-
-    # Guardamos la respuesta
-    add_assistant_message(assistant_reply)
-
-    return assistant_reply
 
 # ===================== CONEXIÓN A JIRA =====================
 def connect_to_jira(jira_url: str, jira_user: str, jira_api_token: str) -> JIRA:
@@ -175,10 +195,6 @@ def connect_to_jira(jira_url: str, jira_user: str, jira_api_token: str) -> JIRA:
 
 # ===================== FUNCIONES DE SANITIZACIÓN =====================
 def sanitize_summary(summary: str) -> str:
-    """
-    Sanitiza la cadena de resumen para Jira,
-    eliminando caracteres conflictivos y limitando la longitud a 255.
-    """
     summary = summary.replace("\n", " ").replace("\r", " ")
     sanitized = "".join(c for c in summary if c.isalnum() or c.isspace() or c in "-_:,./()[]{}")
     if len(sanitized) > 255:
@@ -186,24 +202,15 @@ def sanitize_summary(summary: str) -> str:
     return sanitized.strip()
 
 def preprocess_text(text: str) -> str:
-    """
-    Elimina puntuación y pasa a minúsculas para comparar texto.
-    """
     text_no_punct = re.sub(r'[^\w\s]', '', text)
     return text_no_punct.strip().lower()
 
 def calculate_similarity(text1: str, text2: str) -> float:
-    """
-    Calcula la similitud entre dos cadenas (0.0 a 1.0).
-    """
     ratio = SequenceMatcher(None, preprocess_text(text1), preprocess_text(text2)).ratio()
     return ratio
 
 # ===================== CONVERSIÓN A WIKI (ADF -> Jira) =====================
 def convert_adf_to_wiki(adf: dict) -> str:
-    """
-    Convierte un objeto ADF (Atlassian Document Format) a texto wiki.
-    """
     def process_node(node: Dict[str, Any]) -> str:
         node_type = node.get("type", "")
         content = node.get("content", [])
@@ -255,11 +262,6 @@ def convert_adf_to_wiki(adf: dict) -> str:
 
 # ===================== PARSEO DE RECOMENDACIONES =====================
 def parse_recommendations(ai_text: str) -> List[dict]:
-    """
-    Parsea recomendaciones de la respuesta de la IA,
-    esperando formato con '- **Titulo**: Summary...\nDescription...'.
-    Devuelve una lista de dicts con 'summary' y 'description'.
-    """
     recommendations = []
     blocks = re.split(r"\n\s*-\s+", ai_text.strip())
 
@@ -304,22 +306,13 @@ IMPROVEMENT_ICONS = ["🚀", "💡", "🔧", "🤖", "🌟", "📈", "✨"]
 ERROR_ICONS = ["🐞", "🔥", "💥", "🐛", "⛔", "🚫"]
 
 def choose_improvement_icon() -> str:
-    """
-    Retorna un icono aleatorio para mejoras.
-    """
     return random.choice(IMPROVEMENT_ICONS)
 
 def choose_error_icon() -> str:
-    """
-    Retorna un icono aleatorio para errores.
-    """
     return random.choice(ERROR_ICONS)
 
 # ===================== FILTRAR RECOMENDACIONES =====================
 def should_skip_recommendation(summary: str, description: str) -> bool:
-    """
-    Retorna True si la recomendación debe omitirse por contener keywords restringidas.
-    """
     skip_keywords = [
         "bandit", "npm audit", "nancy", "scan-security-vulnerabilities",
         "check-code-format", "lint code", "owasp dependency check",
@@ -330,9 +323,6 @@ def should_skip_recommendation(summary: str, description: str) -> bool:
 
 # ===================== CHUNKING =====================
 def chunk_content_if_needed(text: str, max_chars: int) -> List[str]:
-    """
-    Divide el texto en partes de longitud <= max_chars.
-    """
     if len(text) <= max_chars:
         return [text]
     chunks = []
@@ -345,12 +335,6 @@ def chunk_content_if_needed(text: str, max_chars: int) -> List[str]:
 
 # ===================== Manejo de resultados de OpenAI =====================
 def safe_load_json(ai_output: str) -> Optional[dict]:
-    """
-    Intenta parsear 'ai_output' como JSON.
-    1. Elimina triple backticks si están presentes.
-    2. Hace json.loads().
-    3. Si falla, retorna None.
-    """
     if ai_output.startswith("```"):
         lines = ai_output.splitlines()
         if lines[0].strip().startswith("```"):
@@ -378,11 +362,6 @@ def format_ticket_content(
     rec_description: str,
     ticket_category: str
 ) -> (str, str):
-    """
-    Dado un project_name, resumen, descripción y categoría,
-    llama a OpenAI para formatear un ticket. Luego convierte ADF -> Wiki.
-    Si falla el parseo JSON, retorna un fallback.
-    """
     if ticket_category.lower() in ("improvement", "tarea"):
         icon = choose_improvement_icon()
     else:
@@ -403,12 +382,21 @@ def format_ticket_content(
     )
 
     try:
-        # Llamamos a la IA con historial. 
-        # Añadimos un "system_prompt" para que sea un rol system distinto, y un user_prompt con la solicitud.
-        ai_output = openai_chat_with_history(
-            user_prompt=prompt,
-            system_prompt="You are a professional technical writer."
+        # Antes de llamar a la API, agregamos la “conversación” al historial
+        # (Opcional: Podrías tener un system message distinto para esta parte)
+        add_user_message(prompt)
+        ensure_history_fits()  # recorta si excede el límite
+
+        response = chat_completions_create_with_retry(
+            messages=conversation_history,
+            model=OPENAI_MODEL,
+            max_tokens=1200,
+            temperature=0.3
         )
+        ai_output = response.choices[0].message.content.strip()
+
+        # Guardamos respuesta en el historial
+        add_assistant_message(ai_output)
 
         ticket_json = safe_load_json(ai_output)
         if not ticket_json:
@@ -445,21 +433,6 @@ def find_similar_issues(
     issue_type: str,
     jql_extra: str
 ) -> List[str]:
-    """
-    Busca en Jira (mediante JQL) issues que puedan ser similares
-    a un nuevo summary/description. Usa:
-      - Comparación local (SequenceMatcher).
-      - Comparación con IA (si la similitud local es moderada).
-    Retorna la lista de keys encontradas como similares.
-    
-    :param jira: Instancia conectada a JIRA
-    :param project_key: Proyecto a consultar
-    :param new_summary: Resumen del nuevo ticket
-    :param new_description: Descripción del nuevo ticket
-    :param issue_type: Tipo de issue (e.g. "Error" o "Task")
-    :param jql_extra: Cláusula extra para filtrar (e.g. 'status IN ("To Do")')
-    :return: Lista de issue keys que se consideren similares
-    """
     LOCAL_SIM_LOW = 0.3
     LOCAL_SIM_HIGH = 0.9
 
@@ -490,20 +463,24 @@ def find_similar_issues(
             return [issue.key]
 
         try:
-            # Preparamos un prompt breve para la IA
-            check_prompt = (
+            # Construimos un prompt con el contenido para la IA
+            user_prompt = (
                 "We have two issues:\n\n"
                 f"Existing issue:\nSummary: {existing_summary}\nDescription: {existing_description}\n\n"
                 f"New issue:\nSummary: {new_summary}\nDescription: {new_description}\n\n"
                 "Do they represent essentially the same issue? Respond 'yes' or 'no'."
             )
+            add_user_message(user_prompt)
+            ensure_history_fits()
 
-            ai_result = openai_chat_with_history(
-                user_prompt=check_prompt,
-                system_prompt="You are an assistant specialized in analyzing text similarity. Respond only 'yes' or 'no'.",
-                temperature=0.3,
-                max_tokens=200
-            ).lower()
+            response = chat_completions_create_with_retry(
+                messages=conversation_history,
+                model=OPENAI_MODEL,
+                max_tokens=200,
+                temperature=0.3
+            )
+            ai_result = response.choices[0].message.content.strip().lower()
+            add_assistant_message(ai_result)  # guardamos la respuesta
 
             if ai_result.startswith("yes"):
                 logger.info("IA considera que el nuevo ticket coincide con el issue %s", issue.key)
@@ -517,7 +494,7 @@ def find_similar_issues(
 
     return matched_keys
 
-# ===================== Unificar creación de tickets (librería + requests) =====================
+# ===================== Unificar creación de tickets =====================
 def create_jira_ticket(
     jira: JIRA,
     project_key: str,
@@ -525,10 +502,6 @@ def create_jira_ticket(
     description: str,
     issue_type: str
 ) -> Optional[str]:
-    """
-    Crea un ticket mediante la librería oficial de Python para Jira.
-    Retorna la clave (issue.key) o None en caso de error.
-    """
     summary = sanitize_summary(summary)
     if not description.strip():
         return None
@@ -555,10 +528,6 @@ def create_jira_ticket_via_requests(
     description: str,
     issue_type: str
 ) -> Optional[str]:
-    """
-    Crea un ticket usando la API REST de Jira (requests).
-    Retorna la clave o None en caso de error.
-    """
     summary = sanitize_summary(summary)
     if not description.strip():
         return None
@@ -628,10 +597,6 @@ def create_jira_ticket_unified(
     description: str,
     issue_type: str
 ) -> Optional[str]:
-    """
-    Función unificada: primero intenta crear con librería de Jira,
-    si falla o retorna None, hace fallback con requests.
-    """
     key = create_jira_ticket(jira, project_key, summary, description, issue_type)
     if key:
         return key
@@ -643,14 +608,6 @@ def create_jira_ticket_unified(
 
 # ===================== VALIDACIÓN DE LOGS =====================
 def validate_logs_directory(log_dir: str) -> List[str]:
-    """
-    Verifica la existencia del directorio de logs y
-    retorna la lista de archivos válidos a procesar.
-    
-    :param log_dir: Ruta al directorio de logs
-    :return: Lista de rutas a archivos válidos
-    :raises FileNotFoundError: Si no existe la carpeta o no hay archivos válidos
-    """
     if not os.path.exists(log_dir):
         raise FileNotFoundError(f"ERROR: The logs directory '{log_dir}' does not exist.")
 
@@ -673,17 +630,11 @@ def validate_logs_directory(log_dir: str) -> List[str]:
     return log_files
 
 def unify_double_to_single_asterisks(description: str) -> str:
-    """
-    Reemplaza '**' por '*' en la descripción para unificar estilos.
-    """
     while '**' in description:
         description = description.replace('**', '*')
     return description
 
 def generate_prompt(log_type: str, language: str) -> (str, str):
-    """
-    Genera un prompt base y un issue_type por defecto.
-    """
     if log_type == "failure":
         details = (
             "You are a technical writer creating a concise Jira Cloud ticket from logs. "
@@ -704,18 +655,11 @@ def generate_prompt(log_type: str, language: str) -> (str, str):
     return details, issue_type
 
 def clean_log_content(content: str) -> str:
-    """
-    Quita líneas vacías en blanco.
-    """
     lines = content.splitlines()
     return "\n".join([line for line in lines if line.strip()])
 
 def validate_issue_type(jira_url: str, jira_user: str, jira_api_token: str,
                         project_key: str, issue_type: str) -> None:
-    """
-    Valida que issue_type exista en el proyecto especificado.
-    Lanza excepción si no existe.
-    """
     url = f"{jira_url}/rest/api/3/issue/createmeta?projectKeys={project_key}"
     headers = {"Content-Type": "application/json"}
     auth = (jira_user, jira_api_token)
@@ -729,10 +673,6 @@ def validate_issue_type(jira_url: str, jira_user: str, jira_api_token: str,
 
 # ===================== MÉTODOS DE ANÁLISIS =====================
 def analyze_logs_for_recommendations(log_dir: str, report_language: str, project_name: str) -> List[dict]:
-    """
-    Analiza logs de 'success' para extraer recomendaciones.
-    Retorna una lista de dicts con 'summary' y 'description'.
-    """
     log_files = validate_logs_directory(log_dir)
     combined_text = []
     max_lines = 300
@@ -755,12 +695,18 @@ def analyze_logs_for_recommendations(log_dir: str, report_language: str, project
     for chunk in text_chunks:
         prompt = f"{prompt_base}\n\nLogs:\n{chunk}"
         try:
-            ai_text = openai_chat_with_history(
-                user_prompt=prompt,
-                system_prompt="You are a helpful assistant.",
-                temperature=0.3,
-                max_tokens=1000
+            add_user_message(prompt)
+            ensure_history_fits()
+
+            response = chat_completions_create_with_retry(
+                messages=conversation_history,
+                model=OPENAI_MODEL,
+                max_tokens=1000,
+                temperature=0.3
             )
+            ai_text = response.choices[0].message.content.strip()
+            add_assistant_message(ai_text)
+
             recs = parse_recommendations(ai_text)
             all_recommendations.extend(recs)
         except Exception as e:
@@ -775,9 +721,6 @@ def analyze_logs_with_ai(
     project_name: str,
     branch_name: str = None
 ) -> (Optional[str], Optional[str], Optional[str]):
-    """
-    Analiza logs de 'failure' y retorna (summary_title, description_plain, issue_type).
-    """
     log_files = validate_logs_directory(log_dir)
     combined_text = []
     max_lines = 300
@@ -813,18 +756,19 @@ def analyze_logs_with_ai(
         return t.replace("\n", " ").replace("\r", " ").strip()
 
     try:
-        summary = openai_chat_with_history(
-            user_prompt=final_prompt,
-            system_prompt=(
-                "You are a helpful assistant generating concise Jira tickets. "
-                "Use short statements, some emojis, minimal markdown. "
-                "Make sure the title references the most relevant error."
-            ),
-            temperature=0.4,
-            max_tokens=600
-        )
-        lines = summary.splitlines()
+        add_user_message(final_prompt)
+        ensure_history_fits()
 
+        response = chat_completions_create_with_retry(
+            messages=conversation_history,
+            model=OPENAI_MODEL,
+            max_tokens=600,
+            temperature=0.4
+        )
+        summary = response.choices[0].message.content.strip()
+        add_assistant_message(summary)
+
+        lines = summary.splitlines()
         first_line = lines[0].strip() if lines else "No Title"
         match = re.match(r"(?i)^(?:title|summary)\s*:\s*(.*)$", first_line)
         if match:
@@ -871,6 +815,9 @@ def main():
         logger.error("ERROR: Missing env vars JIRA_API_TOKEN or JIRA_USER_EMAIL.")
         sys.exit(1)
 
+    # Iniciamos el historial con un mensaje system general (opcional)
+    init_conversation("You are an assistant that helps analyzing logs and creating Jira tickets.")
+
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
 
     if args.log_type == "failure":
@@ -888,7 +835,6 @@ def main():
             logger.error("ERROR: %s", e)
             return
 
-        # Buscar tickets abiertos (ToDo, InProgress, etc.)
         jql_states = '"To Do", "In Progress", "Open", "Reopened"'
         existing_issues = find_similar_issues(
             jira, args.jira_project_key,
@@ -899,7 +845,6 @@ def main():
             logger.info(f"INFO: Ticket(s) {existing_issues} parecen ya representar el mismo problema. Skipping.")
             return
 
-        # Buscar tickets finalizados
         done_issues = find_similar_issues(
             jira, args.jira_project_key,
             summary, description, issue_type,
@@ -933,7 +878,6 @@ def main():
             logger.error("ERROR: Creación de ticket fallida.")
 
     else:
-        # logs de success => recomendaciones
         recommendations = analyze_logs_for_recommendations(
             args.log_dir, args.report_language, args.project_name
         )
@@ -950,7 +894,6 @@ def main():
             if should_skip_recommendation(r_summary, r_desc):
                 continue
 
-            # Chequear tickets abiertos
             jql_states = '"To Do", "In Progress", "Open", "Reopened"'
             existing_issues = find_similar_issues(
                 jira, args.jira_project_key,
@@ -960,7 +903,6 @@ def main():
             if existing_issues:
                 continue
 
-            # Chequear tickets descartados
             discard_issues = find_similar_issues(
                 jira, args.jira_project_key,
                 r_summary, r_desc, issue_type,
@@ -985,10 +927,6 @@ def main():
                 logger.error(f"Recomendación #{i} => Creación de ticket fallida.")
 
 def get_repeated_incident_comment(duplicates_str: str, language: str) -> str:
-    """
-    Construye un comentario indicando que se encontraron
-    incidencias previas similares.
-    """
     if language.lower().startswith("es"):
         return (
             f"Se han encontrado incidencias previas que podrían ser similares: {duplicates_str}. "
