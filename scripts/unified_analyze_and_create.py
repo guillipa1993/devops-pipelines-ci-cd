@@ -8,10 +8,13 @@ import math
 import argparse
 import requests
 import logging
+import time
+
 from datetime import datetime
 from difflib import SequenceMatcher
 from jira import JIRA
 from openai import OpenAI
+import openai.error  # <-- para capturar RateLimitError o APIError
 from typing import List, Optional, Dict, Any
 
 # ======================================================
@@ -30,6 +33,10 @@ BANDIT_JSON_NAME = "bandit-output.json"
 MAX_FILE_SIZE_MB = 2.0
 ALLOWED_EXTENSIONS = (".log", ".sarif")
 
+# Parámetros de reintentos
+MAX_RETRIES = 5           # Número máximo de reintentos
+BASE_DELAY = 1.0          # Espera base (segundos) para backoff exponencial
+
 # ===================== CONFIGURACIÓN OPENAI =====================
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
@@ -38,15 +45,128 @@ if not api_key:
 
 client = OpenAI(api_key=api_key)
 
+# ------------------------------------------------
+# HISTORIAL DE CONVERSACIÓN (SE MANTIENE EN MEMORIA)
+# ------------------------------------------------
+conversation_history: List[Dict[str, str]] = []
+"""
+Ejemplo de estructura de conversation_history:
+[
+  {"role": "system", "content": "You are a helpful assistant."},
+  {"role": "user", "content": "Hola, IA."},
+  {"role": "assistant", "content": "¡Hola! ¿En qué puedo ayudarte?"},
+  ...
+]
+"""
+
+def add_system_message(system_content: str) -> None:
+    """
+    Agrega un mensaje 'system' al historial de conversación.
+    """
+    conversation_history.append({"role": "system", "content": system_content})
+
+def add_user_message(user_content: str) -> None:
+    """
+    Agrega un mensaje 'user' al historial de conversación.
+    """
+    conversation_history.append({"role": "user", "content": user_content})
+
+def add_assistant_message(assistant_content: str) -> None:
+    """
+    Agrega un mensaje 'assistant' al historial de conversación.
+    """
+    conversation_history.append({"role": "assistant", "content": assistant_content})
+
+def chat_completions_create_with_retry(
+    messages: List[Dict[str, Any]],
+    model: str = OPENAI_MODEL,
+    temperature: float = 0.3,
+    max_tokens: int = 1000,
+) -> Any:
+    """
+    Llama a client.chat.completions.create con reintentos automáticos.
+    Aplica backoff exponencial si ocurre un error 429 (RateLimitError).
+    """
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            return response
+
+        except openai.error.RateLimitError:
+            # Error específico de límite de OpenAI (429)
+            if attempt < MAX_RETRIES - 1:
+                wait_time = BASE_DELAY * (2 ** attempt)
+                logger.warning(
+                    "OpenAI RateLimitError (429). Reintentando en %.1f segundos. (Intento %d/%d)",
+                    wait_time, attempt + 1, MAX_RETRIES
+                )
+                time.sleep(wait_time)
+            else:
+                logger.error("Se alcanzó el número máximo de reintentos tras un 429. Abortando.")
+                raise
+
+        except openai.error.APIError as e:
+            # Otros errores de API que incluyen 429
+            if e.http_status == 429 and attempt < MAX_RETRIES - 1:
+                wait_time = BASE_DELAY * (2 ** attempt)
+                logger.warning(
+                    "OpenAI APIError 429. Reintentando en %.1f seg. (Intento %d/%d)",
+                    wait_time, attempt + 1, MAX_RETRIES
+                )
+                time.sleep(wait_time)
+            else:
+                logger.error("APIError no recuperable o reintentos agotados: %s", e)
+                raise
+
+        except Exception as e:
+            # Cualquier otro error se lanza sin reintentar
+            logger.error("Excepción no controlada en la llamada a OpenAI: %s", e)
+            raise
+
+    raise RuntimeError("Agotados los reintentos en chat_completions_create_with_retry.")
+
+def openai_chat_with_history(
+    user_prompt: str,
+    system_prompt: Optional[str] = None,
+    temperature: float = 0.3,
+    max_tokens: int = 1000
+) -> str:
+    """
+    1. Agrega un mensaje 'system' (opcional) y un mensaje 'user' al historial.
+    2. Llama a la API con el historial completo.
+    3. Agrega la respuesta ('assistant') al historial.
+    4. Retorna el texto que devolvió la IA.
+    """
+    # Si se requiere un nuevo system_prompt, lo agregamos
+    if system_prompt:
+        add_system_message(system_prompt)
+
+    # Agregamos el mensaje del usuario
+    add_user_message(user_prompt)
+
+    # Llamamos la API con TODO el historial
+    response = chat_completions_create_with_retry(
+        messages=conversation_history,
+        model=OPENAI_MODEL,
+        temperature=temperature,
+        max_tokens=max_tokens
+    )
+    assistant_reply = response.choices[0].message.content.strip()
+
+    # Guardamos la respuesta
+    add_assistant_message(assistant_reply)
+
+    return assistant_reply
+
 # ===================== CONEXIÓN A JIRA =====================
 def connect_to_jira(jira_url: str, jira_user: str, jira_api_token: str) -> JIRA:
     """
     Conecta a Jira usando la librería oficial de Python.
-    
-    :param jira_url: URL del servidor Jira
-    :param jira_user: Usuario o email para autenticación
-    :param jira_api_token: Token de la API de Jira
-    :return: Objeto JIRA conectado
     """
     options = {'server': jira_url}
     jira = JIRA(options, basic_auth=(jira_user, jira_api_token))
@@ -283,20 +403,15 @@ def format_ticket_content(
     )
 
     try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a professional technical writer."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=1200,
-            temperature=0.3
+        # Llamamos a la IA con historial. 
+        # Añadimos un "system_prompt" para que sea un rol system distinto, y un user_prompt con la solicitud.
+        ai_output = openai_chat_with_history(
+            user_prompt=prompt,
+            system_prompt="You are a professional technical writer."
         )
-        ai_output = response.choices[0].message.content.strip()
 
         ticket_json = safe_load_json(ai_output)
         if not ticket_json:
-            # Fallback
             fallback_summary = sanitize_summary(rec_summary)
             fallback_summary = f"{icon} {fallback_summary}"
             fallback_desc = f"Fallback description:\n\n{rec_description}"
@@ -305,7 +420,6 @@ def format_ticket_content(
         final_title = ticket_json.get("title", "")
         adf_description = ticket_json.get("description", {})
 
-        # Garantiza que haya ícono en el título
         if not any(ic in final_title for ic in (IMPROVEMENT_ICONS + ERROR_ICONS)):
             final_title = f"{icon} {final_title}"
 
@@ -349,7 +463,6 @@ def find_similar_issues(
     LOCAL_SIM_LOW = 0.3
     LOCAL_SIM_HIGH = 0.9
 
-    # Construir JQL
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
     jql_query = f'project = "{project_key}" AND issuetype = "{jql_issue_type}"'
     if jql_extra:
@@ -365,52 +478,39 @@ def find_similar_issues(
         summary_sim = calculate_similarity(new_summary, existing_summary)
         desc_sim = calculate_similarity(new_description, existing_description)
 
-        # Log informativo: con qué ticket se compara y cuál es la similitud
         logger.info(
             "Comparando con issue %s => summarySim=%.2f, descSim=%.2f",
             issue.key, summary_sim, desc_sim
         )
 
-        # Si la similitud es muy baja, se ignora
         if summary_sim < LOCAL_SIM_LOW and desc_sim < LOCAL_SIM_LOW:
             continue
-
-        # Si la similitud local es extremadamente alta,
-        # devolvemos el key (ojo: si tu lógica requiere seguir buscando más, ajusta esto)
         if summary_sim >= LOCAL_SIM_HIGH and desc_sim >= LOCAL_SIM_HIGH:
             logger.info("La similitud con %s supera %.1f. Lo consideramos duplicado inmediato.", issue.key, LOCAL_SIM_HIGH)
             return [issue.key]
 
-        # Caso intermedio: se consulta a la IA
         try:
-            response = client.chat.completions.create(
-                model=OPENAI_MODEL,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an assistant specialized in analyzing text similarity. Respond only 'yes' or 'no'."
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            "We have two issues:\n\n"
-                            f"Existing issue:\nSummary: {existing_summary}\nDescription: {existing_description}\n\n"
-                            f"New issue:\nSummary: {new_summary}\nDescription: {new_description}\n\n"
-                            "Do they represent essentially the same issue? Respond 'yes' or 'no'."
-                        )
-                    }
-                ],
-                max_tokens=200,
-                temperature=0.3
+            # Preparamos un prompt breve para la IA
+            check_prompt = (
+                "We have two issues:\n\n"
+                f"Existing issue:\nSummary: {existing_summary}\nDescription: {existing_description}\n\n"
+                f"New issue:\nSummary: {new_summary}\nDescription: {new_description}\n\n"
+                "Do they represent essentially the same issue? Respond 'yes' or 'no'."
             )
-            ai_result = response.choices[0].message.content.strip().lower()
+
+            ai_result = openai_chat_with_history(
+                user_prompt=check_prompt,
+                system_prompt="You are an assistant specialized in analyzing text similarity. Respond only 'yes' or 'no'.",
+                temperature=0.3,
+                max_tokens=200
+            ).lower()
+
             if ai_result.startswith("yes"):
                 logger.info("IA considera que el nuevo ticket coincide con el issue %s", issue.key)
                 matched_keys.append(issue.key)
 
         except Exception as e:
             logger.warning("Fallo la llamada IA al comparar con %s: %s", issue.key, e)
-            # Fallback local si IA falla
             if summary_sim >= 0.8 or desc_sim >= 0.8:
                 logger.info("Fallback local: la similitud con %s >= 0.8. Lo consideramos duplicado.", issue.key)
                 matched_keys.append(issue.key)
@@ -655,16 +755,12 @@ def analyze_logs_for_recommendations(log_dir: str, report_language: str, project
     for chunk in text_chunks:
         prompt = f"{prompt_base}\n\nLogs:\n{chunk}"
         try:
-            response = client.chat.completions.create(
-                model=OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=1000,
-                temperature=0.3
+            ai_text = openai_chat_with_history(
+                user_prompt=prompt,
+                system_prompt="You are a helpful assistant.",
+                temperature=0.3,
+                max_tokens=1000
             )
-            ai_text = response.choices[0].message.content.strip()
             recs = parse_recommendations(ai_text)
             all_recommendations.extend(recs)
         except Exception as e:
@@ -717,23 +813,16 @@ def analyze_logs_with_ai(
         return t.replace("\n", " ").replace("\r", " ").strip()
 
     try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a helpful assistant generating concise Jira tickets. "
-                        "Use short statements, some emojis, minimal markdown. "
-                        "Make sure the title references the most relevant error."
-                    )
-                },
-                {"role": "user", "content": final_prompt}
-            ],
-            max_tokens=600,
-            temperature=0.4
+        summary = openai_chat_with_history(
+            user_prompt=final_prompt,
+            system_prompt=(
+                "You are a helpful assistant generating concise Jira tickets. "
+                "Use short statements, some emojis, minimal markdown. "
+                "Make sure the title references the most relevant error."
+            ),
+            temperature=0.4,
+            max_tokens=600
         )
-        summary = response.choices[0].message.content.strip()
         lines = summary.splitlines()
 
         first_line = lines[0].strip() if lines else "No Title"
@@ -878,7 +967,6 @@ def main():
                 'status IN ("DESCARTADO")'
             )
             if discard_issues:
-                # Si es similar, no crear nuevo
                 continue
 
             final_title, wiki_desc = format_ticket_content(
