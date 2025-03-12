@@ -12,6 +12,7 @@ from datetime import datetime
 from difflib import SequenceMatcher
 
 # ============ CONFIGURACIÓN OPENAI ============
+print("DEBUG: create_jira_ticket.py")
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     print("ERROR: 'OPENAI_API_KEY' is not set. Please set it as an environment variable.")

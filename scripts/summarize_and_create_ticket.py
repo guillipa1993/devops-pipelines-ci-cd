@@ -6,6 +6,7 @@ from openai import OpenAI
 from datetime import datetime
 
 # Verificar si la clave de API está configurada
+print("DEBUG: summarize_and_create_ticket.py")
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     print("ERROR: 'OPENAI_API_KEY' is not set. Please set it as an environment variable.")

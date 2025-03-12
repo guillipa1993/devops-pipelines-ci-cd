@@ -20,6 +20,7 @@ MAX_FILE_SIZE_MB = 2.0
 ALLOWED_EXTENSIONS = (".log", ".sarif")
 
 # ===================== CONFIGURACIÓN OPENAI =====================
+print("DEBUG: unified_analyze_and_create.py")
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     print("ERROR: 'OPENAI_API_KEY' is not set.")
