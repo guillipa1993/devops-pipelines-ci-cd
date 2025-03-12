@@ -14,7 +14,7 @@ from datetime import datetime
 from difflib import SequenceMatcher
 from jira import JIRA
 from openai import OpenAI
-import openai.error  # para capturar RateLimitError o APIError
+# QUITADO: import openai.error  # para capturar RateLimitError o APIError
 from typing import List, Optional, Dict, Any
 
 # ======================================================
@@ -52,7 +52,6 @@ client = OpenAI(api_key=api_key)
 # --------------------------------------------------------------------
 # (NUEVO) Manejo de historial de conversación
 # --------------------------------------------------------------------
-# Usamos una lista con dicts: [{"role": "system", "content": ...}, {"role": "user", "content": ...}, ...]
 conversation_history: List[Dict[str, str]] = []
 
 def init_conversation(system_content: str):
@@ -83,8 +82,6 @@ def estimate_token_count(text: str) -> int:
     Estimación muy sencilla del conteo de tokens.
     Lo ideal sería usar 'tiktoken' para mayor precisión.
     """
-    # Por simplicidad, contamos las palabras como si fuesen tokens
-    # En la práctica, GPT-4 usa un conteo de tokens más complejo.
     return len(text.split())
 
 def ensure_history_fits():
@@ -99,34 +96,24 @@ def ensure_history_fits():
     for msg in conversation_history:
         total_tokens += estimate_token_count(msg["content"])
 
-    # Si no excede el límite, no hacemos nada
     if total_tokens <= MAX_CONVERSATION_TOKENS:
         return
 
     logger.info("Historial excede los %d tokens aprox. Recortando mensajes antiguos...", MAX_CONVERSATION_TOKENS)
 
-    # Guardamos el system message y recortamos desde el principio
     system_msg = conversation_history[0]
-    # Filtramos la lista para eliminar el system message temporalmente
     msgs_to_trim = conversation_history[1:]
 
-    # Vamos removiendo desde el inicio (más antiguo)
     trimmed: List[Dict[str, str]] = []
     for msg in msgs_to_trim:
-        # Antes de agregar este msg, comprobamos si cabe
         tokens_this = estimate_token_count(msg["content"])
         if (total_tokens - tokens_this) >= MAX_CONVERSATION_TOKENS:
-            # Si quitamos este mensaje, bajamos total_tokens y no lo agregamos
             total_tokens -= tokens_this
             continue
         else:
-            # Lo agregamos y seguimos
             trimmed.append(msg)
 
-    # Reconstruimos
     conversation_history = [system_msg] + trimmed
-
-# --------------------------------------------------------------------
 
 def chat_completions_create_with_retry(
     messages: List[Dict[str, str]],
@@ -139,6 +126,7 @@ def chat_completions_create_with_retry(
     Aplica backoff exponencial si ocurre un error 429 (RateLimitError).
     Incluye el historial de conversación completo en 'messages'.
     """
+    import openai  # Se hace import local aquí, en vez de 'import openai.error'
     for attempt in range(MAX_RETRIES):
         try:
             response = client.chat.completions.create(
@@ -163,7 +151,6 @@ def chat_completions_create_with_retry(
                 raise
 
         except openai.error.APIError as e:
-            # Otros errores de API que a veces incluyen 429
             if e.http_status == 429 and attempt < MAX_RETRIES - 1:
                 wait_time = BASE_DELAY * (2 ** attempt)
                 logger.warning(
@@ -176,7 +163,6 @@ def chat_completions_create_with_retry(
                 raise
 
         except Exception as e:
-            # Cualquier otro error se lanza sin reintentar
             logger.error("Excepción no controlada en la llamada a OpenAI: %s", e)
             raise
 
@@ -185,9 +171,6 @@ def chat_completions_create_with_retry(
 
 # ===================== CONEXIÓN A JIRA =====================
 def connect_to_jira(jira_url: str, jira_user: str, jira_api_token: str) -> JIRA:
-    """
-    Conecta a Jira usando la librería oficial de Python.
-    """
     options = {'server': jira_url}
     jira = JIRA(options, basic_auth=(jira_user, jira_api_token))
     logger.info("Conexión establecida con Jira.")
@@ -221,7 +204,6 @@ def convert_adf_to_wiki(adf: dict) -> str:
                 if child.get("type") == "text":
                     paragraph_text += child.get("text", "")
             return paragraph_text + "\n\n"
-
         elif node_type == "bulletList":
             lines = []
             for item in content:
@@ -233,14 +215,12 @@ def convert_adf_to_wiki(adf: dict) -> str:
                                 item_text += subchild.get("text", "")
                 lines.append(f"* {item_text.strip()}")
             return "\n".join(lines) + "\n\n"
-
         elif node_type == "codeBlock":
             code_text = ""
             for child in content:
                 if child.get("type") == "text":
                     code_text += child.get("text", "")
             return f"{{code}}\n{code_text}\n{{code}}\n\n"
-
         elif node_type == "text":
             return node.get("text", "")
 
@@ -382,10 +362,8 @@ def format_ticket_content(
     )
 
     try:
-        # Antes de llamar a la API, agregamos la “conversación” al historial
-        # (Opcional: Podrías tener un system message distinto para esta parte)
         add_user_message(prompt)
-        ensure_history_fits()  # recorta si excede el límite
+        ensure_history_fits()
 
         response = chat_completions_create_with_retry(
             messages=conversation_history,
@@ -394,8 +372,6 @@ def format_ticket_content(
             temperature=0.3
         )
         ai_output = response.choices[0].message.content.strip()
-
-        # Guardamos respuesta en el historial
         add_assistant_message(ai_output)
 
         ticket_json = safe_load_json(ai_output)
@@ -463,7 +439,6 @@ def find_similar_issues(
             return [issue.key]
 
         try:
-            # Construimos un prompt con el contenido para la IA
             user_prompt = (
                 "We have two issues:\n\n"
                 f"Existing issue:\nSummary: {existing_summary}\nDescription: {existing_description}\n\n"
@@ -480,7 +455,7 @@ def find_similar_issues(
                 temperature=0.3
             )
             ai_result = response.choices[0].message.content.strip().lower()
-            add_assistant_message(ai_result)  # guardamos la respuesta
+            add_assistant_message(ai_result)
 
             if ai_result.startswith("yes"):
                 logger.info("IA considera que el nuevo ticket coincide con el issue %s", issue.key)
@@ -815,7 +790,6 @@ def main():
         logger.error("ERROR: Missing env vars JIRA_API_TOKEN or JIRA_USER_EMAIL.")
         sys.exit(1)
 
-    # Iniciamos el historial con un mensaje system general (opcional)
     init_conversation("You are an assistant that helps analyzing logs and creating Jira tickets.")
 
     jira = connect_to_jira(args.jira_url, jira_user_email, jira_api_token)
