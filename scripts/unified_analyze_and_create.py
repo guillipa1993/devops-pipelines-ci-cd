@@ -153,7 +153,7 @@ def choose_improvement_icon() -> str:
 def choose_error_icon() -> str:
     return random.choice(ERROR_ICONS)
 
-# ===================== FILTRAR RECOMENDACIONES NO DESEADAS =====================
+# ===================== FILTRAR RECOMENDACIONES =====================
 def should_skip_recommendation(summary: str, description: str) -> bool:
     skip_keywords = [
         "bandit", "npm audit", "nancy", "scan-security-vulnerabilities",
@@ -162,6 +162,19 @@ def should_skip_recommendation(summary: str, description: str) -> bool:
     ]
     combined = f"{summary}\n{description}".lower()
     return any(kw in combined for kw in skip_keywords)
+
+# ===================== CHUNKING (FALTABA ESTA FUNCIÓN) =====================
+def chunk_content_if_needed(text: str, max_chars: int) -> list:
+    """Divide el texto en partes de longitud <= max_chars."""
+    if len(text) <= max_chars:
+        return [text]
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + max_chars
+        chunks.append(text[start:end])
+        start = end
+    return chunks
 
 # ===================== FORMAT TICKET CONTENT =====================
 def format_ticket_content(project_name: str, rec_summary: str, rec_description: str, ticket_category: str) -> tuple:
