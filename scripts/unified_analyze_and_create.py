@@ -304,7 +304,7 @@ def check_discarded_tickets_local_and_ia_summary_desc(jira, project_key, new_sum
     jql_issue_type = "Task" if issue_type.lower() == "tarea" else issue_type
     jql_query = (
         f'project = "{project_key}" AND issuetype = "{jql_issue_type}" '
-        f'AND status IN ("DESCARTADO", "Rejected", "Closed", "Done")'
+        f'AND status IN ("DESCARTADO", "Finalizada")'
     )
     issues = jira.search_issues(jql_query, maxResults=1000)
 
