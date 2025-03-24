@@ -6,11 +6,11 @@ import json
 import time
 import logging
 import argparse
-import requests
+import subprocess
 from typing import List, Optional
 
+import openai  # Se importa 'openai' en vez de 'openai.error'
 from openai import OpenAI
-import openai.error  # para capturar RateLimitError o APIError
 
 # ===================================
 # CONFIGURACIÓN DE LOGGING
@@ -34,6 +34,7 @@ client = OpenAI(api_key=api_key)
 # ===================================
 # CONSTANTES Y PARÁMETROS
 # ===================================
+OPENAI_MODEL = "gpt-4o"       # Se asume que usarás 'gpt-4o', igual que en tu ejemplo
 MAX_CHUNK_SIZE = 30000        # Tamaño de fragmento al dividir logs
 MAX_TOKENS_OPENAI = 2000      # Máx tokens para la respuesta de OpenAI
 TEMPERATURE_OPENAI = 0.5      # Ajusta la temperatura de las respuestas
@@ -129,9 +130,7 @@ def call_openai_with_retry(prompt_role: str, prompt_content: str) -> Optional[st
     """
     Llama a la API de OpenAI (chat.completions) con reintentos en caso de error 429.
     Devuelve el texto de la respuesta o None si falla.
-    prompt_role es el prompt "system" o "user" (en este caso 'system' indica la directriz, 'user' es el contenido).
     """
-    import openai
     messages = [
         {"role": "system", "content": prompt_role},
         {"role": "user", "content": prompt_content}
@@ -244,4 +243,31 @@ def analyze_logs(log_files: List[str], output_dir: str, log_type: str):
                 logger.warning("   WARNING: Empty analysis for fragment %d.", frag_idx)
 
             # Breve espera para no saturar la API (puedes ajustar o quitar)
-            time.sleep
+            time.sleep(3)
+
+    if not analysis_created:
+        logger.warning("WARNING: No analysis files were created. Please check your logs or prompts.")
+
+# =============================================
+# MAIN
+# =============================================
+def main():
+    parser = argparse.ArgumentParser(description="Analyze log files using OpenAI")
+    parser.add_argument("--log-dir", required=True, help="Path to the logs directory")
+    parser.add_argument("--output-dir", required=True, help="Path to save the analysis results")
+    parser.add_argument("--log-type", required=True, choices=["success","failure"], help="Specify the type of logs to analyze")
+    args = parser.parse_args()
+
+    try:
+        log_files = validate_logs_directory(args.log_dir)
+        logger.info("Found %d log file(s) in '%s'.", len(log_files), args.log_dir)
+
+        analyze_logs(log_files, args.output_dir, args.log_type)
+
+        logger.info("Log analysis completed successfully.")
+    except Exception as e:
+        logger.error("Critical error: %s", e)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
