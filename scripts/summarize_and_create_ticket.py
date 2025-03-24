@@ -9,7 +9,7 @@ import argparse
 import subprocess
 from typing import List, Optional
 
-import openai.error  # Para manejar RateLimitError, APIError
+import openai  # <- Se importa 'openai' en lugar de 'openai.error'
 from openai import OpenAI
 from datetime import datetime
 
@@ -104,7 +104,6 @@ def call_openai_with_retry(system_prompt: str, user_prompt: str) -> str:
     Llama a la API de OpenAI con reintentos en caso de error 429.
     Devuelve el texto resultante o cadena vacía si falla.
     """
-    import openai
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt}
@@ -138,6 +137,7 @@ def call_openai_with_retry(system_prompt: str, user_prompt: str) -> str:
             else:
                 logger.error("APIError not recoverable or max retries exhausted: %s", e)
                 return ""
+
         except Exception as ex:
             logger.error("Unhandled error calling OpenAI: %s", ex)
             return ""
@@ -228,7 +228,7 @@ def main():
         status_text = "Errors Found" if args.log_type == "failure" else "All Passed"
 
         title = f"{status_emoji} Report - Project: {args.repo} - Build ID: {args.run_id} - {status_text}"
-        create_github_issue(title, summary, args.repo_and_owner)
+        create_github_issue(title, summary, args.repo-and-owner)
 
 if __name__ == "__main__":
     main()
