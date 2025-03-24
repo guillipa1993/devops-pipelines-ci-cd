@@ -1,46 +1,79 @@
+#!/usr/bin/env python3
 import os
+import sys
+import re
+import json
 import time
+import logging
 import argparse
-from openai import OpenAI
+import requests
+from typing import List, Optional
 
-# Verificar si la clave de API está configurada
+from openai import OpenAI
+import openai.error  # para capturar RateLimitError o APIError
+
+# ===================================
+# CONFIGURACIÓN DE LOGGING
+# ===================================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+# ===================================
+# CONFIGURACIÓN OPENAI
+# ===================================
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
-    print("ERROR: 'OPENAI_API_KEY' is not set. Please set it as an environment variable.")
-    exit(1)
+    logger.error("ERROR: 'OPENAI_API_KEY' is not set. Please set it as an environment variable.")
+    sys.exit(1)
 
-# Inicializar la API de OpenAI
 client = OpenAI(api_key=api_key)
 
-def validate_logs_directory(log_dir):
+# ===================================
+# CONSTANTES Y PARÁMETROS
+# ===================================
+MAX_CHUNK_SIZE = 30000        # Tamaño de fragmento al dividir logs
+MAX_TOKENS_OPENAI = 2000      # Máx tokens para la respuesta de OpenAI
+TEMPERATURE_OPENAI = 0.5      # Ajusta la temperatura de las respuestas
+MAX_RETRIES = 5               # Reintentos en caso de error 429
+BASE_DELAY = 2.0              # Espera base (segundos) para backoff
+EXCLUDE_FILE = "python-vulnerabilities.log"  # Ejemplo de log excluido
+
+# ===================================
+# FUNCIONES AUXILIARES
+# ===================================
+def validate_logs_directory(log_dir: str) -> List[str]:
     """
-    Valida si el directorio de logs existe y contiene archivos .log excluyendo archivos JSON.
+    Valida si el directorio de logs existe y contiene archivos .log
+    (excluye uno en concreto y descarta lo que no termine en .log).
     """
     if not os.path.exists(log_dir):
         raise FileNotFoundError(f"ERROR: The logs directory '{log_dir}' does not exist.")
 
-    log_files = [
-        os.path.join(log_dir, f)
-        for f in os.listdir(log_dir)
-        if os.path.isfile(os.path.join(log_dir, f))
-           and f.endswith(".log")
-           and "python-vulnerabilities.log" not in f
-    ]
+    log_files = []
+    for f in os.listdir(log_dir):
+        file_path = os.path.join(log_dir, f)
+        if os.path.isfile(file_path) and f.endswith(".log") and EXCLUDE_FILE not in f:
+            log_files.append(file_path)
+
     if not log_files:
         raise FileNotFoundError(f"ERROR: No valid .log files found in the directory '{log_dir}'.")
     return log_files
 
-def clean_log_content(content):
+def clean_log_content(content: str) -> str:
     """
-    Elimina líneas vacías y contenido redundante del log.
+    Elimina líneas vacías (o espacios) del log.
     """
     lines = content.splitlines()
     cleaned_lines = [line for line in lines if line.strip()]  # Elimina líneas vacías
     return "\n".join(cleaned_lines)
 
-def extract_relevant_lines(content, keyword="error", context_lines=10):
+def extract_relevant_lines(content: str, keyword: str = "error", context_lines: int = 10) -> str:
     """
-    Extrae líneas que contienen un keyword específico y las líneas circundantes.
+    Extrae las líneas que contienen un 'keyword' (ej. 'error')
+    y un cierto número de líneas antes y después.
     """
     lines = content.splitlines()
     relevant_lines = []
@@ -51,9 +84,9 @@ def extract_relevant_lines(content, keyword="error", context_lines=10):
             relevant_lines.extend(lines[start:end])
     return "\n".join(relevant_lines)
 
-def generate_prompt(log_type):
+def generate_prompt(log_type: str) -> str:
     """
-    Genera el prompt según el tipo de log.
+    Genera el 'prompt' base según el tipo de log.
     """
     if log_type == "failure":
         return (
@@ -78,90 +111,137 @@ def generate_prompt(log_type):
             "5. Positive Feedback (🎉🙌): Acknowledge good practices or results achieved."
         )
 
-def analyze_logs(log_files, output_dir, log_type):
+def chunk_string(text: str, chunk_size: int = MAX_CHUNK_SIZE) -> List[str]:
     """
-    Analiza los logs utilizando la API de OpenAI, generando un análisis por cada fragmento.
+    Divide 'text' en fragmentos de un tamaño máximo.
+    """
+    if len(text) <= chunk_size:
+        return [text]
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        start = end
+    return chunks
+
+def call_openai_with_retry(prompt_role: str, prompt_content: str) -> Optional[str]:
+    """
+    Llama a la API de OpenAI (chat.completions) con reintentos en caso de error 429.
+    Devuelve el texto de la respuesta o None si falla.
+    prompt_role es el prompt "system" o "user" (en este caso 'system' indica la directriz, 'user' es el contenido).
+    """
+    import openai
+    messages = [
+        {"role": "system", "content": prompt_role},
+        {"role": "user", "content": prompt_content}
+    ]
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=messages,
+                temperature=TEMPERATURE_OPENAI,
+                max_tokens=MAX_TOKENS_OPENAI
+            )
+            return response.choices[0].message.content.strip()
+
+        except openai.error.RateLimitError:
+            if attempt < MAX_RETRIES - 1:
+                wait_time = BASE_DELAY * (2 ** attempt)
+                logger.warning(
+                    "OpenAI RateLimitError (429). Reintentando en %.1f s (Intento %d/%d).",
+                    wait_time, attempt+1, MAX_RETRIES
+                )
+                time.sleep(wait_time)
+            else:
+                logger.error("Agotados reintentos tras 429.")
+                return None
+
+        except openai.error.APIError as e:
+            if getattr(e, "http_status", None) == 429 and attempt < MAX_RETRIES - 1:
+                wait_time = BASE_DELAY * (2 ** attempt)
+                logger.warning(
+                    "OpenAI APIError 429. Reintentando en %.1f s (Intento %d/%d).",
+                    wait_time, attempt+1, MAX_RETRIES
+                )
+                time.sleep(wait_time)
+            else:
+                logger.error("APIError no recuperable: %s", e)
+                return None
+
+        except Exception as ex:
+            logger.error("Error no controlado al llamar a OpenAI: %s", ex)
+            return None
+
+    return None
+
+def save_analysis(log_file: str, analysis: str, fragment_idx: int, output_dir: str, log_type: str):
+    """
+    Guarda el análisis en un archivo dentro de 'output_dir'.
+    """
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    base_name = os.path.basename(log_file)
+    analysis_filename = f"{base_name}_{log_type}_fragment_{fragment_idx}_analysis.txt"
+    analysis_file_path = os.path.join(output_dir, analysis_filename)
+
+    with open(analysis_file_path, "w", encoding="utf-8") as f:
+        f.write(analysis)
+
+    logger.info("   Analysis for fragment %d saved to %s", fragment_idx, analysis_file_path)
+
+# =============================================
+# FUNCIÓN PRINCIPAL DE ANÁLISIS
+# =============================================
+def analyze_logs(log_files: List[str], output_dir: str, log_type: str):
+    """
+    Analiza cada archivo de log en 'log_files' con la API de OpenAI.
+    Guarda un archivo de análisis por cada fragmento que se produce.
     """
     analysis_created = False
     total_files = len(log_files)
 
     for file_idx, log_file in enumerate(log_files, start=1):
-        print(f"\n[{file_idx}/{total_files}] Analyzing file: {log_file}", flush=True)
-        with open(log_file, 'r') as f:
+        logger.info("[%d/%d] Analyzing file: %s", file_idx, total_files, log_file)
+        with open(log_file, "r", encoding="utf-8") as f:
             log_content = f.read()
 
-            # ADDED: Si es log de error, extraemos las partes cercanas a 'error'.
-            # Si no, limpiamos. Ajustable según preferencia.
-            if log_type == "failure":
-                relevant_content = extract_relevant_lines(log_content, keyword="error")
+        # Según log_type, extraemos contenido relevante o lo limpiamos
+        if log_type == "failure":
+            relevant_content = extract_relevant_lines(log_content, keyword="error")
+        else:
+            relevant_content = clean_log_content(log_content)
+
+        # Fragmentar contenido
+        log_fragments = chunk_string(relevant_content, MAX_CHUNK_SIZE)
+        total_fragments = len(log_fragments)
+
+        logger.info("File '%s' divided into %d fragments for analysis.", log_file, total_fragments)
+
+        # Generar prompt base (rol "system")
+        role_content = generate_prompt(log_type)
+
+        for frag_idx, fragment in enumerate(log_fragments, start=1):
+            logger.info("   Analyzing fragment %d/%d of file '%s'...", frag_idx, total_fragments, log_file)
+
+            result = call_openai_with_retry(
+                prompt_role=role_content,
+                prompt_content=fragment
+            )
+            if result is None:
+                logger.warning("   WARNING: No result returned for fragment %d.", frag_idx)
+                continue  # Pasar al siguiente fragmento
+
+            result = result.strip()
+            if result:
+                save_analysis(log_file, result, frag_idx, output_dir, log_type)
+                analysis_created = True
+                logger.info("   Fragment %d/%d analysis complete.", frag_idx, total_fragments)
             else:
-                relevant_content = clean_log_content(log_content)
+                logger.warning("   WARNING: Empty analysis for fragment %d.", frag_idx)
 
-            # Dividir el contenido en fragmentos de hasta ~30k caracteres
-            max_chunk_size = 30000
-            log_fragments = [relevant_content[i:i + max_chunk_size] for i in range(0, len(relevant_content), max_chunk_size)]
-            total_fragments = len(log_fragments)
-
-            print(f"File '{log_file}' divided into {total_fragments} fragments for analysis.", flush=True)
-
-            for idx, fragment in enumerate(log_fragments, 1):
-                print(f"   Analyzing fragment {idx}/{total_fragments} of file '{log_file}'...", flush=True)
-                try:
-                    role_content = generate_prompt(log_type)
-                    response = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[
-                            {"role": "system", "content": role_content},
-                            {"role": "user", "content": fragment}
-                        ],
-                        max_tokens=2000,
-                        temperature=0.5
-                    )
-                    analysis = response.choices[0].message.content.strip()
-                    if analysis:
-                        save_analysis(log_file, analysis, idx, output_dir, log_type)
-                        analysis_created = True
-                        print(f"   Fragment {idx}/{total_fragments} analysis complete.", flush=True)
-                    else:
-                        print(f"   WARNING: No analysis returned for fragment {idx}.", flush=True)
-
-                    # Espera breve para no sobrecargar la API (ajusta si hace falta)
-                    time.sleep(5)
-                except Exception as e:
-                    print(f"Unexpected error while analyzing fragment {idx}: {e}", flush=True)
-                    break
-
-    if not analysis_created:
-        print("WARNING: No analysis files were created. Please check the logs for issues.", flush=True)
-
-def save_analysis(log_file, analysis, fragment_idx, output_dir, log_type):
-    """
-    Guarda el análisis en un archivo en el directorio proporcionado.
-    """
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    analysis_file_path = os.path.join(
-        output_dir, f"{os.path.basename(log_file)}_{log_type}_fragment_{fragment_idx}_analysis.txt"
-    )
-    with open(analysis_file_path, 'w') as f:
-        f.write(analysis)
-    print(f"   Analysis for fragment {fragment_idx} saved to {analysis_file_path}", flush=True)
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Analyze log files using OpenAI")
-    parser.add_argument("--log-dir", type=str, required=True, help="Path to the logs directory")
-    parser.add_argument("--output-dir", type=str, required=True, help="Path to save the analysis results")
-    parser.add_argument("--log-type", type=str, required=True, choices=["success", "failure"], help="Specify the type of logs to analyze: 'success' or 'failure'")
-    args = parser.parse_args()
-
-    try:
-        log_files = validate_logs_directory(args.log_dir)
-        print(f"Found {len(log_files)} log files in '{args.log_dir}'.", flush=True)
-
-        analyze_logs(log_files, args.output_dir, args.log_type)
-
-        print("Log analysis completed successfully.", flush=True)
-    except Exception as e:
-        print(f"Critical error: {e}", flush=True)
-        exit(1)
+            # Breve espera para no saturar la API (puedes ajustar o quitar)
+            time.sleep
