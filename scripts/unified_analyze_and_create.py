@@ -65,7 +65,7 @@ def init_conversation(system_content: str):
 
 def add_user_message(user_content: str):
     """
-    Añade un mensaje de rol user. 
+    Añade un mensaje de rol user.
     """
     global conversation_history
     conversation_history.append({"role": "user", "content": user_content})
@@ -300,11 +300,6 @@ def format_ticket_content(
     else:
         icon = "🔥"
 
-    # En el title exigimos:
-    # - Nombre de proyecto
-    # - [branch_name] si no es vacío
-    # - emoticon
-    # - Recortado a 100 chars
     system_msg = "You are a professional ticket formatter."
     user_msg = (
         f"Project: {project_name}\n"
@@ -333,7 +328,6 @@ def format_ticket_content(
 
         ticket_json = safe_load_json(ai_output)
         if not ticket_json:
-            # Fallback
             fallback_title = f"{project_name} {icon}"
             if branch_name:
                 fallback_title += f" [{branch_name}]"
@@ -627,7 +621,7 @@ def find_similar_issues(
             )
             ai_resp = resp.choices[0].message.content.strip().lower()
             if ai_resp.startswith("yes"):
-                logger.info("IA dice que coincide con %s => duplicado.", issue.key)
+                logger.info("IA dice que el nuevo ticket coincide con el issue %s => duplicado.", issue.key)
                 matched_keys.append(issue.key)
 
         except Exception as ex:
@@ -659,7 +653,9 @@ def create_jira_ticket(
             "description": description,
             "issuetype": {"name": issue_type},
         }
+        logger.info("Intentando crear ticket con summary='%s' y issueType='%s'...", summary, issue_type)
         issue = jira.create_issue(fields=fields_)
+        logger.info("Ticket creado con la librería de Jira => key='%s'", issue.key)
         return issue.key
     except Exception as e:
         logger.error("Error creando ticket con la librería de Jira: %s", e)
@@ -703,10 +699,13 @@ def create_jira_ticket_via_requests(
     headers = {"Content-Type": "application/json"}
     auth = (jira_user, jira_api_token)
 
+    logger.info("Intentando crear ticket con 'requests' => summary='%s' ...", summary)
     try:
         response = requests.post(url, json=payload, headers=headers, auth=auth)
         if response.status_code == 201:
-            return response.json().get("key")
+            key = response.json().get("key")
+            logger.info("Ticket creado vía requests => key='%s'", key)
+            return key
         else:
             logger.error("Falló la creación vía requests: %s - %s", response.status_code, response.text)
             return None
@@ -724,10 +723,15 @@ def create_jira_ticket_unified(
     description: str,
     issue_type: str
 ) -> Optional[str]:
+    """
+    Primero intenta crear con la librería oficial de Jira;
+    si falla o no retorna key, hace fallback con requests.
+    """
     key_ = create_jira_ticket(jira, project_key, summary, description, issue_type)
     if key_:
         return key_
-    logger.info("Fallo con librería Jira => fallback requests.")
+
+    logger.info("Fallo con librería Jira => intentando fallback con requests...")
     return create_jira_ticket_via_requests(
         jira_url, jira_user, jira_api_token,
         project_key, summary, description, issue_type
@@ -800,7 +804,7 @@ def main():
             args.project_name, branch_name=args.branch
         )
         if not summary or not description:
-            logger.error("No ticket => Análisis vacío.")
+            logger.error("No ticket => Análisis vacío. No se creará un ticket.")
             return
 
         try:
@@ -809,33 +813,41 @@ def main():
             logger.error("Tipo de issue no válido: %s", e)
             return
 
+        logger.info("Verificando si existe duplicado en estado abierto (To Do, In Progress, etc.)...")
         jql_states = '"To Do", "In Progress", "Open", "Reopened"'
         existing_issues = find_similar_issues(
             jira, args.jira_project_key, summary, description, issue_type, f"status IN ({jql_states})"
         )
         if existing_issues:
-            logger.info(f"Duplicado => {existing_issues}")
+            logger.info(f"Se detectan duplicados => {existing_issues}. No se creará un ticket nuevo.")
             return
+        else:
+            logger.info("No se encontraron duplicados abiertos. Se procederá con la creación de un ticket nuevo.")
 
+        logger.info("Verificando si existe duplicado en estado Done/Closed...")
         done_issues = find_similar_issues(
             jira, args.jira_project_key, summary, description, issue_type, 'statusCategory = Done'
         )
+        if done_issues:
+            logger.info(f"Se detectan issues finalizadas similares => {done_issues} (no impide crear ticket).")
 
-        logger.info("Creando ticket de tipo 'Error' en Jira...")
+        logger.info("Creando ticket de tipo 'Error' en Jira con summary='%s'...", summary)
         ticket_key = create_jira_ticket_unified(
             jira, args.jira_url, jira_user_email, jira_api_token,
             args.jira_project_key, summary, description, issue_type
         )
         if ticket_key:
-            logger.info(f"Ticket creado => {ticket_key}")
+            logger.info(f"Ticket NUEVO creado => '{ticket_key}'")
             if done_issues:
                 duplicates_str = ", ".join(done_issues)
                 comment_body = get_repeated_incident_comment(duplicates_str, args.report_language)
+                logger.info("Añadiendo comentario sobre los duplicados finalizados => %s", duplicates_str)
                 try:
                     jira.add_comment(ticket_key, comment_body)
                 except Exception as ex:
                     logger.warning(f"No se pudo añadir comentario => {ex}")
                 for old_key in done_issues:
+                    logger.info(f"Creando link 'Relates' entre '{ticket_key}' y '{old_key}'")
                     try:
                         jira.create_issue_link(
                             type="Relates",
@@ -845,7 +857,7 @@ def main():
                     except Exception as ex:
                         logger.warning(f"No se pudo crear enlace => {ex}")
         else:
-            logger.error("ERROR => creación de ticket fallida.")
+            logger.error("ERROR => creación de ticket fallida (no se obtuvo key).")
 
     # Procesar 'success'
     else:
@@ -853,7 +865,7 @@ def main():
             args.log_dir, args.report_language, args.project_name
         )
         if not recommendations:
-            logger.info("No hay recomendaciones.")
+            logger.info("No hay recomendaciones derivadas de logs => no se crearán tickets.")
             return
 
         issue_type = "Tarea"
@@ -863,21 +875,26 @@ def main():
 
             # Omitir si no hay contenido
             if not r_desc.strip():
+                logger.debug("Recomendación #%d sin contenido. Saltando...", i)
                 continue
             if should_skip_recommendation(r_summary, r_desc):
+                logger.debug("Recomendación #%d con keywords restringidos. Saltando...", i)
                 continue
 
+            logger.info("Revisión duplicados para Recomendación #%d => '%s'...", i, r_summary)
             jql_states = '"To Do", "In Progress", "Open", "Reopened"'
             existing_issues = find_similar_issues(
                 jira, args.jira_project_key, r_summary, r_desc, issue_type, f"status IN ({jql_states})"
             )
             if existing_issues:
+                logger.info(f"Recomendación #%d duplicada con => %s. No se crea ticket nuevo.", i, existing_issues)
                 continue
 
             discard_issues = find_similar_issues(
                 jira, args.jira_project_key, r_summary, r_desc, issue_type, 'status IN ("DESCARTADO")'
             )
             if discard_issues:
+                logger.info(f"Recomendación #%d coincide con tickets descartados => %s. No se crea ticket nuevo.", i, discard_issues)
                 continue
 
             # Generar título + descripción en wiki
@@ -891,15 +908,15 @@ def main():
             if not wiki_desc.strip():
                 wiki_desc = f"Short fallback => {r_desc}"
 
+            logger.info("Creando ticket de 'Tarea' para la recomendación #%d con summary='%s'...", i, final_title)
             new_key = create_jira_ticket_unified(
                 jira, args.jira_url, jira_user_email, jira_api_token,
                 args.jira_project_key, final_title, wiki_desc, issue_type
             )
             if new_key:
-                logger.info(f"Recomendación #{i} => Creado ticket => {new_key}")
+                logger.info(f"Recomendación #{i} => Creado ticket => '{new_key}'")
             else:
-                logger.error(f"Recomendación #{i} => Fallida la creación.")
-
+                logger.error(f"Recomendación #{i} => Fallida la creación de ticket (no se obtuvo key).")
 
 if __name__ == "__main__":
     main()
