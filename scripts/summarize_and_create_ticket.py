@@ -228,7 +228,7 @@ def main():
         status_text = "Errors Found" if args.log_type == "failure" else "All Passed"
 
         title = f"{status_emoji} Report - Project: {args.repo} - Build ID: {args.run_id} - {status_text}"
-        create_github_issue(title, summary, args.repo-and-owner)
+        create_github_issue(title, summary, args.repo_and_owner)
 
 if __name__ == "__main__":
     main()
